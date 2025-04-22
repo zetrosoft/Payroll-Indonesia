@@ -15,7 +15,7 @@
     "print_hide": 0,
     "translatable": 0
   },
-   {
+  {
     "doctype": "Custom Field",
     "dt": "Employee",
     "fieldname": "golongan",
@@ -50,7 +50,7 @@
     "name": "Employee-col_break_payroll_id",
     "owner": "dannyaudian",
     "print_hide": 0
-  }
+  },
   {
     "doctype": "Custom Field",
     "dt": "Employee",
@@ -257,71 +257,6 @@
     "owner": "dannyaudian",
     "default": "0",
     "print_hide": 0,
-    "translatable": 0
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Salary Slip",
-    "fieldname": "payroll_indonesia_section",
-    "fieldtype": "Section Break",
-    "hidden": 0,
-    "insert_after": "total_in_words",
-    "label": "Payroll Indonesia",
-    "modified": "2025-04-22 04:10:19",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-payroll_indonesia_section",
-    "owner": "dannyaudian",
-    "collapsible": 1,
-    "print_hide": 0,
-    "translatable": 0
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Salary Slip",
-    "fieldname": "is_final_gabung_suami",
-    "fieldtype": "Check",
-    "hidden": 1,
-    "insert_after": "payroll_indonesia_section",
-    "label": "Is Final (NPWP Gabung Suami)",
-    "modified": "2025-04-22 04:10:19",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-is_final_gabung_suami",
-    "owner": "dannyaudian",
-    "print_hide": 1,
-    "translatable": 0,
-    "default": "0"
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Salary Slip",
-    "fieldname": "koreksi_pph21",
-    "fieldtype": "Currency",
-    "hidden": 0,
-    "insert_after": "is_final_gabung_suami",
-    "label": "Koreksi PPh 21",
-    "modified": "2025-04-22 04:10:19",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-koreksi_pph21",
-    "owner": "dannyaudian",
-    "print_hide": 0,
-    "read_only": 1,
-    "translatable": 0,
-    "depends_on": "eval:doc.start_date"
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Salary Slip",
-    "fieldname": "payroll_note",
-    "fieldtype": "Small Text",
-    "hidden": 0,
-    "insert_after": "koreksi_pph21",
-    "label": "Catatan Penggajian",
-    "modified": "2025-04-22 04:10:19",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-payroll_note",
-    "owner": "dannyaudian",
-    "print_hide": 0,
-    "read_only": 1,
     "translatable": 0
   }
 ]
