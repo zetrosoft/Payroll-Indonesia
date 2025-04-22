@@ -14,77 +14,27 @@ app_license = "GPL-3"
 app_version = "0.0.1"
 required_apps = ["erpnext"]
 
-# Includes in <head>
-# ------------------
-
-# include js, css files in header of desk.html
-# app_include_css = "/assets/payroll_indonesia/css/payroll_indonesia.css"
-# app_include_js = "/assets/payroll_indonesia/js/payroll_indonesia.js"
-
-# include js, css files in header of web template
-# web_include_css = "/assets/payroll_indonesia/css/payroll_indonesia.css"
-# web_include_js = "/assets/payroll_indonesia/js/payroll_indonesia.js"
-
-# include custom scss in every website theme (without file extension ".scss")
-# website_theme_scss = "payroll_indonesia/public/scss/website"
-
-# include js, css files in header of web form
-# webform_include_js = {"doctype": "public/js/doctype.js"}
-# webform_include_css = {"doctype": "public/css/doctype.css"}
-
-# include js in page
-# page_js = {"page" : "public/js/file.js"}
-
 # include js in doctype views
 doctype_js = {
     "Employee": "public/js/employee.js",
     "Salary Slip": "public/js/salary_slip.js",
-    "PPh TER Table": "public/js/pph_ter_table.js"  # Add this line
+    "PPh TER Table": "public/js/pph_ter_table.js"  # Added for PPh TER Table
 }
 
-# Add list view JavaScript configuration
+# List view customizations
 doctype_list_js = {
-    "PPh TER Table": "public/js/pph_ter_table_list.js"  # Add this line
+    "PPh TER Table": "public/js/pph_ter_table_list.js"  # Added for PPh TER Table list view
 }
-# doctype_list_js = {"doctype": "public/js/doctype_list.js"}
-# doctype_tree_js = {"doctype": "public/js/doctype_tree.js"}
-# doctype_calendar_js = {"doctype": "public/js/doctype_calendar.js"}
-
-# Home Pages
-# ----------
-# application home page (will override Website Settings)
-# home_page = "login"
-
-# website user home page (by Role)
-# role_home_page = {
-#   "Role": "home_page"
-# }
-
-# Website user home page (by function)
-# get_website_user_home_page = "payroll_indonesia.utils.get_home_page"
-
-# Generators
-# ----------
-# automatically create page for each record of this doctype
-# website_generators = ["Web Page"]
 
 # Installation
-# ------------
-# before_install = "payroll_indonesia.fixtures.setup.before_install"
 after_install = "payroll_indonesia.fixtures.setup.after_install"
 
-# Boot
-# ----
-# boot_session = "payroll_indonesia.boot.boot_session"
-
 # DocType Class
-# ---------------
 override_doctype_class = {
     "Salary Slip": "payroll_indonesia.override.salary_slip.CustomSalarySlip"
 }
 
 # Document Events
-# --------------
 doc_events = {
     "Employee": {
         "validate": "payroll_indonesia.override.employee.validate",
@@ -92,48 +42,7 @@ doc_events = {
     }
 }
 
-# Scheduled Tasks
-# ---------------
-# scheduler_events = {
-#   "all": [
-#       "payroll_indonesia.tasks.all"
-#   ],
-#   "daily": [
-#       "payroll_indonesia.tasks.daily"
-#   ],
-#   "hourly": [
-#       "payroll_indonesia.tasks.hourly"
-#   ],
-#   "weekly": [
-#       "payroll_indonesia.tasks.weekly"
-#   ],
-#   "monthly": [
-#       "payroll_indonesia.tasks.monthly"
-#   ]
-# }
-
-# Testing
-# -------
-# before_tests = "payroll_indonesia.install.before_tests"
-
-# Overriding Methods
-# ------------------------------
-# override_whitelisted_methods = {
-#   "frappe.desk.doctype.event.event.get_events": "payroll_indonesia.event.get_events"
-# }
-#
-# each overriding function accepts a `data` argument;
-# generated from the base implementation of the doctype dashboard,
-# along with any modifications made in other Frappe apps
-# override_doctype_dashboards = {
-#   "Task": "payroll_indonesia.task.get_dashboard_data"
-# }
-
-# exempt linked doctypes from being automatically cancelled
-# auto_cancel_exempted_doctypes = ["Auto Repeat"]
-
 # Fixtures
-# --------
 fixtures = [
     {
         "dt": "Custom Field",
@@ -226,16 +135,15 @@ fixtures = [
         ]
     },
     {
-        "dt": "PPh TER Table",
+        "dt": "PPh TER Table",  # Added PPh TER Table fixture
         "filters": [
-            ["modified", ">", "2025-04-22 03:37:44"],  # Current timestamp
+            ["modified", ">", "2025-04-22 03:39:27"],  # Current timestamp
             ["owner", "=", "dannyaudian"]  # Current user
         ]
     }
 ]
 
 # Default configuration values
-# ---------------------------
 default_mail_footer = """
 <div style="padding: 7px; text-align: center;">
     <p>Powered by <a href="https://erpnext.com" target="_blank">ERPNext</a> & Payroll Indonesia</p>
@@ -243,7 +151,6 @@ default_mail_footer = """
 """
 
 # Additional jinja environment globals
-# -----------------------------------
 jinja = {
     "methods": [
         "payroll_indonesia.payroll_indonesia.utils.get_bpjs_settings",
@@ -252,7 +159,6 @@ jinja = {
 }
 
 # Regional Settings
-# ----------------
 regional_overrides = {
     "Indonesia": {
         "controller_overrides": {
