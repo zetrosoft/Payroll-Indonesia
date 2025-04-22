@@ -19,13 +19,13 @@ doctype_js = {
     "Employee": "public/js/employee.js",
     "Salary Slip": "public/js/salary_slip.js",
     "PPh TER Table": "public/js/pph_ter_table.js",
-    "BPJS Payment Summary": "public/js/bpjs_payment_summary.js"  # Added for BPJS Payment Summary
+    "BPJS Payment Summary": "public/js/bpjs_payment_summary.js"
 }
 
 # List view customizations
 doctype_list_js = {
     "PPh TER Table": "public/js/pph_ter_table_list.js",
-    "BPJS Payment Summary": "public/js/bpjs_payment_summary_list.js"  # Added for BPJS Payment Summary list view
+    "BPJS Payment Summary": "public/js/bpjs_payment_summary_list.js"
 }
 
 # Installation
@@ -136,18 +136,30 @@ fixtures = [
             ]]
         ]
     },
+    # Core DocTypes
     {
-        "dt": "PPh TER Table",
+        "dt": "PPh TER Table"
+    },
+    {
+        "dt": "BPJS Payment Summary"
+    },
+    # Master Data
+    {
+        "dt": "Supplier Group",
         "filters": [
-            ["modified", ">", "2025-04-22 03:49:50"],  # Updated timestamp
-            ["owner", "=", "dannyaudian"]
+            ["supplier_group_name", "=", "Government"]
         ]
     },
     {
-        "dt": "BPJS Payment Summary",  # Added BPJS Payment Summary fixture
+        "dt": "Supplier",
         "filters": [
-            ["modified", ">", "2025-04-22 03:49:50"],  # Updated timestamp
-            ["owner", "=", "dannyaudian"]
+            ["supplier_name", "=", "BPJS"]
+        ]
+    },
+    {
+        "dt": "Tax Category",
+        "filters": [
+            ["name", "=", "Government"]
         ]
     }
 ]
