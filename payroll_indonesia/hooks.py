@@ -168,15 +168,18 @@ fixtures = [
         "dt": "Salary Component",
         "filters": [
             ["name", "in", [
+                # Earnings
                 "Gaji Pokok",
                 "Tunjangan Makan",
                 "Tunjangan Transport",
                 "Insentif",
                 "Bonus",
+                # Deductions
                 "PPh 21",
                 "BPJS JHT Employee",
                 "BPJS JP Employee",
                 "BPJS Kesehatan Employee",
+                # Statistical (Employer Share)
                 "BPJS JHT Employer",
                 "BPJS JP Employer",
                 "BPJS JKK",
@@ -198,13 +201,22 @@ fixtures = [
         "dt": "Account",
         "filters": [
             ["name", "in", [
+                # Expense Accounts
                 "Beban Gaji Pokok - %",
                 "Beban Tunjangan Makan - %",
                 "Beban Tunjangan Transport - %",
                 "Beban Insentif - %",
-                "Hutang BPJS Kesehatan - %",
-                "Hutang BPJS TK - %",
-                "Hutang PPh 21 - %"
+                "Beban Bonus - %",
+                "Beban BPJS JHT - %",
+                "Beban BPJS JP - %",
+                "Beban BPJS JKK - %",
+                "Beban BPJS JKM - %",
+                "Beban BPJS Kesehatan - %",
+                # Liability Accounts
+                "Hutang PPh 21 - %",
+                "Hutang BPJS JHT - %",
+                "Hutang BPJS JP - %",
+                "Hutang BPJS Kesehatan - %"
             ]]
         ]
     }
