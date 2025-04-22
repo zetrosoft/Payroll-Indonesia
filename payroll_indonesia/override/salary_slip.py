@@ -235,3 +235,125 @@ class CustomSalarySlip(SalarySlip):
     def is_december(self):
         """Check if salary slip is for December"""
         return getdate(self.end_date).month == 12
+
+    def validate(self):
+    super().validate()
+    self.validate_required_components()
+    
+    # Initialize custom fields
+    self.is_final_gabung_suami = 0
+    self.koreksi_pph21 = 0
+    self.payroll_note = ""
+
+def calculate_tax_components(self, employee):
+    """Calculate tax related components"""
+    # Handle NPWP Gabung Suami case
+    if employee.gender == "Female" and cint(employee.get("npwp_gabung_suami")):
+        self.is_final_gabung_suami = 1
+        self.payroll_note = "Penghasilan istri digabung dengan NPWP suami"
+        return
+    
+    # Calculate Biaya Jabatan (5% of gross, max 500k)
+    self.biaya_jabatan = min(self.gross_pay * 0.05, 500000)
+    
+    # Calculate netto income
+    self.netto = self.gross_pay - self.biaya_jabatan - self.total_bpjs
+    
+    # Set basic payroll note
+    self.set_basic_payroll_note(employee)
+    
+    # Calculate PPh 21
+    if self.is_december():
+        self.calculate_december_pph(employee)
+    else:
+        self.calculate_monthly_pph(employee)
+
+def set_basic_payroll_note(self, employee):
+    """Set basic payroll note with component details"""
+    note_parts = [
+        f"Status Pajak: {employee.status_pajak}",
+        f"Penghasilan Bruto: Rp {self.gross_pay:,.0f}",
+        f"Biaya Jabatan: Rp {self.biaya_jabatan:,.0f}",
+        f"BPJS (JHT+JP+Kesehatan): Rp {self.total_bpjs:,.0f}",
+        f"Penghasilan Neto: Rp {self.netto:,.0f}"
+    ]
+    
+    self.payroll_note = "\n".join(note_parts)
+
+def calculate_december_pph(self, employee):
+    """Calculate year-end tax correction for December"""
+    year = getdate(self.end_date).year
+    
+    # Get year-to-date totals (Jan-Nov)
+    ytd = self.get_ytd_totals(year)
+    
+    # Calculate annual totals
+    annual_gross = ytd.gross + self.gross_pay
+    annual_bpjs = ytd.bpjs + self.total_bpjs
+    annual_biaya_jabatan = min(annual_gross * 0.05, 500000)
+    annual_netto = annual_gross - annual_bpjs - annual_biaya_jabatan
+    
+    # Get PTKP value
+    from payroll_indonesia.payroll_indonesia.utils import get_ptkp_value
+    ptkp = get_ptkp_value(employee.status_pajak)
+    pkp = max(annual_netto - ptkp, 0)
+    
+    # Calculate annual PPh
+    tax_brackets = [
+        (0, 50_000_000, 0.05),
+        (50_000_000, 250_000_000, 0.15),
+        (250_000_000, 500_000_000, 0.25),
+        (500_000_000, float('inf'), 0.35)
+    ]
+    
+    annual_pph = 0
+    tax_details = []
+    remaining_pkp = pkp
+    
+    for lower, upper, rate in tax_brackets:
+        if remaining_pkp <= 0:
+            break
+            
+        taxable = min(remaining_pkp, upper - lower)
+        tax = taxable * rate
+        annual_pph += tax
+        
+        if tax > 0:
+            tax_details.append(
+                f"- Lapisan {rate*100:.0f}%: "
+                f"Rp {taxable:,.0f} × {rate*100:.0f}% = Rp {tax:,.0f}"
+            )
+        
+        remaining_pkp -= taxable
+    
+    # Calculate correction
+    correction = annual_pph - ytd.pph21
+    self.koreksi_pph21 = correction
+    
+    # Update December PPh 21
+    self.update_deduction(
+        "PPh 21",
+        correction,
+        f"Koreksi PPh 21 Desember {year}"
+    )
+    
+    # Set detailed December note
+    note_parts = [
+        "=== Perhitungan PPh 21 Tahunan ===",
+        f"Penghasilan Bruto Setahun: Rp {annual_gross:,.0f}",
+        f"Biaya Jabatan: Rp {annual_biaya_jabatan:,.0f}",
+        f"Total BPJS: Rp {annual_bpjs:,.0f}",
+        f"Penghasilan Neto: Rp {annual_netto:,.0f}",
+        f"PTKP ({employee.status_pajak}): Rp {ptkp:,.0f}",
+        f"PKP: Rp {pkp:,.0f}",
+        "",
+        "Perhitungan Per Lapisan Pajak:",
+        *tax_details,
+        "",
+        f"Total PPh 21 Setahun: Rp {annual_pph:,.0f}",
+        f"PPh 21 Sudah Dibayar: Rp {ytd.pph21:,.0f}",
+        f"Koreksi Desember: Rp {correction:,.0f}",
+        f"({'Kurang Bayar' if correction > 0 else 'Lebih Bayar'})"
+    ]
+    
+    self.payroll_note = "\n".join(note_parts)
