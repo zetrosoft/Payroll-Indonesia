@@ -51,8 +51,12 @@ fixtures = [
     {
         "dt": "Property Setter",
         "filters": [
-            ["doc_type", "=", "Employee"]
-        ]
+            ["name", "in", [
+                "Employee-payroll_indonesia_section-insert_after",
+                "Employee-employment_type-hidden",
+                "Employee-grade-hidden",
+                "Employee-jabatan-insert_after"
+            ]]
     },
     # Core DocTypes
     "PPh TER Table",
