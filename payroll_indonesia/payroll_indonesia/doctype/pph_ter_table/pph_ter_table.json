@@ -1,84 +1,116 @@
 {
-  "actions": [],
-  "autoname": "hash",
-  "creation": "2023-04-22 12:00:00.000000",
-  "doctype": "DocType",
-  "engine": "InnoDB",
-  "field_order": [
-    "status_pajak",
-    "from_income",
-    "to_income",
-    "ter_percent"
-  ],
-  "fields": [
-    {
-      "fieldname": "status_pajak",
-      "fieldtype": "Select",
-      "label": "Status Pajak",
-      "options": "TK0\nTK1\nTK2\nTK3\nK0\nK1\nK2\nK3",
-      "reqd": 1
-    },
-    {
-      "fieldname": "from_income",
-      "fieldtype": "Currency",
-      "label": "Penghasilan Dari"
-    },
-    {
-      "fieldname": "to_income",
-      "fieldtype": "Currency",
-      "label": "Penghasilan Sampai"
-    },
-    {
-      "fieldname": "ter_percent",
-      "fieldtype": "Percent",
-      "label": "Persentase TER",
-      "reqd": 1
-    }
-  ],
-  "index_web_pages_for_search": 1,
-  "links": [],
-  "modified": "2023-04-22 12:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Payroll Indonesia",
-  "name": "PPh TER Table",
-  "naming_rule": "Random",
-  "owner": "Administrator",
-  "permissions": [
-    {
-      "create": 1,
-      "delete": 1,
-      "email": 1,
-      "export": 1,
-      "print": 1,
-      "read": 1,
-      "report": 1,
-      "role": "System Manager",
-      "share": 1,
-      "write": 1
-    },
-    {
-      "create": 1,
-      "delete": 1,
-      "email": 1,
-      "export": 1,
-      "print": 1,
-      "read": 1,
-      "report": 1,
-      "role": "HR Manager",
-      "share": 1,
-      "write": 1
-    },
-    {
-      "email": 1,
-      "export": 1,
-      "print": 1,
-      "read": 1,
-      "report": 1,
-      "role": "HR User",
-      "share": 1
-    }
-  ],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": []
+    "actions": [],
+    "allow_rename": 0,
+    "autoname": "format:TER-{status_pajak}-{from_income}-{####}",
+    "creation": "2025-04-22 03:34:26",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "status_pajak",
+        "income_range_section",
+        "from_income",
+        "to_income",
+        "column_break_4",
+        "ter_percent",
+        "title"
+    ],
+    "fields": [
+        {
+            "fieldname": "status_pajak",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Status Pajak",
+            "options": "TK0\nK0\nK1\nK2\nK3",
+            "reqd": 1
+        },
+        {
+            "fieldname": "income_range_section",
+            "fieldtype": "Section Break",
+            "label": "Income Range"
+        },
+        {
+            "fieldname": "from_income",
+            "fieldtype": "Currency",
+            "in_list_view": 1,
+            "label": "From Income",
+            "reqd": 1,
+            "options": "Company:company:default_currency"
+        },
+        {
+            "fieldname": "to_income",
+            "fieldtype": "Currency",
+            "in_list_view": 1,
+            "label": "To Income",
+            "description": "Set to 0 for unlimited upper range",
+            "reqd": 1,
+            "options": "Company:company:default_currency"
+        },
+        {
+            "fieldname": "column_break_4",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "ter_percent",
+            "fieldtype": "Percent",
+            "in_list_view": 1,
+            "label": "TER Percentage",
+            "reqd": 1,
+            "precision": "2"
+        },
+        {
+            "fieldname": "title",
+            "fieldtype": "Data",
+            "label": "Title",
+            "hidden": 1,
+            "allow_in_quick_entry": 0,
+            "translatable": 0,
+            "in_standard_filter": 0,
+            "in_preview": 0
+        }
+    ],
+    "index_web_pages_for_search": 1,
+    "links": [],
+    "modified": "2025-04-22 03:34:26",
+    "modified_by": "dannyaudian",
+    "module": "Payroll Indonesia",
+    "name": "PPh TER Table",
+    "naming_rule": "Expression",
+    "owner": "dannyaudian",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        },
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "HR Manager",
+            "share": 1,
+            "write": 1
+        },
+        {
+            "read": 1,
+            "role": "HR User"
+        }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1,
+    "title_field": "title",
+    "show_title_field_in_link": 1
 }
