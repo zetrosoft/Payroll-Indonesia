@@ -1,0 +1,84 @@
+{
+  "actions": [],
+  "autoname": "hash",
+  "creation": "2023-04-22 12:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "status_pajak",
+    "from_income",
+    "to_income",
+    "ter_percent"
+  ],
+  "fields": [
+    {
+      "fieldname": "status_pajak",
+      "fieldtype": "Select",
+      "label": "Status Pajak",
+      "options": "TK0\nTK1\nTK2\nTK3\nK0\nK1\nK2\nK3",
+      "reqd": 1
+    },
+    {
+      "fieldname": "from_income",
+      "fieldtype": "Currency",
+      "label": "Penghasilan Dari"
+    },
+    {
+      "fieldname": "to_income",
+      "fieldtype": "Currency",
+      "label": "Penghasilan Sampai"
+    },
+    {
+      "fieldname": "ter_percent",
+      "fieldtype": "Percent",
+      "label": "Persentase TER",
+      "reqd": 1
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2023-04-22 12:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Payroll Indonesia",
+  "name": "PPh TER Table",
+  "naming_rule": "Random",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    },
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "HR Manager",
+      "share": 1,
+      "write": 1
+    },
+    {
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "HR User",
+      "share": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}
