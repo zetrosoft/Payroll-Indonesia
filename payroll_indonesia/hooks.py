@@ -46,132 +46,22 @@ doc_events = {
 
 # Fixtures
 fixtures = [
-    # Custom Fields
-    {
-        "dt": "Custom Field",
-        "filters": [
-            ["name", "in", [
-                # Employee Custom Fields
-                "Employee-payroll_indonesia_section",
-                "Employee-golongan",
-                "Employee-jabatan",
-                "Employee-status_pajak",
-                "Employee-jumlah_tanggungan",
-                "Employee-npwp_section",
-                "Employee-npwp",
-                "Employee-npwp_suami",
-                "Employee-npwp_gabung_suami",
-                "Employee-bpjs_section",
-                "Employee-ikut_bpjs_kesehatan",
-                "Employee-ikut_bpjs_ketenagakerjaan",
-                "Employee-employment_details_section",
-                "Employee-tipe_karyawan",
-                "Employee-penghasilan_final",
-                
-                # Salary Slip Custom Fields
-                "Salary Slip-payroll_indonesia_section",
-                "Salary Slip-is_final_gabung_suami",
-                "Salary Slip-koreksi_pph21",
-                "Salary Slip-payroll_note"
-            ]]
-        ]
-    },
-    
-    # Scripts and Settings
-    {
-        "dt": "Client Script",
-        "filters": [
-            ["dt", "in", ["Employee", "Salary Slip"]]
-        ]
-    },
+    "Custom Field",
+    "Client Script",
     {
         "dt": "Property Setter",
         "filters": [
-            ["doc_type", "in", ["Employee", "Salary Slip"]]
+            ["doc_type", "=", "Employee"]
         ]
     },
-    
-    # Salary Components
-    {
-        "dt": "Salary Component",
-        "filters": [
-            ["name", "in", [
-                # Earnings
-                "Gaji Pokok",
-                "Tunjangan Makan",
-                "Tunjangan Transport",
-                "Insentif",
-                "Bonus",
-                # Deductions
-                "PPh 21",
-                "BPJS JHT Employee",
-                "BPJS JP Employee",
-                "BPJS Kesehatan Employee",
-                # Statistical (Employer Share)
-                "BPJS JHT Employer",
-                "BPJS JP Employer",
-                "BPJS JKK",
-                "BPJS JKM",
-                "BPJS Kesehatan Employer"
-            ]]
-        ]
-    },
-    
-    # Salary Structure
-    {
-        "dt": "Salary Structure",
-        "filters": [
-            ["name", "in", [
-                "Struktur Gaji Tetap G1",
-                "Struktur Freelance"
-            ]]
-        ]
-    },
-    
-    # Accounts
-    {
-        "dt": "Account",
-        "filters": [
-            ["name", "in", [
-                # Expense Accounts
-                "Beban Gaji Pokok - %",
-                "Beban Tunjangan Makan - %",
-                "Beban Tunjangan Transport - %",
-                "Beban Insentif - %",
-                "Beban Bonus - %",
-                "Beban BPJS JHT - %",
-                "Beban BPJS JP - %",
-                "Beban BPJS JKK - %",
-                "Beban BPJS JKM - %",
-                "Beban BPJS Kesehatan - %",
-                # Liability Accounts
-                "Hutang PPh 21 - %",
-                "Hutang BPJS JHT - %",
-                "Hutang BPJS JP - %",
-                "Hutang BPJS Kesehatan - %"
-            ]]
-        ]
-    },
-    
     # Core DocTypes
-    {
-        "dt": "PPh TER Table"
-    },
-    {
-        "dt": "BPJS Payment Summary"
-    },
-    
+    "PPh TER Table",
+    "BPJS Payment Summary",
     # Master Data
     {
         "dt": "Supplier Group",
         "filters": [
             ["supplier_group_name", "=", "Government"]
-        ]
-    },
-    {
-        "dt": "Supplier",
-        "filters": [
-            ["supplier_name", "=", "BPJS"]
         ]
     },
     {
