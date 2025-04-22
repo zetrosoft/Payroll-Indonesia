@@ -1,0 +1,152 @@
+{
+    "actions": [],
+    "allow_rename": 0,
+    "autoname": "format:BPJS-PAY-{#####}",
+    "creation": "2025-04-22 03:45:57",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "company_section",
+        "company",
+        "posting_date",
+        "column_break_3",
+        "status",
+        "amended_from",
+        "component_section",
+        "komponen",
+        "section_break_8",
+        "total",
+        "payment_section",
+        "payment_entry"
+    ],
+    "fields": [
+        {
+            "fieldname": "company_section",
+            "fieldtype": "Section Break",
+            "label": "Company Information"
+        },
+        {
+            "fieldname": "company",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Company",
+            "options": "Company",
+            "reqd": 1
+        },
+        {
+            "fieldname": "posting_date",
+            "fieldtype": "Date",
+            "in_list_view": 1,
+            "label": "Posting Date",
+            "reqd": 1
+        },
+        {
+            "fieldname": "column_break_3",
+            "fieldtype": "Column Break"
+        },
+        {
+            "default": "Draft",
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Status",
+            "options": "Draft\nSubmitted\nPaid",
+            "read_only": 1
+        },
+        {
+            "fieldname": "amended_from",
+            "fieldtype": "Link",
+            "label": "Amended From",
+            "no_copy": 1,
+            "options": "BPJS Payment Summary",
+            "print_hide": 1,
+            "read_only": 1
+        },
+        {
+            "fieldname": "component_section",
+            "fieldtype": "Section Break",
+            "label": "BPJS Components"
+        },
+        {
+            "fieldname": "komponen",
+            "fieldtype": "Table",
+            "label": "BPJS Payment Components",
+            "options": "BPJS Payment Component",
+            "reqd": 1
+        },
+        {
+            "fieldname": "section_break_8",
+            "fieldtype": "Section Break"
+        },
+        {
+            "fieldname": "total",
+            "fieldtype": "Currency",
+            "in_list_view": 1,
+            "label": "Total Amount",
+            "read_only": 1
+        },
+        {
+            "fieldname": "payment_section",
+            "fieldtype": "Section Break",
+            "label": "Payment Information"
+        },
+        {
+            "fieldname": "payment_entry",
+            "fieldtype": "Link",
+            "label": "Payment Entry",
+            "options": "Payment Entry",
+            "read_only": 1
+        }
+    ],
+    "is_submittable": 1,
+    "links": [],
+    "modified": "2025-04-22 03:45:57",
+    "modified_by": "dannyaudian",
+    "module": "Payroll Indonesia",
+    "name": "BPJS Payment Summary",
+    "naming_rule": "Expression",
+    "owner": "dannyaudian",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "submit": 1,
+            "write": 1,
+            "cancel": 1,
+            "amend": 1
+        },
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "HR Manager",
+            "share": 1,
+            "submit": 1,
+            "write": 1,
+            "cancel": 1,
+            "amend": 1
+        },
+        {
+            "read": 1,
+            "role": "HR User"
+        }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1,
+    "track_seen": 1
+}
