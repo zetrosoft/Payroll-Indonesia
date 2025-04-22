@@ -16,6 +16,10 @@ def after_install():
     
     # Create Salary Structures
     create_salary_structures()
+    
+    """Setup requirements after app installation"""
+    create_supplier_group()
+    create_bpjs_supplier()
 
 def create_salary_components():
     """Create required Salary Components"""
@@ -326,3 +330,41 @@ def create_salary_structures():
                 
             doc.insert(ignore_permissions=True)
             frappe.db.commit()
+
+def create_supplier_group():
+    """Create Government supplier group if not exists"""
+    if not frappe.db.exists("Supplier Group", "Government"):
+        try:
+            group = frappe.new_doc("Supplier Group")
+            group.supplier_group_name = "Government"
+            group.parent_supplier_group = "All Supplier Groups"
+            group.is_group = 0
+            group.insert()
+            frappe.db.commit()
+        except Exception:
+            frappe.log_error("Failed to create Government supplier group")
+
+def create_bpjs_supplier():
+    """Create BPJS supplier if not exists"""
+    if not frappe.db.exists("Supplier", "BPJS"):
+        try:
+            supplier = frappe.get_doc({
+                "doctype": "Supplier",
+                "supplier_name": "BPJS",
+                "supplier_group": "Government",
+                "supplier_type": "Government",
+                "country": "Indonesia",
+                "default_currency": "IDR",
+                "default_price_list": "Standard Buying",
+                "payment_terms": "",
+                "is_internal_supplier": 0,
+                "is_transporter": 0,
+                "represents_company": None,
+                "tax_category": "Government" if frappe.db.exists("Tax Category", "Government") else "",
+                "tax_withholding_category": "",
+                "docstatus": 1
+            })
+            supplier.insert()
+            frappe.db.commit()
+        except Exception:
+            frappe.log_error("Failed to create BPJS supplier")
