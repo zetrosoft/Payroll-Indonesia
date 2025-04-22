@@ -17,12 +17,24 @@ def after_install():
     # Create Salary Structures
     create_salary_structures()
     
-    """Setup requirements after app installation"""
+    # Setup additional requirements
     create_supplier_group()
     create_bpjs_supplier()
 
 def create_salary_components():
     """Create required Salary Components"""
+    # Get the default company
+    company = frappe.defaults.get_defaults().get("company")
+    if not company:
+        frappe.log_error("No default company found. Skipping salary component creation.")
+        return
+    
+    # Get company abbreviation for account naming
+    company_abbr = frappe.db.get_value("Company", company, "abbr")
+    if not company_abbr:
+        frappe.log_error(f"Company abbreviation not found for {company}. Skipping salary component creation.")
+        return
+    
     components = [
         # Earnings
         {
@@ -33,8 +45,9 @@ def create_salary_components():
             "is_tax_applicable": 1,
             "description": "Gaji Pokok Karyawan",
             "accounts": [{
-                "company": "%",
-                "default_account": "Beban Gaji Pokok - %"
+                "company": company,
+                "default_account": f"Beban Gaji Pokok - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         {
@@ -45,8 +58,9 @@ def create_salary_components():
             "is_tax_applicable": 1,
             "description": "Tunjangan Makan Karyawan",
             "accounts": [{
-                "company": "%",
-                "default_account": "Beban Tunjangan Makan - %"
+                "company": company,
+                "default_account": f"Beban Tunjangan Makan - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         {
@@ -57,8 +71,9 @@ def create_salary_components():
             "is_tax_applicable": 1,
             "description": "Tunjangan Transport Karyawan",
             "accounts": [{
-                "company": "%",
-                "default_account": "Beban Tunjangan Transport - %"
+                "company": company,
+                "default_account": f"Beban Tunjangan Transport - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         {
@@ -69,8 +84,9 @@ def create_salary_components():
             "is_tax_applicable": 1,
             "description": "Insentif Karyawan",
             "accounts": [{
-                "company": "%",
-                "default_account": "Beban Insentif - %"
+                "company": company,
+                "default_account": f"Beban Insentif - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         {
@@ -81,8 +97,9 @@ def create_salary_components():
             "is_tax_applicable": 1,
             "description": "Bonus Karyawan",
             "accounts": [{
-                "company": "%",
-                "default_account": "Beban Bonus - %"
+                "company": company,
+                "default_account": f"Beban Bonus - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         # Deductions
@@ -94,8 +111,9 @@ def create_salary_components():
             "variable_based_on_taxable_salary": 1,
             "description": "Pajak Penghasilan Pasal 21",
             "accounts": [{
-                "company": "%",
-                "default_account": "Hutang PPh 21 - %"
+                "company": company,
+                "default_account": f"Hutang PPh 21 - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         {
@@ -105,8 +123,9 @@ def create_salary_components():
             "type": "Deduction",
             "description": "BPJS Jaminan Hari Tua - Potongan Karyawan",
             "accounts": [{
-                "company": "%",
-                "default_account": "Hutang BPJS JHT - %"
+                "company": company,
+                "default_account": f"Hutang BPJS JHT - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         {
@@ -116,8 +135,9 @@ def create_salary_components():
             "type": "Deduction",
             "description": "BPJS Jaminan Pensiun - Potongan Karyawan",
             "accounts": [{
-                "company": "%",
-                "default_account": "Hutang BPJS JP - %"
+                "company": company,
+                "default_account": f"Hutang BPJS JP - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         {
@@ -127,8 +147,9 @@ def create_salary_components():
             "type": "Deduction",
             "description": "BPJS Kesehatan - Potongan Karyawan",
             "accounts": [{
-                "company": "%",
-                "default_account": "Hutang BPJS Kesehatan - %"
+                "company": company,
+                "default_account": f"Hutang BPJS Kesehatan - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         # Statistical Components (Employer Share)
@@ -140,8 +161,9 @@ def create_salary_components():
             "statistical_component": 1,
             "description": "BPJS Jaminan Hari Tua - Kontribusi Perusahaan",
             "accounts": [{
-                "company": "%",
-                "default_account": "Beban BPJS JHT - %"
+                "company": company,
+                "default_account": f"Beban BPJS JHT - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         {
@@ -152,8 +174,9 @@ def create_salary_components():
             "statistical_component": 1,
             "description": "BPJS Jaminan Pensiun - Kontribusi Perusahaan",
             "accounts": [{
-                "company": "%",
-                "default_account": "Beban BPJS JP - %"
+                "company": company,
+                "default_account": f"Beban BPJS JP - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         {
@@ -164,8 +187,9 @@ def create_salary_components():
             "statistical_component": 1,
             "description": "BPJS Jaminan Kecelakaan Kerja",
             "accounts": [{
-                "company": "%",
-                "default_account": "Beban BPJS JKK - %"
+                "company": company,
+                "default_account": f"Beban BPJS JKK - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         {
@@ -176,8 +200,9 @@ def create_salary_components():
             "statistical_component": 1,
             "description": "BPJS Jaminan Kematian",
             "accounts": [{
-                "company": "%",
-                "default_account": "Beban BPJS JKM - %"
+                "company": company,
+                "default_account": f"Beban BPJS JKM - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         },
         {
@@ -188,25 +213,33 @@ def create_salary_components():
             "statistical_component": 1,
             "description": "BPJS Kesehatan - Kontribusi Perusahaan",
             "accounts": [{
-                "company": "%",
-                "default_account": "Beban BPJS Kesehatan - %"
+                "company": company,
+                "default_account": f"Beban BPJS Kesehatan - {company_abbr}",
+                "doctype": "Salary Component Account"
             }]
         }
     ]
     
     for component in components:
         if not frappe.db.exists("Salary Component", component["salary_component"]):
-            doc = frappe.new_doc("Salary Component")
-            for key, value in component.items():
-                if key != "accounts":
-                    doc.set(key, value)
-            
-            if "accounts" in component:
-                for account in component["accounts"]:
-                    doc.append("accounts", account)
-            
-            doc.insert(ignore_permissions=True)
-            frappe.db.commit()
+            try:
+                doc = frappe.new_doc("Salary Component")
+                for key, value in component.items():
+                    if key != "accounts":
+                        doc.set(key, value)
+                
+                if "accounts" in component:
+                    for account in component["accounts"]:
+                        # Check if the account exists before adding
+                        if frappe.db.exists("Account", account["default_account"]):
+                            doc.append("accounts", account)
+                        else:
+                            frappe.log_error(f"Account {account['default_account']} not found for component {component['salary_component']}")
+                
+                doc.insert(ignore_permissions=True)
+                frappe.db.commit()
+            except Exception as e:
+                frappe.log_error(f"Error creating salary component {component['salary_component']}: {str(e)}")
 
 def create_accounts():
     """Create required Accounts"""
@@ -229,40 +262,79 @@ def create_accounts():
         {"account_name": "Hutang BPJS Kesehatan", "parent_account": "Accounts Payable", "account_type": "Payable"}
     ]
     
-    company = frappe.defaults.get_defaults().company
+    company = frappe.defaults.get_defaults().get("company")
     if not company:
+        frappe.log_error("No default company found. Skipping account creation.")
         return
         
     for account in accounts:
-        parent_account = frappe.db.get_value("Account", {
-            "account_name": account["parent_account"],
-            "company": company
-        }, "name")
-        
-        if not parent_account:
-            continue
+        try:
+            parent_account = frappe.db.get_value("Account", {
+                "account_name": account["parent_account"],
+                "company": company
+            }, "name")
             
-        account_name = account["account_name"] + " - " + frappe.db.get_value("Company", company, "abbr")
-        
-        if not frappe.db.exists("Account", account_name):
-            doc = frappe.new_doc("Account")
-            doc.account_name = account["account_name"]
-            doc.parent_account = parent_account
-            doc.account_type = account["account_type"]
-            doc.company = company
-            doc.is_group = 0
-            doc.insert(ignore_permissions=True)
-            frappe.db.commit()
+            if not parent_account:
+                frappe.log_error(f"Parent account {account['parent_account']} not found for company {company}")
+                continue
+                
+            account_name = account["account_name"] + " - " + frappe.db.get_value("Company", company, "abbr")
+            
+            if not frappe.db.exists("Account", account_name):
+                doc = frappe.new_doc("Account")
+                doc.account_name = account["account_name"]
+                doc.parent_account = parent_account
+                doc.account_type = account["account_type"]
+                doc.company = company
+                doc.is_group = 0
+                doc.insert(ignore_permissions=True)
+                frappe.db.commit()
+        except Exception as e:
+            frappe.log_error(f"Error creating account {account['account_name']}: {str(e)}")
 
 def create_salary_structures():
     """Create required Salary Structures"""
+    # Get the default company
+    company = frappe.defaults.get_defaults().get("company")
+    if not company:
+        frappe.log_error("No default company found. Skipping salary structure creation.")
+        return
+    
+    # Get company abbreviation for account naming
+    company_abbr = frappe.db.get_value("Company", company, "abbr")
+    if not company_abbr:
+        frappe.log_error(f"Company abbreviation not found for {company}. Skipping salary structure creation.")
+        return
+    
+    # Find a valid payment account
+    payment_account = None
+    
+    # Try to get default cash account
+    try:
+        payment_account = frappe.db.get_value("Account", 
+            {"account_name": "Cash", "company": company, "is_group": 0}, "name")
+    except:
+        pass
+        
+    # If not found, try to get any bank account
+    if not payment_account:
+        try:
+            payment_account = frappe.db.get_value("Account", 
+                {"account_type": "Bank", "company": company, "is_group": 0}, "name")
+        except:
+            pass
+    
+    # If still not found, use a default format
+    if not payment_account:
+        payment_account = f"Cash - {company_abbr}"
+    
     structures = [
         {
             "doctype": "Salary Structure",
             "name": "Struktur Gaji Tetap G1",
             "is_active": "Yes",
             "payroll_frequency": "Monthly",
-            "payment_account": "Cash - %",
+            "payment_account": payment_account,
             "earnings": [
                 {
                     "salary_component": "Gaji Pokok",
@@ -312,24 +384,27 @@ def create_salary_structures():
     
     for structure in structures:
         if not frappe.db.exists("Salary Structure", structure["name"]):
-            doc = frappe.new_doc("Salary Structure")
-            
-            for key, value in structure.items():
-                if key not in ["earnings", "deductions"]:
-                    doc.set(key, value)
-            
-            for earning in structure.get("earnings", []):
-                doc.append("earnings", earning)
+            try:
+                doc = frappe.new_doc("Salary Structure")
                 
-            for deduction in structure.get("deductions", []):
-                doc.append("deductions", deduction)
+                for key, value in structure.items():
+                    if key not in ["earnings", "deductions"]:
+                        doc.set(key, value)
                 
-            company = frappe.defaults.get_defaults().company
-            if company:
+                for earning in structure.get("earnings", []):
+                    if frappe.db.exists("Salary Component", earning["salary_component"]):
+                        doc.append("earnings", earning)
+                    
+                for deduction in structure.get("deductions", []):
+                    if frappe.db.exists("Salary Component", deduction["salary_component"]):
+                        doc.append("deductions", deduction)
+                
                 doc.company = company
-                
-            doc.insert(ignore_permissions=True)
-            frappe.db.commit()
+                    
+                doc.insert(ignore_permissions=True)
+                frappe.db.commit()
+            except Exception as e:
+                frappe.log_error(f"Error creating salary structure {structure['name']}: {str(e)}")
 
 def create_supplier_group():
     """Create Government supplier group if not exists"""
@@ -341,8 +416,8 @@ def create_supplier_group():
             group.is_group = 0
             group.insert()
             frappe.db.commit()
-        except Exception:
-            frappe.log_error("Failed to create Government supplier group")
+        except Exception as e:
+            frappe.log_error(f"Failed to create Government supplier group: {str(e)}")
 
 def create_bpjs_supplier():
     """Create BPJS supplier if not exists"""
@@ -366,5 +441,5 @@ def create_bpjs_supplier():
             })
             supplier.insert()
             frappe.db.commit()
-        except Exception:
-            frappe.log_error("Failed to create BPJS supplier")
+        except Exception as e:
+            frappe.log_error(f"Failed to create BPJS supplier: {str(e)}")
