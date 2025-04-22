@@ -139,15 +139,29 @@ fixtures = [
                 "Employee-jabatan",
                 "Employee-status_pajak",
                 "Employee-jumlah_tanggungan",
+                "Employee-npwp_section",
                 "Employee-npwp",
                 "Employee-npwp_suami",
                 "Employee-npwp_gabung_suami",
-                "Employee-bpjs_col",
+                "Employee-bpjs_section",
                 "Employee-ikut_bpjs_kesehatan",
                 "Employee-ikut_bpjs_ketenagakerjaan",
+                "Employee-employment_details_section",
                 "Employee-tipe_karyawan",
                 "Employee-penghasilan_final"
             ]]
+        ]
+    },
+    {
+        "dt": "Client Script",
+        "filters": [
+            ["dt", "=", "Employee"]
+        ]
+    },
+    {
+        "dt": "Property Setter",
+        "filters": [
+            ["doc_type", "=", "Employee"]
         ]
     },
     {
