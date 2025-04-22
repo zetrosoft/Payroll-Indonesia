@@ -38,9 +38,14 @@ required_apps = ["erpnext"]
 # include js in doctype views
 doctype_js = {
     "Employee": "public/js/employee.js",
-    "Salary Slip": "public/js/salary_slip.js"
+    "Salary Slip": "public/js/salary_slip.js",
+    "PPh TER Table": "public/js/pph_ter_table.js"  # Add this line
 }
 
+# Add list view JavaScript configuration
+doctype_list_js = {
+    "PPh TER Table": "public/js/pph_ter_table_list.js"  # Add this line
+}
 # doctype_list_js = {"doctype": "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype": "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype": "public/js/doctype_calendar.js"}
@@ -218,6 +223,13 @@ fixtures = [
                 "Hutang BPJS JP - %",
                 "Hutang BPJS Kesehatan - %"
             ]]
+        ]
+    },
+    {
+        "dt": "PPh TER Table",
+        "filters": [
+            ["modified", ">", "2025-04-22 03:37:44"],  # Current timestamp
+            ["owner", "=", "dannyaudian"]  # Current user
         ]
     }
 ]
