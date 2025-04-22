@@ -46,10 +46,12 @@ doc_events = {
 
 # Fixtures
 fixtures = [
+    # Custom Fields
     {
         "dt": "Custom Field",
         "filters": [
             ["name", "in", [
+                # Employee Custom Fields
                 "Employee-payroll_indonesia_section",
                 "Employee-golongan",
                 "Employee-jabatan",
@@ -64,22 +66,32 @@ fixtures = [
                 "Employee-ikut_bpjs_ketenagakerjaan",
                 "Employee-employment_details_section",
                 "Employee-tipe_karyawan",
-                "Employee-penghasilan_final"
+                "Employee-penghasilan_final",
+                
+                # Salary Slip Custom Fields
+                "Salary Slip-payroll_indonesia_section",
+                "Salary Slip-is_final_gabung_suami",
+                "Salary Slip-koreksi_pph21",
+                "Salary Slip-payroll_note"
             ]]
         ]
     },
+    
+    # Scripts and Settings
     {
         "dt": "Client Script",
         "filters": [
-            ["dt", "=", "Employee"]
+            ["dt", "in", ["Employee", "Salary Slip"]]
         ]
     },
     {
         "dt": "Property Setter",
         "filters": [
-            ["doc_type", "=", "Employee"]
+            ["doc_type", "in", ["Employee", "Salary Slip"]]
         ]
     },
+    
+    # Salary Components
     {
         "dt": "Salary Component",
         "filters": [
@@ -104,6 +116,8 @@ fixtures = [
             ]]
         ]
     },
+    
+    # Salary Structure
     {
         "dt": "Salary Structure",
         "filters": [
@@ -113,6 +127,8 @@ fixtures = [
             ]]
         ]
     },
+    
+    # Accounts
     {
         "dt": "Account",
         "filters": [
@@ -136,6 +152,7 @@ fixtures = [
             ]]
         ]
     },
+    
     # Core DocTypes
     {
         "dt": "PPh TER Table"
@@ -143,6 +160,7 @@ fixtures = [
     {
         "dt": "BPJS Payment Summary"
     },
+    
     # Master Data
     {
         "dt": "Supplier Group",
