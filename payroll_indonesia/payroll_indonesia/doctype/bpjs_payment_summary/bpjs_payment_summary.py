@@ -5,7 +5,16 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import today, flt, get_formatted_currency
+from frappe.utils import today, flt, fmt_money
+
+# Define custom formatter to replace missing get_formatted_currency
+def get_formatted_currency(value, company=None):
+    """Format currency value based on company settings"""
+    if company:
+        currency = frappe.get_cached_value('Company', company, 'default_currency')
+    else:
+        currency = frappe.db.get_default("currency")
+    return fmt_money(value, currency=currency)
 
 class BPJSPaymentSummary(Document):
     def validate(self):
