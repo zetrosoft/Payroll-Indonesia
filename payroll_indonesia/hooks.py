@@ -172,11 +172,16 @@ fixtures = [
                 "Tunjangan Makan",
                 "Tunjangan Transport",
                 "Insentif",
-                "BPJS Kesehatan",
-                "BPJS TK",
+                "Bonus",
                 "PPh 21",
-                "PPh 21 Correction",
-                "Biaya Jabatan"
+                "BPJS JHT Employee",
+                "BPJS JP Employee",
+                "BPJS Kesehatan Employee",
+                "BPJS JHT Employer",
+                "BPJS JP Employer",
+                "BPJS JKK",
+                "BPJS JKM",
+                "BPJS Kesehatan Employer"
             ]]
         ]
     },
