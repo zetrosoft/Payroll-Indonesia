@@ -1,0 +1,32 @@
+[
+    {
+        "doctype": "Supplier",
+        "filters": [
+            ["supplier_name", "=", "BPJS"]
+        ],
+        "ref_doctype": "Supplier",
+        "is_single": 0,
+        "print_least_columns": 1,
+        "data": [
+            {
+                "doctype": "Supplier",
+                "name": "BPJS",
+                "owner": "dannyaudian",
+                "creation": "2025-04-22 03:53:56",
+                "modified": "2025-04-22 03:53:56",
+                "modified_by": "dannyaudian",
+                "supplier_name": "BPJS",
+                "country": "Indonesia",
+                "default_currency": "IDR",
+                "supplier_group": "Government",
+                "supplier_type": "Government",
+                "language": "en",
+                "is_frozen": 0,
+                "disabled": 0,
+                "is_internal_supplier": 0,
+                "is_transporter": 0,
+                "docstatus": 1
+            }
+        ]
+    }
+]
