@@ -18,12 +18,14 @@ required_apps = ["erpnext"]
 doctype_js = {
     "Employee": "public/js/employee.js",
     "Salary Slip": "public/js/salary_slip.js",
-    "PPh TER Table": "public/js/pph_ter_table.js"  # Added for PPh TER Table
+    "PPh TER Table": "public/js/pph_ter_table.js",
+    "BPJS Payment Summary": "public/js/bpjs_payment_summary.js"  # Added for BPJS Payment Summary
 }
 
 # List view customizations
 doctype_list_js = {
-    "PPh TER Table": "public/js/pph_ter_table_list.js"  # Added for PPh TER Table list view
+    "PPh TER Table": "public/js/pph_ter_table_list.js",
+    "BPJS Payment Summary": "public/js/bpjs_payment_summary_list.js"  # Added for BPJS Payment Summary list view
 }
 
 # Installation
@@ -135,10 +137,17 @@ fixtures = [
         ]
     },
     {
-        "dt": "PPh TER Table",  # Added PPh TER Table fixture
+        "dt": "PPh TER Table",
         "filters": [
-            ["modified", ">", "2025-04-22 03:39:27"],  # Current timestamp
-            ["owner", "=", "dannyaudian"]  # Current user
+            ["modified", ">", "2025-04-22 03:49:50"],  # Updated timestamp
+            ["owner", "=", "dannyaudian"]
+        ]
+    },
+    {
+        "dt": "BPJS Payment Summary",  # Added BPJS Payment Summary fixture
+        "filters": [
+            ["modified", ">", "2025-04-22 03:49:50"],  # Updated timestamp
+            ["owner", "=", "dannyaudian"]
         ]
     }
 ]
