@@ -3,7 +3,6 @@
 # For license information, please see license.txt
 
 from __future__ import unicode_literals
-import frappe
 
 app_name = "payroll_indonesia"
 app_title = "Payroll Indonesia"
@@ -12,9 +11,9 @@ app_description = "Payroll module for Indonesian companies with local regulatory
 app_email = "dannyaudian@example.com"
 app_license = "GPL-3"
 app_version = "0.0.1"
-required_apps = ["erpnext"]
+required_apps = ["erpnext", "hrms"]
 
-# include js in doctype views
+# JS files for doctypes
 doctype_js = {
     "Employee": "public/js/employee.js",
     "Salary Slip": "public/js/salary_slip.js",
@@ -22,7 +21,7 @@ doctype_js = {
     "BPJS Payment Summary": "public/js/bpjs_payment_summary.js"
 }
 
-# List view customizations
+# List view JS 
 doctype_list_js = {
     "PPh TER Table": "public/js/pph_ter_table_list.js",
     "BPJS Payment Summary": "public/js/bpjs_payment_summary_list.js"
@@ -31,7 +30,7 @@ doctype_list_js = {
 # Installation
 after_install = "payroll_indonesia.fixtures.setup.after_install"
 
-# DocType Class
+# DocType Class Override
 override_doctype_class = {
     "Salary Slip": "payroll_indonesia.override.salary_slip.CustomSalarySlip"
 }
@@ -44,25 +43,46 @@ doc_events = {
     }
 }
 
-# Fixtures
+# DocTypes to be created by the app
+doctype_list = [
+    # Settings
+    "BPJS Settings",
+    "PPh 21 Settings",
+    
+    # Master DocTypes
+    "Golongan",
+    "Jabatan",
+    
+    # Transaction DocTypes
+    "BPJS Payment Summary",
+    "PPh TER Table",
+    
+    # Child Tables
+    "BPJS Payment Summary Detail",
+    "BPJS Payment Account Detail",
+    "PPh TER Detail",
+    "PPh TER Account Detail",
+    "PPh 21 Tax Bracket"
+]
+
+# Fixtures (simplified and grouped)
 fixtures = [
-    "Custom Field",
+    # Custom UI Elements
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["dt", "=", "Employee"],
+            ["module", "=", "Payroll Indonesia"]
+        ]
+    },
     "Client Script",
     {
         "dt": "Property Setter",
         "filters": [
-            ["doc_type", "=", "Employee"],
-            ["name", "in", [
-                "Employee-payroll_indonesia_section-insert_after",
-                "Employee-employment_type-hidden",
-                "Employee-grade-hidden",
-                "Employee-jabatan-insert_after"
-            ]]
+            ["doc_type", "=", "Employee"]
         ]
     },
-    # Core DocTypes
-    "PPh TER Table",
-    "BPJS Payment Summary",
+    
     # Master Data
     {
         "dt": "Supplier Group",
@@ -75,21 +95,43 @@ fixtures = [
         "filters": [
             ["name", "=", "Government"]
         ]
+    },
+    
+    # Salary Components and Structure
+    {
+        "dt": "Salary Component",
+        "filters": [
+            ["name", "in", [
+                "Gaji Pokok", "Tunjangan Makan", "Tunjangan Transport", 
+                "Insentif", "Bonus", "PPh 21",
+                "BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee",
+                "BPJS JHT Employer", "BPJS JP Employer", "BPJS JKK",
+                "BPJS JKM", "BPJS Kesehatan Employer"
+            ]]
+        ]
+    },
+    {
+        "dt": "Salary Structure",
+        "filters": [
+            ["name", "=", "Struktur Gaji Tetap G1"]
+        ]
+    },
+    
+    # Workspace
+    {
+        "dt": "Workspace",
+        "filters": [
+            ["name", "=", "Payroll Indonesia"]
+        ]
     }
 ]
 
-# Default configuration values
-default_mail_footer = """
-<div style="padding: 7px; text-align: center;">
-    <p>Powered by <a href="https://erpnext.com" target="_blank">ERPNext</a> & Payroll Indonesia</p>
-</div>
-"""
-
-# Additional jinja environment globals
+# Jinja template methods
 jinja = {
     "methods": [
         "payroll_indonesia.payroll_indonesia.utils.get_bpjs_settings",
-        "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings"
+        "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings",
+        "payroll_indonesia.payroll_indonesia.utils.calculate_bpjs_contributions"
     ]
 }
 
