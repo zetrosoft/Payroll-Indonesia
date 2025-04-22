@@ -40,39 +40,20 @@ doc_events = {
     "Employee": {
         "validate": "payroll_indonesia.override.employee.validate",
         "on_update": "payroll_indonesia.override.employee.on_update"
+    },
+    "Salary Slip": {
+        "validate": "payroll_indonesia.override.salary_slip.validate_salary_slip",
+        "on_submit": "payroll_indonesia.override.salary_slip.on_submit_salary_slip"
     }
 }
 
-# DocTypes to be created by the app
-doctype_list = [
-    # Settings
-    "BPJS Settings",
-    "PPh 21 Settings",
-    
-    # Master DocTypes
-    "Golongan",
-    "Jabatan",
-    
-    # Transaction DocTypes
-    "BPJS Payment Summary",
-    "PPh TER Table",
-    
-    # Child Tables
-    "BPJS Payment Summary Detail",
-    "BPJS Payment Account Detail",
-    "PPh TER Detail",
-    "PPh TER Account Detail",
-    "PPh 21 Tax Bracket"
-]
-
-# Fixtures (simplified and grouped)
+# Fixtures (organized by load order)
 fixtures = [
-    # Custom UI Elements
+    # Basic Setup
     {
         "dt": "Custom Field",
         "filters": [
-            ["dt", "=", "Employee"],
-            ["module", "=", "Payroll Indonesia"]
+            ["dt", "=", "Employee"]
         ]
     },
     "Client Script",
@@ -83,11 +64,19 @@ fixtures = [
         ]
     },
     
-    # Master Data
+    # Master Data - First Level (Groups)
     {
         "dt": "Supplier Group",
         "filters": [
             ["supplier_group_name", "=", "Government"]
+        ]
+    },
+    
+    # Master Data - Second Level (Dependent Items)
+    {
+        "dt": "Supplier",
+        "filters": [
+            ["name", "=", "BPJS"]
         ]
     },
     {
@@ -97,7 +86,16 @@ fixtures = [
         ]
     },
     
-    # Salary Components and Structure
+    # Payroll Indonesia Settings
+    "BPJS Settings",
+    "PPh 21 Settings",
+    "PPh 21 Tax Bracket",
+    
+    # Master Data - Payroll
+    "Golongan",
+    "Jabatan",
+    
+    # Salary Components (need to load before structure)
     {
         "dt": "Salary Component",
         "filters": [
@@ -110,6 +108,8 @@ fixtures = [
             ]]
         ]
     },
+    
+    # Salary Structure (loads after components)
     {
         "dt": "Salary Structure",
         "filters": [
@@ -117,13 +117,39 @@ fixtures = [
         ]
     },
     
-    # Workspace
+    # Transaction DocTypes
+    "BPJS Payment Summary",
+    "BPJS Payment Summary Detail",
+    "BPJS Payment Account Detail",
+    "PPh TER Table",
+    "PPh TER Detail",
+    "PPh TER Account Detail",
+    
+    # Workspace & Reports
     {
         "dt": "Workspace",
         "filters": [
             ["name", "=", "Payroll Indonesia"]
         ]
     }
+]
+
+# Control fixture loading order
+fixtures_import_order = [
+    "Supplier Group",
+    "Supplier",
+    "Tax Category",
+    "BPJS Settings",
+    "PPh 21 Settings",
+    "PPh 21 Tax Bracket",
+    "Golongan",
+    "Jabatan",
+    "Salary Component",
+    "Salary Structure",
+    "Custom Field",
+    "Property Setter",
+    "Client Script",
+    "Workspace"
 ]
 
 # Jinja template methods
@@ -143,3 +169,26 @@ regional_overrides = {
         }
     }
 }
+
+# Module Export Config
+export_python_type_annotations = True
+
+# Document title fields for better navigation
+get_title = {
+    "BPJS Payment Summary": "month_year_title",
+    "PPh TER Table": "month_year_title"
+}
+
+# Module Category - for Desk
+module_categories = {
+    "Payroll Indonesia": "Accounting"
+}
+
+# Document States
+states_in_transaction = {
+    "BPJS Payment Summary": ["Draft", "Submitted", "Paid", "Cancelled"],
+    "PPh TER Table": ["Draft", "Submitted", "Paid", "Cancelled"]
+}
+
+# Last modified timestamp: 2025-04-22 13:53:36
+# Updated by: dannyaudian

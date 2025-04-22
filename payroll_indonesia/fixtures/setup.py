@@ -14,7 +14,7 @@ def after_install():
     
     # Setup additional requirements
     create_supplier_group()
-    create_bpjs_supplier()
+    # Removing create_bpjs_supplier() since it's now handled by fixture
     
     # Setup Settings
     setup_settings()
@@ -83,22 +83,4 @@ def create_supplier_group():
         except Exception as e:
             frappe.log_error(f"Failed to create Government supplier group: {str(e)}")
 
-def create_bpjs_supplier():
-    """Create BPJS supplier if not exists"""
-    if not frappe.db.exists("Supplier", "BPJS"):
-        try:
-            supplier = frappe.get_doc({
-                "doctype": "Supplier",
-                "supplier_name": "BPJS",
-                "supplier_group": "Government",
-                "supplier_type": "Company",
-                "country": "Indonesia",
-                "default_currency": "IDR",
-                "is_internal_supplier": 0,
-                "is_transporter": 0,
-                "docstatus": 1
-            })
-            supplier.insert()
-            frappe.db.commit()
-        except Exception as e:
-            frappe.log_error(f"Failed to create BPJS supplier: {str(e)}")
+# Removed create_bpjs_supplier() function as it's now handled by fixtures
