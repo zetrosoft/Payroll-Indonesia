@@ -42,8 +42,8 @@ doc_events = {
         "on_update": "payroll_indonesia.override.employee.on_update"
     },
     "Salary Slip": {
-        "validate": "payroll_indonesia.override.salary_slip.validate_salary_slip",
-        "on_submit": "payroll_indonesia.override.salary_slip.on_submit_salary_slip"
+        "validate": "payroll_indonesia.override.salary_slip_functions.validate_salary_slip",
+        "on_submit": "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip"
     }
 }
 
@@ -181,7 +181,7 @@ get_title = {
 
 # Module Category - for Desk
 module_categories = {
-    "Payroll Indonesia": "Accounting"
+    "Payroll Indonesia": "Human Resources"
 }
 
 # Document States
@@ -190,5 +190,5 @@ states_in_transaction = {
     "PPh TER Table": ["Draft", "Submitted", "Paid", "Cancelled"]
 }
 
-# Last modified timestamp: 2025-04-22 13:53:36
+# Last modified timestamp: 2025-04-23 10:54:53
 # Updated by: dannyaudian
