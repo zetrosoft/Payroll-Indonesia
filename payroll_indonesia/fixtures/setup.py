@@ -101,73 +101,67 @@ def setup_pph21_defaults():
     Sets up the income tax settings with default PTKP values and tax brackets
     according to Indonesian tax regulations
     """
-    # Check if PPh 21 Settings already exists
-    if not frappe.db.exists("PPh 21 Settings", "PPh 21 Settings"):
-        # Create new PPh 21 Settings
-        settings = frappe.new_doc("PPh 21 Settings")
-        settings.calculation_method = "Progressive"
-        settings.use_ter = 0
-        
-        # Add default PTKP values (sesuai peraturan terbaru)
-        ptkp_values = {
-            "TK0": 54000000,  # tidak kawin, 0 tanggungan
-            "TK1": 58500000,  # tidak kawin, 1 tanggungan
-            "TK2": 63000000,  # tidak kawin, 2 tanggungan
-            "TK3": 67500000,  # tidak kawin, 3 tanggungan
-            "K0": 58500000,   # kawin, 0 tanggungan
-            "K1": 63000000,   # kawin, 1 tanggungan
-            "K2": 67500000,   # kawin, 2 tanggungan
-            "K3": 72000000,   # kawin, 3 tanggungan
-            "HB0": 112500000, # kawin penghasilan istri digabung, 0 tanggungan
-            "HB1": 117000000, # kawin penghasilan istri digabung, 1 tanggungan
-            "HB2": 121500000, # kawin penghasilan istri digabung, 2 tanggungan
-            "HB3": 126000000  # kawin penghasilan istri digabung, 3 tanggungan
-        }
-        
-        # Add each PTKP value to the settings
-        for status, amount in ptkp_values.items():
-            ptkp_row = settings.append("ptkp_table")
-            ptkp_row.status_pajak = status
-            ptkp_row.ptkp_amount = amount
+    try:
+        # Check if PPh 21 Settings already exists
+        if not frappe.db.exists("DocType", "PPh 21 Settings"):
+            frappe.throw("DocType 'PPh 21 Settings' tidak ditemukan. Pastikan DocType sudah diinstall dengan benar.")
             
-            # Add description for better readability
-            if status.startswith("TK"):
-                tanggungan = status[2:]
-                ptkp_row.description = f"Tidak Kawin, {tanggungan} Tanggungan"
-            elif status.startswith("K"):
-                tanggungan = status[1:]
-                ptkp_row.description = f"Kawin, {tanggungan} Tanggungan"
-            elif status.startswith("HB"):
-                tanggungan = status[2:]
-                ptkp_row.description = f"Kawin (Penghasilan Istri Digabung), {tanggungan} Tanggungan"
-        
-        # Add default tax brackets (pasal 17 UU PPh)
-        brackets = [
-            {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
-            {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
-            {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
-            {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
-            {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
-        ]
-        
-        # Add each tax bracket to the settings
-        for bracket in brackets:
-            bracket_row = settings.append("bracket_table")
-            bracket_row.income_from = bracket["income_from"]
-            bracket_row.income_to = bracket["income_to"]
-            bracket_row.tax_rate = bracket["tax_rate"]
-        
-        settings.save()
-        frappe.db.commit()
-        
-        frappe.msgprint("Setup PPh 21 Settings completed successfully")
-    else:
-        # Settings exist but check if bracket table is populated
-        settings = frappe.get_doc("PPh 21 Settings", "PPh 21 Settings")
-        
-        # Check if bracket_table exists and has data
-        if len(settings.get("bracket_table", [])) == 0:
-            # Add default tax brackets
+        if not frappe.db.exists("PPh 21 Settings", "PPh 21 Settings"):
+            # Create new PPh 21 Settings
+            settings = frappe.new_doc("PPh 21 Settings")
+            settings.doctype = "PPh 21 Settings"  # Explicitly set doctype
+            settings.calculation_method = "Progressive"
+            settings.use_ter = 0
+            
+            # Check if child tables exist in doctype definition
+            doctype = frappe.get_doc("DocType", "PPh 21 Settings")
+            has_ptkp_table = any(table.fieldname == "ptkp_table" for table in doctype.get("fields", []) if table.fieldtype == "Table")
+            has_bracket_table = any(table.fieldname == "bracket_table" for table in doctype.get("fields", []) if table.fieldtype == "Table")
+            
+            if not has_ptkp_table:
+                frappe.throw("Child table 'ptkp_table' tidak ditemukan dalam DocType 'PPh 21 Settings'")
+            
+            if not has_bracket_table:
+                frappe.throw("Child table 'bracket_table' tidak ditemukan dalam DocType 'PPh 21 Settings'")
+            
+            # Add default PTKP values (sesuai peraturan terbaru)
+            ptkp_values = {
+                "TK0": 54000000,  # tidak kawin, 0 tanggungan
+                "TK1": 58500000,  # tidak kawin, 1 tanggungan
+                "TK2": 63000000,  # tidak kawin, 2 tanggungan
+                "TK3": 67500000,  # tidak kawin, 3 tanggungan
+                "K0": 58500000,   # kawin, 0 tanggungan
+                "K1": 63000000,   # kawin, 1 tanggungan
+                "K2": 67500000,   # kawin, 2 tanggungan
+                "K3": 72000000,   # kawin, 3 tanggungan
+                "HB0": 112500000, # kawin penghasilan istri digabung, 0 tanggungan
+                "HB1": 117000000, # kawin penghasilan istri digabung, 1 tanggungan
+                "HB2": 121500000, # kawin penghasilan istri digabung, 2 tanggungan
+                "HB3": 126000000  # kawin penghasilan istri digabung, 3 tanggungan
+            }
+            
+            # Add each PTKP value to the settings
+            for status, amount in ptkp_values.items():
+                try:
+                    ptkp_row = settings.append("ptkp_table")
+                    ptkp_row.status_pajak = status
+                    ptkp_row.ptkp_amount = amount
+                    
+                    # Add description for better readability
+                    if status.startswith("TK"):
+                        tanggungan = status[2:]
+                        ptkp_row.description = f"Tidak Kawin, {tanggungan} Tanggungan"
+                    elif status.startswith("K"):
+                        tanggungan = status[1:]
+                        ptkp_row.description = f"Kawin, {tanggungan} Tanggungan"
+                    elif status.startswith("HB"):
+                        tanggungan = status[2:]
+                        ptkp_row.description = f"Kawin (Penghasilan Istri Digabung), {tanggungan} Tanggungan"
+                except Exception as e:
+                    frappe.log_error(f"Error adding PTKP row: {str(e)}")
+                    raise
+            
+            # Add default tax brackets (pasal 17 UU PPh)
             brackets = [
                 {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
                 {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
@@ -176,15 +170,49 @@ def setup_pph21_defaults():
                 {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
             ]
             
+            # Add each tax bracket to the settings
             for bracket in brackets:
-                bracket_row = settings.append("bracket_table")
-                bracket_row.income_from = bracket["income_from"]
-                bracket_row.income_to = bracket["income_to"]
-                bracket_row.tax_rate = bracket["tax_rate"]
+                try:
+                    bracket_row = settings.append("bracket_table")
+                    bracket_row.income_from = bracket["income_from"]
+                    bracket_row.income_to = bracket["income_to"]
+                    bracket_row.tax_rate = bracket["tax_rate"]
+                except Exception as e:
+                    frappe.log_error(f"Error adding bracket row: {str(e)}")
+                    raise
             
-            settings.save()
-            frappe.db.commit()
-            frappe.msgprint("Added default tax brackets to PPh 21 Settings")
+            try:
+                settings.insert(ignore_permissions=True)  # Use insert instead of save for new doc
+                frappe.db.commit()
+                frappe.msgprint("Setup PPh 21 Settings completed successfully")
+            except Exception as e:
+                frappe.log_error(f"Error saving PPh 21 Settings: {str(e)}")
+                raise
+        else:
+            # Settings exist but check if bracket table is populated
+            settings = frappe.get_doc("PPh 21 Settings", "PPh 21 Settings")
+            
+            # Check if tables are empty and need to be populated
+            if hasattr(settings, 'bracket_table') and len(settings.bracket_table) == 0:
+                # Brackets empty, populate defaults
+                brackets = [
+                    {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
+                    {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
+                    {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
+                    {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
+                    {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
+                ]
+                
+                for bracket in brackets:
+                    settings.append("bracket_table", bracket)
+                
+                settings.save()
+                frappe.db.commit()
+                frappe.msgprint("Added default tax brackets to PPh 21 Settings")
+    
+    except Exception as e:
+        frappe.log_error(f"Error in setup_pph21_defaults: {str(e)}")
+        frappe.throw(f"Error setting up PPh 21 Settings: {str(e)}")
 
 def setup_pph21_ter():
     """Setup default TER rates based on PMK 168/2023
