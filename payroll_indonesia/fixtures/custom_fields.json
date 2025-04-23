@@ -10,7 +10,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-payroll_indonesia_section",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "collapsible": 1,
     "print_hide": 0,
     "translatable": 0
@@ -27,7 +27,7 @@
     "module": "Payroll Indonesia",
     "name": "Employee-golongan",
     "options": "Golongan",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "print_hide": 0,
     "in_list_view": 1,
     "in_standard_filter": 1,
@@ -48,7 +48,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-col_break_payroll_id",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "print_hide": 0
   },
   {
@@ -63,7 +63,7 @@
     "module": "Payroll Indonesia",
     "name": "Employee-jabatan",
     "options": "Jabatan",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "print_hide": 0,
     "translatable": 0
   },
@@ -79,7 +79,7 @@
     "module": "Payroll Indonesia",
     "name": "Employee-status_pajak",
     "options": "TK0\nTK1\nTK2\nTK3\nK0\nK1\nK2\nK3\nHB0\nHB1\nHB2\nHB3",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "print_hide": 0,
     "translatable": 0
   },
@@ -94,7 +94,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-jumlah_tanggungan",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "print_hide": 0,
     "read_only": 1,
     "translatable": 0
@@ -110,7 +110,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-npwp_section",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "collapsible": 0,
     "print_hide": 0,
     "translatable": 0
@@ -126,7 +126,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-npwp",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "print_hide": 0,
     "translatable": 0
   },
@@ -141,7 +141,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-npwp_suami",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "depends_on": "eval:doc.gender=='Female'",
     "print_hide": 0,
     "translatable": 0
@@ -157,7 +157,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-npwp_gabung_suami",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "depends_on": "eval:doc.gender=='Female'",
     "default": "0",
     "print_hide": 0,
@@ -174,7 +174,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-bpjs_section",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "collapsible": 0,
     "print_hide": 0,
     "translatable": 0
@@ -190,7 +190,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-ikut_bpjs_kesehatan",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "default": "1",
     "print_hide": 0,
     "translatable": 0
@@ -206,7 +206,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-ikut_bpjs_ketenagakerjaan",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "default": "1",
     "print_hide": 0,
     "translatable": 0
@@ -222,7 +222,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-employment_details_section",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "collapsible": 0,
     "print_hide": 0,
     "translatable": 0
@@ -239,7 +239,7 @@
     "module": "Payroll Indonesia",
     "name": "Employee-tipe_karyawan",
     "options": "Tetap\nTidak Tetap\nFreelance",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "print_hide": 0,
     "translatable": 0
   },
@@ -254,7 +254,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Employee-penghasilan_final",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "default": "0",
     "print_hide": 0,
     "translatable": 0
@@ -270,7 +270,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-payroll_indo_section",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "collapsible": 1,
     "print_hide": 0,
     "translatable": 0
@@ -286,7 +286,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-is_final_gabung_suami",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "default": "0",
     "read_only": 1,
     "print_hide": 0,
@@ -303,7 +303,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-is_using_ter",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "read_only": 1,
     "default": "0",
     "print_hide": 0,
@@ -320,7 +320,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-tax_col_break",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "print_hide": 0
   },
   {
@@ -334,7 +334,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-koreksi_pph21",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "read_only": 1,
     "print_hide": 0,
     "translatable": 0
@@ -350,7 +350,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-ter_rate",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "read_only": 1,
     "precision": 2,
     "print_hide": 0,
@@ -368,7 +368,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-tax_details_section",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "print_hide": 0,
     "translatable": 0
   },
@@ -383,7 +383,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-biaya_jabatan",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "read_only": 1,
     "print_hide": 0,
     "translatable": 0
@@ -399,7 +399,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-netto",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "read_only": 1,
     "print_hide": 0,
     "translatable": 0
@@ -415,7 +415,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-details_col_break",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "print_hide": 0
   },
   {
@@ -429,7 +429,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-total_bpjs",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "read_only": 1,
     "print_hide": 0,
     "translatable": 0
@@ -445,7 +445,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-payroll_note_section",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "print_hide": 0,
     "translatable": 0
   },
@@ -460,7 +460,7 @@
     "modified": "2025-04-23 12:53:08",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-payroll_note",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "read_only": 1,
     "print_hide": 0,
     "translatable": 0

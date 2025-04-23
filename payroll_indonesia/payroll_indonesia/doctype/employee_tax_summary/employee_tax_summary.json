@@ -77,11 +77,11 @@
         }
     ],
     "modified": "2025-04-23 11:40:25.000000",
-    "modified_by": "dannyaudian",
+    "modified_by": "Administrator",
     "module": "Payroll Indonesia",
     "name": "Employee Tax Summary",
     "naming_rule": "Random",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "permissions": [
         {
             "create": 1,

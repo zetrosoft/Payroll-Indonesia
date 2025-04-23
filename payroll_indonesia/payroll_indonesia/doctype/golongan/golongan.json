@@ -39,11 +39,11 @@
   "index_web_pages_for_search": 1,
   "links": [],
   "modified": "2025-04-22 03:08:59.000000",
-  "modified_by": "dannyaudian",
+  "modified_by": "Administrator",
   "module": "Payroll Indonesia",
   "name": "Golongan",
   "naming_rule": "By fieldname",
-  "owner": "dannyaudian",
+  "owner": "Administrator",
   "permissions": [
     {
       "create": 1,

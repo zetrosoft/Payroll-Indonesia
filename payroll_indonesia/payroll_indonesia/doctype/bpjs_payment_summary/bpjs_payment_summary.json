@@ -103,11 +103,11 @@
     "is_submittable": 1,
     "links": [],
     "modified": "2025-04-22 03:45:57",
-    "modified_by": "dannyaudian",
+    "modified_by": "Administrator",
     "module": "Payroll Indonesia",
     "name": "BPJS Payment Summary",
     "naming_rule": "Expression",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "permissions": [
         {
             "create": 1,

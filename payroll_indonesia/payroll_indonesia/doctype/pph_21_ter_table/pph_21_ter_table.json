@@ -59,11 +59,11 @@
     ],
     "links": [],
     "modified": "2025-04-23 12:17:47",
-    "modified_by": "dannyaudian",
+    "modified_by": "Administrator",
     "module": "Payroll Indonesia",
     "name": "PPh 21 TER Table",
     "naming_rule": "Expression",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "permissions": [
         {
             "create": 1,

@@ -77,10 +77,10 @@
         }
     ],
     "modified": "2025-04-23 12:35:23",
-    "modified_by": "dannyaudian",
+    "modified_by": "Administrator",
     "module": "Payroll Indonesia",
     "name": "PPh 21 Settings",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "permissions": [
         {
             "create": 1,

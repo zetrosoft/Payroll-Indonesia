@@ -121,10 +121,10 @@
     "issingle": 1,
     "links": [],
     "modified": "2025-04-23 13:08:02",
-    "modified_by": "dannyaudian",
+    "modified_by": "Administrator",
     "module": "Payroll Indonesia",
     "name": "BPJS Settings",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "permissions": [
       {
         "create": 1,

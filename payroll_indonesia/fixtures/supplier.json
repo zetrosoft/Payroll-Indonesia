@@ -2,10 +2,10 @@
   {
     "doctype": "Supplier",
     "name": "BPJS",
-    "owner": "dannyaudian",
+    "owner": "Administrator",
     "creation": "2025-04-22 03:53:56",
     "modified": "2025-04-22 03:53:56", 
-    "modified_by": "dannyaudian",
+    "modified_by": "Administrator",
     "supplier_name": "BPJS",
     "country": "Indonesia",
     "default_currency": "IDR",

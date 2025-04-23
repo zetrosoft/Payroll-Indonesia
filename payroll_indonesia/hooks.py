@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (c) 2025, Danny Audian and contributors
+# Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
 # Last modified: 2025-04-23 13:11:33 by dannyaudian
 
@@ -7,9 +7,9 @@ from __future__ import unicode_literals
 
 app_name = "payroll_indonesia"
 app_title = "Payroll Indonesia"
-app_publisher = "Danny Audian"
+app_publisher = "PT. Innovasi Terbaik Bangsa"
 app_description = "Payroll module for Indonesian companies with local regulatory features"
-app_email = "dannyaudian@example.com"
+app_email = "danny.a.pratama@cao-group.co.id"
 app_license = "GPL-3"
 app_version = "0.0.1"
 required_apps = ["erpnext", "hrms"]
