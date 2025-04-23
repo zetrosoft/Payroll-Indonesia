@@ -1,209 +1,209 @@
 {
   "charts": [],
   "content": [
-   {
-    "type": "header",
-    "data": {
-     "text": "Payroll Indonesia",
-     "level": 1
-    }
-   },
-   {
-    "type": "paragraph",
-    "data": {
-     "text": "Sistem Penggajian Indonesia dengan Perhitungan BPJS dan PPh 21 (TER dan Progresif)"
-    }
-   },
-   {
-    "type": "section",
-    "data": {
-     "title": "Master Data",
-     "items": [
-      {
-       "type": "link",
-       "data": {
-        "label": "Employee",
-        "name": "Employee",
-        "doctype": "Employee"
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "Jabatan",
-        "name": "Jabatan",
-        "doctype": "Jabatan"
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "Golongan",
-        "name": "Golongan",
-        "doctype": "Golongan"
-       }
+    {
+      "type": "header",
+      "data": {
+        "text": "Payroll Indonesia",
+        "level": 1
       }
-     ]
-    }
-   },
-   {
-    "type": "section",
-    "data": {
-     "title": "Payroll Processing",
-     "items": [
-      {
-       "type": "link",
-       "data": {
-        "label": "Salary Structure",
-        "name": "Salary Structure",
-        "doctype": "Salary Structure"
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "Salary Slip",
-        "name": "Salary Slip",
-        "doctype": "Salary Slip"
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "Payroll Log",
-        "name": "Payroll Log",
-        "doctype": "Payroll Log"
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "Salary Component",
-        "name": "Salary Component",
-        "doctype": "Salary Component"
-       }
+    },
+    {
+      "type": "paragraph",
+      "data": {
+        "text": "Sistem Penggajian Indonesia dengan Perhitungan BPJS dan PPh 21 (TER dan Progresif)"
       }
-     ]
-    }
-   },
-   {
-    "type": "section",
-    "data": {
-     "title": "BPJS Management",
-     "items": [
-      {
-       "type": "link",
-       "data": {
-        "label": "BPJS Settings",
-        "name": "BPJS Settings",
-        "doctype": "BPJS Settings"
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "BPJS Payment Summary",
-        "name": "BPJS Payment Summary",
-        "doctype": "BPJS Payment Summary"
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "BPJS Payment Component",
-        "name": "BPJS Payment Component",
-        "doctype": "BPJS Payment Component"
-       }
+    },
+    {
+      "type": "section",
+      "data": {
+        "title": "Master Data",
+        "items": [
+          {
+            "type": "link",
+            "data": {
+              "label": "Employee",
+              "name": "Employee",
+              "doctype": "Employee"
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "Jabatan",
+              "name": "Jabatan",
+              "doctype": "Jabatan"
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "Golongan",
+              "name": "Golongan",
+              "doctype": "Golongan"
+            }
+          }
+        ]
       }
-     ]
-    }
-   },
-   {
-    "type": "section",
-    "data": {
-     "title": "PPh 21 Management",
-     "items": [
-      {
-       "type": "link",
-       "data": {
-        "label": "PPh 21 Settings",
-        "name": "PPh 21 Settings",
-        "doctype": "PPh 21 Settings"
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "PPh 21 Tax Bracket",
-        "name": "PPh 21 Tax Bracket",
-        "doctype": "PPh 21 Tax Bracket"
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "PPh 21 TER Table",
-        "name": "PPh 21 TER Table",
-        "doctype": "PPh 21 TER Table"
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "PPh 21 PTKP",
-        "name": "PPh 21 PTKP",
-        "doctype": "PPh 21 PTKP"
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "Employee Tax Summary",
-        "name": "Employee Tax Summary",
-        "doctype": "Employee Tax Summary"
-       }
+    },
+    {
+      "type": "section",
+      "data": {
+        "title": "Payroll Processing",
+        "items": [
+          {
+            "type": "link",
+            "data": {
+              "label": "Salary Structure",
+              "name": "Salary Structure",
+              "doctype": "Salary Structure"
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "Salary Slip",
+              "name": "Salary Slip",
+              "doctype": "Salary Slip"
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "Payroll Log",
+              "name": "Payroll Log",
+              "doctype": "Payroll Log"
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "Salary Component",
+              "name": "Salary Component",
+              "doctype": "Salary Component"
+            }
+          }
+        ]
       }
-     ]
-    }
-   },
-   {
-    "type": "section",
-    "data": {
-     "title": "Reports & Analisis",
-     "items": [
-      {
-       "type": "link",
-       "data": {
-        "label": "BPJS Monthly Report",
-        "name": "BPJS Monthly Report",
-        "doctype": "Report",
-        "report_type": "Script Report",
-        "is_query_report": true
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "PPh 21 Summary",
-        "name": "PPh 21 Summary",
-        "doctype": "Report",
-        "report_type": "Script Report",
-        "is_query_report": true
-       }
-      },
-      {
-       "type": "link",
-       "data": {
-        "label": "TER vs Progressive Comparison",
-        "name": "TER vs Progressive Comparison",
-        "doctype": "Report",
-        "report_type": "Script Report",
-        "is_query_report": true
-       }
+    },
+    {
+      "type": "section",
+      "data": {
+        "title": "BPJS Management",
+        "items": [
+          {
+            "type": "link",
+            "data": {
+              "label": "BPJS Settings",
+              "name": "BPJS Settings",
+              "doctype": "BPJS Settings"
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "BPJS Payment Summary",
+              "name": "BPJS Payment Summary",
+              "doctype": "BPJS Payment Summary"
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "BPJS Payment Component",
+              "name": "BPJS Payment Component",
+              "doctype": "BPJS Payment Component"
+            }
+          }
+        ]
       }
-     ]
+    },
+    {
+      "type": "section",
+      "data": {
+        "title": "PPh 21 Management",
+        "items": [
+          {
+            "type": "link",
+            "data": {
+              "label": "PPh 21 Settings",
+              "name": "PPh 21 Settings",
+              "doctype": "PPh 21 Settings"
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "PPh 21 Tax Bracket",
+              "name": "PPh 21 Tax Bracket",
+              "doctype": "PPh 21 Tax Bracket"
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "PPh 21 TER Table",
+              "name": "PPh 21 TER Table",
+              "doctype": "PPh 21 TER Table"
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "PPh 21 PTKP",
+              "name": "PPh 21 PTKP",
+              "doctype": "PPh 21 PTKP"
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "Employee Tax Summary",
+              "name": "Employee Tax Summary",
+              "doctype": "Employee Tax Summary"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "section",
+      "data": {
+        "title": "Reports & Analisis",
+        "items": [
+          {
+            "type": "link",
+            "data": {
+              "label": "BPJS Monthly Report",
+              "name": "BPJS Monthly Report",
+              "doctype": "Report",
+              "report_type": "Script Report",
+              "is_query_report": true
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "PPh 21 Summary",
+              "name": "PPh 21 Summary",
+              "doctype": "Report",
+              "report_type": "Script Report",
+              "is_query_report": true
+            }
+          },
+          {
+            "type": "link",
+            "data": {
+              "label": "TER vs Progressive Comparison",
+              "name": "TER vs Progressive Comparison",
+              "doctype": "Report",
+              "report_type": "Script Report",
+              "is_query_report": true
+            }
+          }
+        ]
+      }
     }
-   }
   ],
   "creation": "2025-04-23 13:26:07.000000",
   "docstatus": 0,
@@ -236,15 +236,15 @@
     }
   ],
   "roles": [
-   {
-    "role": "HR Manager"
-   },
-   {
-    "role": "HR User"
-   },
-   {
-    "role": "Employee"
-   }
+    {
+      "role": "HR Manager"
+    },
+    {
+      "role": "HR User"
+    },
+    {
+      "role": "Employee"
+    }
   ],
   "sequence_id": 1,
   "shortcuts": [
@@ -257,7 +257,7 @@
       "type": "DocType"
     },
     {
-      "color": "Green", 
+      "color": "Green",
       "label": "PPh 21 Settings",
       "link_to": "PPh 21 Settings",
       "type": "DocType"
