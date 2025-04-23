@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
-# For license information, please see license.txt
-
 from __future__ import unicode_literals
 import frappe
 from frappe.model.document import Document
@@ -9,15 +5,16 @@ from frappe.model.document import Document
 class PPh21Settings(Document):
     def validate(self):
         """Validate PPh 21 settings"""
-        if self.bracket_table:
+        if hasattr(self, 'bracket_table') and self.bracket_table:
             self.validate_bracket_table()
-        if self.ptkp_table:
+        if hasattr(self, 'ptkp_table') and self.ptkp_table:
             self.validate_ptkp_table()
         
     def validate_bracket_table(self):
         """Ensure tax brackets are continuous and non-overlapping"""
         if not self.bracket_table:
-            frappe.throw("At least one tax bracket must be defined")
+            frappe.msgprint("At least one tax bracket should be defined")
+            return
         
         # Sort by income_from
         sorted_brackets = sorted(self.bracket_table, key=lambda x: x.income_from)
@@ -35,7 +32,8 @@ class PPh21Settings(Document):
         required_status = ["TK0", "K0", "K1", "K2", "K3"]
         
         if not self.ptkp_table:
-            frappe.throw("PTKP values must be defined")
+            frappe.msgprint("PTKP values should be defined")
+            return
         
         defined_status = [p.status_pajak for p in self.ptkp_table]
         
@@ -55,9 +53,55 @@ class PPh21Settings(Document):
         # Default value if not found
         default_ptkp = 54000000  # TK0 value
         
+        if not hasattr(self, 'ptkp_table') or not self.ptkp_table:
+            return default_ptkp
+            
         for row in self.ptkp_table:
             if row.status_pajak == status_pajak:
                 return float(row.ptkp_amount)
         
         # If status not found, return default TK0 value
         return default_ptkp
+        
+    @staticmethod
+    def create_default_settings():
+        """Create default PPh21Settings if it doesn't exist"""
+        try:
+            if not frappe.db.exists("PPh 21 Settings", "PPh 21 Settings"):
+                doc = frappe.new_doc("PPh 21 Settings")
+                doc.calculation_method = "Progressive"
+                doc.use_ter = 0
+                
+                # Basic PTKP values
+                ptkp_values = {
+                    "TK0": 54000000,  # tidak kawin, 0 tanggungan
+                    "K0": 58500000    # kawin, 0 tanggungan
+                }
+                
+                for status, amount in ptkp_values.items():
+                    doc.append("ptkp_table", {
+                        "status_pajak": status,
+                        "ptkp_amount": amount
+                    })
+                
+                # Basic tax brackets
+                brackets = [
+                    {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
+                    {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15}
+                ]
+                
+                for bracket in brackets:
+                    doc.append("bracket_table", bracket)
+                
+                doc.insert(ignore_permissions=True)
+                frappe.db.commit()
+                return doc
+        except Exception as e:
+            frappe.log_error(f"Error creating default PPh 21 Settings: {str(e)}")
+            frappe.msgprint(f"Error creating PPh 21 Settings: {str(e)}", indicator="red")
+            
+        # If can't create, try to get existing
+        try:
+            return frappe.get_doc("PPh 21 Settings", "PPh 21 Settings")
+        except:
+            return None

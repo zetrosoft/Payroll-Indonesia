@@ -76,6 +76,7 @@
             "default": "TER rates are defined in the PPh 21 TER Table doctype based on PMK 168/2023."
         }
     ],
+    "issingle": 1,
     "modified": "2025-04-23 12:35:23",
     "modified_by": "Administrator",
     "module": "Payroll Indonesia",
