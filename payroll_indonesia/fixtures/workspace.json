@@ -11,13 +11,13 @@
      {
       "type": "paragraph",
       "data": {
-       "text": "Indonesian Payroll management with BPJS and PPh 21 calculations"
+       "text": "Sistem Penggajian Indonesia dengan Perhitungan BPJS dan PPh 21 (TER dan Progresif)"
       }
      },
      {
       "type": "section",
       "data": {
-       "title": "Employee Management",
+       "title": "Master Data",
        "items": [
         {
          "type": "link",
@@ -52,6 +52,50 @@
      {
       "type": "section",
       "data": {
+       "title": "Payroll Processing",
+       "items": [
+        {
+         "type": "link",
+         "data": {
+          "label": "Salary Structure",
+          "name": "Salary Structure",
+          "doctype": "Salary Structure",
+          "dependencies": ["Salary Structure"]
+         }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "Salary Slip",
+          "name": "Salary Slip",
+          "doctype": "Salary Slip",
+          "dependencies": ["Salary Slip"]
+         }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "Payroll Log",
+          "name": "Payroll Log",
+          "doctype": "Payroll Log",
+          "dependencies": ["Payroll Log"]
+         }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "Salary Component",
+          "name": "Salary Component",
+          "doctype": "Salary Component",
+          "dependencies": ["Salary Component"]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "type": "section",
+      "data": {
        "title": "BPJS Management",
        "items": [
         {
@@ -71,6 +115,15 @@
           "doctype": "BPJS Payment Summary",
           "dependencies": ["BPJS Payment Summary"]
          }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "BPJS Payment Component",
+          "name": "BPJS Payment Component",
+          "doctype": "BPJS Payment Component",
+          "dependencies": ["BPJS Payment Component"]
+         }
         }
        ]
       }
@@ -78,7 +131,7 @@
      {
       "type": "section",
       "data": {
-       "title": "Tax Management",
+       "title": "PPh 21 Management",
        "items": [
         {
          "type": "link",
@@ -92,10 +145,10 @@
         {
          "type": "link",
          "data": {
-          "label": "Employee Tax Summary",
-          "name": "Employee Tax Summary",
-          "doctype": "Employee Tax Summary",
-          "dependencies": ["Employee Tax Summary"]
+          "label": "PPh 21 Tax Bracket",
+          "name": "PPh 21 Tax Bracket",
+          "doctype": "PPh 21 Tax Bracket",
+          "dependencies": ["PPh 21 Tax Bracket"]
          }
         },
         {
@@ -106,6 +159,24 @@
           "doctype": "PPh 21 TER Table",
           "dependencies": ["PPh 21 TER Table"]
          }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "PPh 21 PTKP",
+          "name": "PPh 21 PTKP",
+          "doctype": "PPh 21 PTKP",
+          "dependencies": ["PPh 21 PTKP"]
+         }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "Employee Tax Summary",
+          "name": "Employee Tax Summary",
+          "doctype": "Employee Tax Summary",
+          "dependencies": ["Employee Tax Summary"]
+         }
         }
        ]
       }
@@ -113,7 +184,7 @@
      {
       "type": "section",
       "data": {
-       "title": "Reports",
+       "title": "Reports & Analisis",
        "items": [
         {
          "type": "link",
@@ -128,8 +199,18 @@
         {
          "type": "link",
          "data": {
-          "label": "Employee Tax Report",
-          "name": "Employee Tax Report",
+          "label": "PPh 21 Summary",
+          "name": "PPh 21 Summary",
+          "doctype": "Report",
+          "report_type": "Script Report",
+          "is_query_report": true
+         }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "TER vs Progressive Comparison",
+          "name": "TER vs Progressive Comparison",
           "doctype": "Report",
           "report_type": "Script Report",
           "is_query_report": true
@@ -139,7 +220,7 @@
       }
      }
     ],
-    "creation": "2025-04-25 10:00:00.000000",
+    "creation": "2025-04-23 13:22:23.000000",
     "docstatus": 0,
     "doctype": "Workspace",
     "for_user": "",
@@ -148,14 +229,27 @@
     "is_standard": 1,
     "label": "Payroll Indonesia",
     "links": [],
-    "modified": "2025-04-25 10:00:00.000000",
-    "modified_by": "Administrator",
+    "modified": "2025-04-23 13:22:23.000000",
+    "modified_by": "dannyaudian",
     "module": "Payroll Indonesia",
     "name": "Payroll Indonesia",
-    "owner": "Administrator",
+    "owner": "dannyaudian",
     "parent_page": "Payroll",
     "public": 1,
-    "quick_lists": [],
+    "quick_lists": [
+      {
+        "document_type": "Salary Slip",
+        "label": "Salary Slips (Draft)",
+        "function": "Payroll Indonesia",
+        "filter_by": "docstatus,=,0"
+      },
+      {
+        "document_type": "BPJS Payment Summary",
+        "label": "BPJS Payments (Draft)",
+        "function": "Payroll Indonesia",
+        "filter_by": "docstatus,=,0"
+      }
+    ],
     "roles": [
      {
       "role": "HR Manager"
@@ -168,6 +262,33 @@
      }
     ],
     "sequence_id": 1,
-    "shortcuts": [],
+    "shortcuts": [
+      {
+        "color": "Blue",
+        "format": "{} Available",
+        "label": "Salary Slip",
+        "link_to": "Salary Slip",
+        "stats_filter": "{\n    \"docstatus\": 0\n}",
+        "type": "DocType"
+      },
+      {
+        "color": "Green", 
+        "label": "PPh 21 Settings",
+        "link_to": "PPh 21 Settings",
+        "type": "DocType"
+      },
+      {
+        "color": "Blue",
+        "label": "BPJS Settings",
+        "link_to": "BPJS Settings",
+        "type": "DocType"
+      },
+      {
+        "color": "Orange",
+        "label": "PPh 21 Summary",
+        "link_to": "PPh 21 Summary",
+        "type": "Report"
+      }
+    ],
     "title": "Payroll Indonesia"
    }
