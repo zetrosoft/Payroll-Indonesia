@@ -289,7 +289,7 @@ workspace_config = {
                                 "name": "PPh 21 Summary",
                                 "doctype": "Report",
                                 "report_type": "Script Report",
-                                "is_query_report": true
+                                "is_query_report": True
                             }
                         },
                         {
@@ -299,7 +299,7 @@ workspace_config = {
                                 "name": "BPJS Monthly Report",
                                 "doctype": "Report",
                                 "report_type": "Script Report",
-                                "is_query_report": true
+                                "is_query_report": True
                             }
                         },
                         {
@@ -309,7 +309,7 @@ workspace_config = {
                                 "name": "TER vs Progressive Comparison",
                                 "doctype": "Report",
                                 "report_type": "Script Report",
-                                "is_query_report": true
+                                "is_query_report": True
                             }
                         }
                     ]

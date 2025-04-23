@@ -178,7 +178,7 @@
         "name": "BPJS Monthly Report",
         "doctype": "Report",
         "report_type": "Script Report",
-        "is_query_report": true
+        "is_query_report": True
        }
       },
       {
@@ -188,7 +188,7 @@
         "name": "PPh 21 Summary",
         "doctype": "Report",
         "report_type": "Script Report",
-        "is_query_report": true
+        "is_query_report": True
        }
       },
       {
@@ -198,7 +198,7 @@
         "name": "TER vs Progressive Comparison",
         "doctype": "Report",
         "report_type": "Script Report",
-        "is_query_report": true
+        "is_query_report": True
        }
       }
      ]
