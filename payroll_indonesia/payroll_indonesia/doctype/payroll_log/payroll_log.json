@@ -1,6 +1,6 @@
 {
     "autoname": "hash",
-    "creation": "2025-04-23 11:45:37.000000",
+    "creation": "2025-04-23 12:50:54",
     "doctype": "DocType",
     "engine": "InnoDB",
     "field_order": [
@@ -18,6 +18,11 @@
         "gross_pay",
         "total_deduction",
         "net_pay",
+        "tax_section",
+        "calculation_method",
+        "ter_rate",
+        "has_correction",
+        "correction_amount",
         "notes_section",
         "notes",
         "log_time",
@@ -78,115 +83,4 @@
         },
         {
             "fieldname": "status",
-            "fieldtype": "Select",
-            "in_list_view": 1,
-            "in_standard_filter": 1,
-            "label": "Status",
-            "options": "Success\nError\nWarning"
-        },
-        {
-            "fieldname": "financial_section",
-            "fieldtype": "Section Break",
-            "label": "Financial Details"
-        },
-        {
-            "fieldname": "gross_pay",
-            "fieldtype": "Currency",
-            "label": "Gross Pay",
-            "options": "Company:company:default_currency"
-        },
-        {
-            "fieldname": "total_deduction",
-            "fieldtype": "Currency",
-            "label": "Total Deductions",
-            "options": "Company:company:default_currency"
-        },
-        {
-            "fieldname": "net_pay",
-            "fieldtype": "Currency",
-            "label": "Net Pay",
-            "options": "Company:company:default_currency"
-        },
-        {
-            "fieldname": "notes_section",
-            "fieldtype": "Section Break",
-            "label": "Notes"
-        },
-        {
-            "fieldname": "notes",
-            "fieldtype": "Text",
-            "label": "Notes"
-        },
-        {
-            "fieldname": "log_time",
-            "fieldtype": "Datetime",
-            "label": "Log Time",
-            "read_only": 1
-        },
-        {
-            "fieldname": "title",
-            "fieldtype": "Data",
-            "hidden": 1,
-            "label": "Title",
-            "no_copy": 1,
-            "print_hide": 1
-        }
-    ],
-    "links": [
-        {
-            "group": "Payroll",
-            "link_doctype": "Salary Slip",
-            "link_fieldname": "salary_slip"
-        },
-        {
-            "group": "Employee",
-            "link_doctype": "Employee",
-            "link_fieldname": "employee"
-        }
-    ],
-    "modified": "2025-04-23 11:45:37.000000",
-    "modified_by": "dannyaudian",
-    "module": "Payroll Indonesia",
-    "name": "Payroll Log",
-    "naming_rule": "Random",
-    "owner": "dannyaudian",
-    "permissions": [
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "System Manager",
-            "share": 1,
-            "write": 1
-        },
-        {
-            "create": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "HR Manager",
-            "share": 1,
-            "write": 1
-        },
-        {
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "HR User",
-            "share": 1
-        }
-    ],
-    "sort_field": "modified",
-    "sort_order": "DESC",
-    "states": [],
-    "title_field": "title",
-    "track_changes": 1
-}
+            "fieldtype

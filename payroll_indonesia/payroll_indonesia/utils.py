@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, Danny Audian and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-23 11:08:44 by dannyaudian
+# Last modified: 2025-04-23 13:01:41 by dannyaudian
 
 import frappe
 import os
 from frappe import _
-from frappe.utils import flt, cint
+from frappe.utils import flt, cint, getdate
 
 def get_bpjs_settings():
     """Get BPJS settings from DocType or .env file or site_config.json"""
@@ -130,6 +130,15 @@ def get_ptkp_settings():
         settings['K1'] = settings['pribadi'] + settings['kawin'] + settings['anak']
         settings['K2'] = settings['pribadi'] + settings['kawin'] + (2 * settings['anak'])
         settings['K3'] = settings['pribadi'] + settings['kawin'] + (3 * settings['anak'])
+        # Add all missing status variations for TER
+        settings['TK1'] = settings['pribadi'] + settings['anak']
+        settings['TK2'] = settings['pribadi'] + (2 * settings['anak'])
+        settings['TK3'] = settings['pribadi'] + (3 * settings['anak'])
+        # Add HB (Penghasilan Istri-Suami Digabung) statuses
+        settings['HB0'] = 2 * settings['pribadi'] + settings['kawin']
+        settings['HB1'] = 2 * settings['pribadi'] + settings['kawin'] + settings['anak']
+        settings['HB2'] = 2 * settings['pribadi'] + settings['kawin'] + (2 * settings['anak'])
+        settings['HB3'] = 2 * settings['pribadi'] + settings['kawin'] + (3 * settings['anak'])
             
     return settings
 
@@ -199,3 +208,238 @@ def get_spt_month():
         return spt_month
     except (ValueError, TypeError):
         return 12  # Default to December
+
+# ---- TER-related functions ----
+
+def get_pph21_settings():
+    """Get PPh 21 settings from DocType or defaults"""
+    try:
+        if frappe.db.exists("DocType", "PPh 21 Settings") and frappe.db.get_all("PPh 21 Settings"):
+            doc = frappe.get_single("PPh 21 Settings")
+            return {
+                'calculation_method': doc.calculation_method,
+                'use_ter': cint(doc.use_ter),
+                'ptkp_settings': get_ptkp_settings(),
+                'brackets': get_pph21_brackets()
+            }
+    except Exception as e:
+        frappe.log_error(f"Error getting PPh 21 settings: {str(e)}")
+        
+    # Default settings
+    return {
+        'calculation_method': 'Progressive',
+        'use_ter': 0,
+        'ptkp_settings': get_ptkp_settings(),
+        'brackets': get_pph21_brackets()
+    }
+
+def get_pph21_brackets():
+    """Get PPh 21 tax brackets from DocType or defaults"""
+    brackets = []
+    
+    try:
+        if frappe.db.exists("DocType", "PPh 21 Settings") and frappe.db.get_all("PPh 21 Settings"):
+            brackets = frappe.db.sql("""
+                SELECT income_from, income_to, tax_rate 
+                FROM `tabPPh 21 Tax Bracket`
+                WHERE parent = 'PPh 21 Settings'
+                ORDER BY income_from ASC
+            """, as_dict=1)
+    except Exception as e:
+        frappe.log_error(f"Error getting PPh 21 brackets: {str(e)}")
+    
+    # If no brackets found, use defaults
+    if not brackets:
+        brackets = [
+            {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
+            {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
+            {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
+            {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
+            {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
+        ]
+    
+    return brackets
+
+def get_ter_rate(status_pajak, penghasilan_bruto):
+    """
+    Get TER rate for a specific tax status and income level
+    
+    Args:
+        status_pajak (str): Tax status (TK0, K0, etc)
+        penghasilan_bruto (float): Gross income
+        
+    Returns:
+        float: TER rate as decimal (e.g., 0.05 for 5%)
+    """
+    try:
+        # Query TER table
+        ter = frappe.db.sql("""
+            SELECT rate
+            FROM `tabPPh 21 TER Table`
+            WHERE status_pajak = %s
+              AND %s >= income_from
+              AND (%s <= income_to OR income_to = 0)
+            LIMIT 1
+        """, (status_pajak, penghasilan_bruto, penghasilan_bruto), as_dict=1)
+        
+        if not ter:
+            # Try with fallback to status type + 0 (e.g. TK2 -> TK0, K3 -> K0)
+            status_prefix = status_pajak[0:2] if len(status_pajak) > 2 else status_pajak[0:1]
+            fallback_status = f"{status_prefix}0"
+            
+            ter = frappe.db.sql("""
+                SELECT rate
+                FROM `tabPPh 21 TER Table`
+                WHERE status_pajak = %s
+                  AND %s >= income_from
+                  AND (%s <= income_to OR income_to = 0)
+                LIMIT 1
+            """, (fallback_status, penghasilan_bruto, penghasilan_bruto), as_dict=1)
+            
+            if not ter:
+                # Ultimate fallback to TK0 (default lowest)
+                ter = frappe.db.sql("""
+                    SELECT rate
+                    FROM `tabPPh 21 TER Table`
+                    WHERE status_pajak = 'TK0'
+                      AND %s >= income_from
+                      AND (%s <= income_to OR income_to = 0)
+                    LIMIT 1
+                """, (penghasilan_bruto, penghasilan_bruto), as_dict=1)
+                
+                if not ter:
+                    frappe.log_error(
+                        f"No TER rate found for status {status_pajak} or fallbacks with income {penghasilan_bruto}",
+                        "PPh 21 TER Error"
+                    )
+                    return 0
+        
+        # Convert percent to decimal
+        return flt(ter[0].rate) / 100.0
+        
+    except Exception as e:
+        frappe.log_error(f"Error getting TER rate: {str(e)}")
+        return 0
+
+def should_use_ter():
+    """Check if TER method should be used based on system settings"""
+    try:
+        pph_settings = frappe.get_single("PPh 21 Settings")
+        return (pph_settings.calculation_method == "TER" and pph_settings.use_ter)
+    except Exception:
+        return False
+
+def create_tax_summary_doc(employee, year, tax_amount=0, is_using_ter=0, ter_rate=0):
+    """
+    Create or update Employee Tax Summary document
+    
+    Args:
+        employee (str): Employee ID
+        year (int): Tax year
+        tax_amount (float): PPh 21 amount to add
+        is_using_ter (int): Whether TER method is used
+        ter_rate (float): TER rate if applicable
+        
+    Returns:
+        object: Employee Tax Summary document
+    """
+    try:
+        # Check if a record already exists
+        filters = {"employee": employee, "year": year}
+        name = frappe.db.get_value("Employee Tax Summary", filters)
+        
+        if name:
+            # Update existing record
+            doc = frappe.get_doc("Employee Tax Summary", name)
+            doc.ytd_tax = flt(doc.ytd_tax) + flt(tax_amount)
+            if is_using_ter:
+                doc.is_using_ter = 1
+                doc.ter_rate = ter_rate
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+        else:
+            # Create new record
+            employee_name = frappe.db.get_value("Employee", employee, "employee_name")
+            doc = frappe.new_doc("Employee Tax Summary")
+            doc.employee = employee
+            doc.employee_name = employee_name
+            doc.year = year
+            doc.ytd_tax = flt(tax_amount)
+            if is_using_ter:
+                doc.is_using_ter = 1
+                doc.ter_rate = ter_rate
+            doc.insert(ignore_permissions=True)
+            frappe.db.commit()
+            
+        return doc
+    except Exception as e:
+        frappe.log_error(f"Error creating tax summary for {employee}, year {year}: {str(e)}")
+        return None
+
+def get_ytd_tax_info(employee, date=None):
+    """
+    Get year-to-date tax information for an employee
+    
+    Args:
+        employee (str): Employee ID
+        date (datetime, optional): Date to determine year, defaults to current date
+        
+    Returns:
+        dict: YTD tax information
+    """
+    if not date:
+        date = getdate()
+    
+    year = date.year
+    
+    # Get from Employee Tax Summary if exists
+    tax_summary = frappe.db.get_value(
+        "Employee Tax Summary",
+        {"employee": employee, "year": year},
+        ["ytd_tax", "is_using_ter", "ter_rate"],
+        as_dict=1
+    )
+    
+    if tax_summary:
+        return {
+            "ytd_tax": flt(tax_summary.ytd_tax),
+            "is_using_ter": cint(tax_summary.is_using_ter),
+            "ter_rate": flt(tax_summary.ter_rate)
+        }
+    
+    # Alternatively, calculate from submitted salary slips
+    salary_slips = frappe.get_all(
+        "Salary Slip",
+        filters={
+            "employee": employee,
+            "start_date": [">=", f"{year}-01-01"],
+            "end_date": ["<", date],
+            "docstatus": 1
+        },
+        fields=["name"]
+    )
+    
+    ytd_tax = 0
+    is_using_ter = 0
+    ter_rate = 0
+    
+    for slip in salary_slips:
+        slip_doc = frappe.get_doc("Salary Slip", slip.name)
+        
+        # Get PPh 21 component
+        for deduction in slip_doc.deductions:
+            if deduction.salary_component == "PPh 21":
+                ytd_tax += flt(deduction.amount)
+                break
+        
+        # Check if using TER
+        if hasattr(slip_doc, 'is_using_ter') and slip_doc.is_using_ter:
+            is_using_ter = 1
+            if hasattr(slip_doc, 'ter_rate'):
+                ter_rate = flt(slip_doc.ter_rate)
+    
+    return {
+        "ytd_tax": ytd_tax,
+        "is_using_ter": is_using_ter,
+        "ter_rate": ter_rate
+    }
