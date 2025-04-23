@@ -16,7 +16,7 @@
         "account": "Beban Gaji Pokok - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -37,7 +37,7 @@
         "account": "Beban Tunjangan Makan - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -58,7 +58,7 @@
         "account": "Beban Tunjangan Transport - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -79,7 +79,7 @@
         "account": "Beban Insentif - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -100,7 +100,7 @@
         "account": "Beban Bonus - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -110,7 +110,7 @@
     "salary_component": "PPh 21",
     "salary_component_abbr": "PPH21",
     "type": "Deduction",
-    "description": "Pajak Penghasilan Pasal 21",
+    "description": "Pajak Penghasilan Pasal 21 (Progressive/TER sesuai PMK 168/2023)",
     "statistical_component": 0,
     "variable_based_on_taxable_salary": 1,
     "accounts": [
@@ -119,9 +119,12 @@
         "account": "Hutang PPh 21 - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
-    "owner": "dannyaudian"
+    "owner": "dannyaudian",
+    "custom_attributes": {
+      "supports_ter": 1
+    }
   },
   {
     "doctype": "Salary Component",
@@ -137,7 +140,7 @@
         "account": "Hutang BPJS JHT - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -155,7 +158,7 @@
         "account": "Hutang BPJS JP - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -173,7 +176,7 @@
         "account": "Hutang BPJS Kesehatan - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -191,7 +194,7 @@
         "account": "Beban BPJS JHT - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -209,7 +212,7 @@
         "account": "Beban BPJS JP - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -227,7 +230,7 @@
         "account": "Beban BPJS JKK - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -245,7 +248,7 @@
         "account": "Beban BPJS JKM - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   },
@@ -263,7 +266,7 @@
         "account": "Beban BPJS Kesehatan - %"
       }
     ],
-    "modified": "2025-04-22 03:25:48",
+    "modified": "2025-04-23 12:31:47",
     "modified_by": "dannyaudian",
     "owner": "dannyaudian"
   }

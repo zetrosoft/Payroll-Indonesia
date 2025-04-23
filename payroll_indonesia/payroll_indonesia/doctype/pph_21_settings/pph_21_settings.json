@@ -1,7 +1,7 @@
 {
     "actions": [],
     "allow_rename": 0,
-    "creation": "2025-04-23 12:17:47",
+    "creation": "2025-04-23 12:35:23",
     "doctype": "DocType",
     "engine": "InnoDB",
     "field_order": [
@@ -9,6 +9,8 @@
         "calculation_method",
         "ptkp_section",
         "ptkp_table",
+        "bracket_section",
+        "bracket_table",
         "ter_section",
         "use_ter",
         "ter_notes"
@@ -41,6 +43,19 @@
             "reqd": 1
         },
         {
+            "fieldname": "bracket_section", 
+            "fieldtype": "Section Break",
+            "label": "Tax Brackets (Progressive Method)"
+        },
+        {
+            "fieldname": "bracket_table",
+            "fieldtype": "Table",
+            "label": "Tax Brackets",
+            "options": "PPh 21 Tax Bracket",
+            "reqd": 1,
+            "description": "Lapisan pajak untuk perhitungan PPh 21 Progressive"
+        },
+        {
             "depends_on": "eval:doc.calculation_method=='TER'",
             "fieldname": "ter_section",
             "fieldtype": "Section Break",
@@ -61,7 +76,7 @@
             "default": "TER rates are defined in the PPh 21 TER Table doctype based on PMK 168/2023."
         }
     ],
-    "modified": "2025-04-23 12:17:47",
+    "modified": "2025-04-23 12:35:23",
     "modified_by": "dannyaudian",
     "module": "Payroll Indonesia",
     "name": "PPh 21 Settings",

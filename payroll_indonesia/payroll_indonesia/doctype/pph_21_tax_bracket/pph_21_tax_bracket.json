@@ -1,0 +1,46 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "creation": "2025-04-23 12:41:29",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "income_from",
+    "income_to",
+    "tax_rate"
+  ],
+  "fields": [
+    {
+      "fieldname": "income_from",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Income From",
+      "reqd": 1
+    },
+    {
+      "fieldname": "income_to",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Income To",
+      "description": "Gunakan 0 untuk bracket teratas tanpa batas"
+    },
+    {
+      "fieldname": "tax_rate",
+      "fieldtype": "Percent",
+      "in_list_view": 1,
+      "label": "Tax Rate (%)",
+      "reqd": 1
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2025-04-23 12:41:29",
+  "modified_by": "dannyaudian",
+  "module": "Payroll Indonesia",
+  "name": "PPh 21 Tax Bracket",
+  "owner": "dannyaudian",
+  "permissions": [],
+  "sort_field": "income_from",
+  "sort_order": "ASC"
+}

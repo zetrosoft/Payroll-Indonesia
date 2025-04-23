@@ -1,57 +1,62 @@
 [
-    {
-      "doctype": "Salary Structure",
-      "name": "Struktur Gaji Tetap G1",
-      "is_active": "Yes",
-      "payroll_frequency": "Monthly",
-      "company": "%",
-      "payment_account": "Cash - %",
-      "earnings": [
-        {
-          "salary_component": "Gaji Pokok",
-          "amount_based_on_formula": 1,
-          "formula": "base",
-          "condition": ""
-        },
-        {
-          "salary_component": "Tunjangan Makan",
-          "amount": 500000,
-          "condition": ""
-        },
-        {
-          "salary_component": "Tunjangan Transport",
-          "amount": 300000,
-          "condition": ""
-        }
-      ],
-      "deductions": [
-        {
-          "salary_component": "BPJS JHT Employee",
-          "amount_based_on_formula": 1,
-          "formula": "base * 0.02",
-          "condition": "ikut_bpjs_ketenagakerjaan"
-        },
-        {
-          "salary_component": "BPJS JP Employee",
-          "amount_based_on_formula": 1,
-          "formula": "base * 0.01",
-          "condition": "ikut_bpjs_ketenagakerjaan"
-        },
-        {
-          "salary_component": "BPJS Kesehatan Employee",
-          "amount_based_on_formula": 1,
-          "formula": "base * 0.01",
-          "condition": "ikut_bpjs_kesehatan"
-        },
-        {
-          "salary_component": "PPh 21",
-          "amount_based_on_formula": 0,
-          "formula": "",
-          "condition": "not penghasilan_final"
-        }
-      ],
-      "modified": "2025-04-22 13:38:24",
-      "modified_by": "dannyaudian",
-      "owner": "dannyaudian"
-    }
-  ]
+  {
+    "doctype": "Salary Structure",
+    "name": "Struktur Gaji Tetap G1",
+    "is_active": "Yes",
+    "payroll_frequency": "Monthly",
+    "company": "%",
+    "payment_account": "Cash - %",
+    "earnings": [
+      {
+        "salary_component": "Gaji Pokok",
+        "amount_based_on_formula": 1,
+        "formula": "base",
+        "condition": ""
+      },
+      {
+        "salary_component": "Tunjangan Makan",
+        "amount": 500000,
+        "condition": ""
+      },
+      {
+        "salary_component": "Tunjangan Transport",
+        "amount": 300000,
+        "condition": ""
+      }
+    ],
+    "deductions": [
+      {
+        "salary_component": "BPJS JHT Employee",
+        "amount_based_on_formula": 1,
+        "formula": "base * 0.02",
+        "condition": "ikut_bpjs_ketenagakerjaan"
+      },
+      {
+        "salary_component": "BPJS JP Employee",
+        "amount_based_on_formula": 1,
+        "formula": "base * 0.01",
+        "condition": "ikut_bpjs_ketenagakerjaan"
+      },
+      {
+        "salary_component": "BPJS Kesehatan Employee",
+        "amount_based_on_formula": 1,
+        "formula": "base * 0.01",
+        "condition": "ikut_bpjs_kesehatan"
+      },
+      {
+        "salary_component": "PPh 21",
+        "amount_based_on_formula": 0,
+        "formula": "",
+        "condition": "not penghasilan_final",
+        "do_not_include_in_total": 0,
+        "calculation_type": "custom",
+        "description": "Menggunakan metode TER atau Progressive sesuai pengaturan di PPh 21 Settings"
+      }
+    ],
+    "modified": "2025-04-23 12:31:47",
+    "modified_by": "dannyaudian",
+    "owner": "dannyaudian",
+    "tax_calculation_method": "auto",
+    "note": "TER PPh 21 akan digunakan jika diaktifkan di PPh 21 Settings"
+  }
+]
