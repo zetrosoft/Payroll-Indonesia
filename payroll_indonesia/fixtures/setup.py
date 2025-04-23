@@ -20,7 +20,11 @@ def after_install():
     setup_pph21_ter()
 
 def create_accounts():
-    """Create required Accounts"""
+    """Create required Accounts for Indonesian payroll management
+
+    This creates all necessary expense accounts for salary components
+    and liability accounts for taxes and social insurance
+    """
     accounts = [
         # Expense Accounts
         {"account_name": "Beban Gaji Pokok", "parent_account": "Direct Expenses", "account_type": "Expense Account"},
@@ -40,13 +44,16 @@ def create_accounts():
         {"account_name": "Hutang BPJS Kesehatan", "parent_account": "Accounts Payable", "account_type": "Payable"}
     ]
     
+    # Get default company
     company = frappe.defaults.get_defaults().get("company")
     if not company:
         frappe.log_error("No default company found. Skipping account creation.")
         return
         
+    # Loop through accounts list and create each account
     for account in accounts:
         try:
+            # Get the full parent account name including company abbreviation
             parent_account = frappe.db.get_value("Account", {
                 "account_name": account["parent_account"],
                 "company": company
@@ -56,8 +63,10 @@ def create_accounts():
                 frappe.log_error(f"Parent account {account['parent_account']} not found for company {company}")
                 continue
                 
+            # Create the account name with company abbreviation
             account_name = account["account_name"] + " - " + frappe.db.get_value("Company", company, "abbr")
             
+            # Create account if it doesn't exist
             if not frappe.db.exists("Account", account_name):
                 doc = frappe.new_doc("Account")
                 doc.account_name = account["account_name"]
@@ -71,7 +80,10 @@ def create_accounts():
             frappe.log_error(f"Error creating account {account['account_name']}: {str(e)}")
 
 def create_supplier_group():
-    """Create Government supplier group if not exists"""
+    """Create Government supplier group if not exists
+
+    This group is needed for government-related suppliers like tax office and BPJS
+    """
     if not frappe.db.exists("Supplier Group", "Government"):
         try:
             group = frappe.new_doc("Supplier Group")
@@ -84,7 +96,11 @@ def create_supplier_group():
             frappe.log_error(f"Failed to create Government supplier group: {str(e)}")
 
 def setup_pph21_defaults():
-    """Setup default PPh 21 configuration"""
+    """Setup default PPh 21 configuration
+
+    Sets up the income tax settings with default PTKP values and tax brackets
+    according to Indonesian tax regulations
+    """
     # Check if PPh 21 Settings already exists
     if not frappe.db.exists("PPh 21 Settings", "PPh 21 Settings"):
         # Create new PPh 21 Settings
@@ -108,12 +124,13 @@ def setup_pph21_defaults():
             "HB3": 126000000  # kawin penghasilan istri digabung, 3 tanggungan
         }
         
+        # Add each PTKP value to the settings
         for status, amount in ptkp_values.items():
             ptkp_row = settings.append("ptkp_table")
             ptkp_row.status_pajak = status
             ptkp_row.ptkp_amount = amount
             
-            # Add description
+            # Add description for better readability
             if status.startswith("TK"):
                 tanggungan = status[2:]
                 ptkp_row.description = f"Tidak Kawin, {tanggungan} Tanggungan"
@@ -133,6 +150,7 @@ def setup_pph21_defaults():
             {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
         ]
         
+        # Add each tax bracket to the settings
         for bracket in brackets:
             bracket_row = settings.append("bracket_table")
             bracket_row.income_from = bracket["income_from"]
@@ -144,6 +162,7 @@ def setup_pph21_defaults():
         
         frappe.msgprint("Setup PPh 21 Settings completed successfully")
     else:
+        # Settings exist but check if bracket table is populated
         settings = frappe.get_doc("PPh 21 Settings", "PPh 21 Settings")
         
         # Check if bracket_table exists and has data
@@ -168,7 +187,11 @@ def setup_pph21_defaults():
             frappe.msgprint("Added default tax brackets to PPh 21 Settings")
 
 def setup_pph21_ter():
-    """Setup default TER rates based on PMK 168/2023"""
+    """Setup default TER rates based on PMK 168/2023
+
+    TER (Tax Equivalent Rate) is an alternative calculation method
+    for PPh 21 income tax that uses predefined rates based on income ranges
+    """
     try:
         # Check if the doctype exists
         if not frappe.db.exists("DocType", "PPh 21 TER Table"):
@@ -218,6 +241,7 @@ def setup_pph21_ter():
         # Create TER rate records if they don't exist
         count = 0
         for rate_data in default_rates:
+            # Check if the specific TER rate already exists
             if not frappe.db.exists(
                 "PPh 21 TER Table",
                 {
@@ -226,6 +250,7 @@ def setup_pph21_ter():
                     "income_to": rate_data["income_to"]
                 }
             ):
+                # Create new TER rate record
                 doc = frappe.new_doc("PPh 21 TER Table")
                 doc.update(rate_data)
                 doc.insert(ignore_permissions=True)
