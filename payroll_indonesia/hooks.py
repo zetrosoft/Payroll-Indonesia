@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, Danny Audian and contributors
 # For license information, please see license.txt
+# Last modified: 2025-04-23 11:08:44 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -189,6 +190,3 @@ states_in_transaction = {
     "BPJS Payment Summary": ["Draft", "Submitted", "Paid", "Cancelled"],
     "PPh TER Table": ["Draft", "Submitted", "Paid", "Cancelled"]
 }
-
-# Last modified timestamp: 2025-04-23 10:54:53
-# Updated by: dannyaudian

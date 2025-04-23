@@ -1,12 +1,28 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, Danny Audian and contributors
 # For license information, please see license.txt
+# Last modified: 2025-04-23 11:08:44 by dannyaudian
 
 import frappe
+from frappe import _
 from frappe.utils import flt
 
 def validate_salary_slip(doc, method=None):
     """Additional validation for salary slip"""
+    # Initialize custom fields
+    if not hasattr(doc, 'is_final_gabung_suami'):
+        doc.is_final_gabung_suami = 0
+    if not hasattr(doc, 'koreksi_pph21'):
+        doc.koreksi_pph21 = 0
+    if not hasattr(doc, 'payroll_note'):
+        doc.payroll_note = ""
+    if not hasattr(doc, 'biaya_jabatan'):
+        doc.biaya_jabatan = 0
+    if not hasattr(doc, 'netto'):
+        doc.netto = 0
+    if not hasattr(doc, 'total_bpjs'):
+        doc.total_bpjs = 0
+    
     # Check if all required components exist in salary slip
     required_components = {
         "earnings": ["Gaji Pokok"],
@@ -51,8 +67,7 @@ def update_employee_ytd_tax(doc):
     """Update employee's year-to-date tax information"""
     try:
         # Get the current year
-        import datetime
-        current_year = doc.end_date.year
+        year = doc.end_date.year
         
         # Get the PPh 21 amount
         pph21_amount = 0
@@ -62,40 +77,49 @@ def update_employee_ytd_tax(doc):
                 break
         
         if pph21_amount > 0:
-            # Check if we have a YTD tax record for this employee
-            ytd_tax = frappe.db.get_value(
-                "Employee Tax Summary",
-                {"employee": doc.employee, "year": current_year},
-                ["name", "ytd_tax"]
-            )
-            
-            if ytd_tax:
+            # Check if we already have a record for this employee/year combination
+            if frappe.db.exists({
+                "doctype": "Employee Tax Summary",
+                "employee": doc.employee,
+                "year": year
+            }):
                 # Update existing record
-                tax_doc = frappe.get_doc("Employee Tax Summary", ytd_tax[0])
-                tax_doc.ytd_tax = flt(ytd_tax[1]) + pph21_amount
-                tax_doc.save(ignore_permissions=True)
+                tax_record = frappe.get_doc("Employee Tax Summary", {
+                    "employee": doc.employee,
+                    "year": year
+                })
+                tax_record.ytd_tax = flt(tax_record.ytd_tax) + pph21_amount
+                tax_record.save(ignore_permissions=True)
             else:
-                # Create new record
-                tax_doc = frappe.new_doc("Employee Tax Summary")
-                tax_doc.employee = doc.employee
-                tax_doc.year = current_year
-                tax_doc.ytd_tax = pph21_amount
-                tax_doc.insert(ignore_permissions=True)
+                # Create a new record
+                tax_record = frappe.new_doc("Employee Tax Summary")
+                tax_record.employee = doc.employee
+                tax_record.employee_name = doc.employee_name
+                tax_record.year = year
+                tax_record.ytd_tax = pph21_amount
+                tax_record.insert(ignore_permissions=True)
                 
+            frappe.db.commit()
     except Exception as e:
         frappe.log_error(f"Error updating YTD tax for {doc.employee}: {str(e)}")
 
 def log_payroll_event(doc):
     """Log payroll processing event"""
     try:
+        # Record the payroll processing event
         log = frappe.new_doc("Payroll Log")
         log.employee = doc.employee
         log.employee_name = doc.employee_name
         log.salary_slip = doc.name
         log.posting_date = doc.posting_date
+        log.start_date = doc.start_date
+        log.end_date = doc.end_date
         log.gross_pay = doc.gross_pay
         log.net_pay = doc.net_pay
+        log.total_deduction = doc.total_deduction
         log.status = "Success"
+        log.notes = doc.payroll_note[:500] if doc.payroll_note else ""
         log.insert(ignore_permissions=True)
+        frappe.db.commit()
     except Exception as e:
         frappe.log_error(f"Error logging payroll event for {doc.employee}: {str(e)}")

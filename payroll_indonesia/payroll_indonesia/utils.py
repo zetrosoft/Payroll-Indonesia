@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, Danny Audian and contributors
 # For license information, please see license.txt
+# Last modified: 2025-04-23 11:08:44 by dannyaudian
 
 import frappe
 import os
@@ -75,7 +76,7 @@ def get_bpjs_settings():
     return settings
 
 def get_ptkp_settings():
-    """Get PTKP settings from DocType or .env file or defaults"""
+    """Get PTKP settings from PPh 21 Settings DocType or .env file or defaults"""
     # First try to get from DocType if it exists
     try:
         if frappe.db.exists("DocType", "PPh 21 Settings") and frappe.db.get_all("PPh 21 Settings"):
@@ -84,11 +85,12 @@ def get_ptkp_settings():
             
             # Get PTKP values from child table
             for row in doc.ptkp_table:
-                result[row.status_pajak] = row.ptkp_amount
+                result[row.status_pajak] = float(row.ptkp_amount)
                 
             if result:
                 return result
-    except Exception:
+    except Exception as e:
+        frappe.log_error(f"Error getting PTKP settings: {str(e)}")
         # Fall back to config methods if DocType approach fails
         pass
     
