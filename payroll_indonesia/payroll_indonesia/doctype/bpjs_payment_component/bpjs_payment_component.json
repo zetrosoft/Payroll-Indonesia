@@ -1,0 +1,13 @@
+# -*- coding: utf-8 -*-
+# Copyright (c) 2025, Danny Audian and contributors
+# For license information, please see license.txt
+# Last modified: 2025-04-23 11:58:22 by dannyaudian
+
+from __future__ import unicode_literals
+import frappe
+from frappe.model.document import Document
+
+class BPJSPaymentComponent(Document):
+    def validate(self):
+        if not self.amount or self.amount <= 0:
+            frappe.throw("Amount must be greater than 0")

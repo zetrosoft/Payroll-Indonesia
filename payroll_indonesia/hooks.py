@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, Danny Audian and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-23 11:08:44 by dannyaudian
+# Last modified: 2025-04-23 11:44:55 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -96,6 +96,11 @@ fixtures = [
     "Golongan",
     "Jabatan",
     
+    # Tracking & Component DocTypes
+    "Employee Tax Summary",
+    "Payroll Log",
+    "BPJS Payment Component",
+    
     # Salary Components (need to load before structure)
     {
         "dt": "Salary Component",
@@ -145,6 +150,9 @@ fixtures_import_order = [
     "PPh 21 Tax Bracket",
     "Golongan",
     "Jabatan",
+    "Employee Tax Summary",
+    "Payroll Log",
+    "BPJS Payment Component",
     "Salary Component",
     "Salary Structure",
     "Custom Field",
@@ -177,7 +185,9 @@ export_python_type_annotations = True
 # Document title fields for better navigation
 get_title = {
     "BPJS Payment Summary": "month_year_title",
-    "PPh TER Table": "month_year_title"
+    "PPh TER Table": "month_year_title",
+    "Employee Tax Summary": "title",
+    "Payroll Log": "title"
 }
 
 # Module Category - for Desk
