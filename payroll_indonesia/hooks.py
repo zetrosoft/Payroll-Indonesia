@@ -14,21 +14,21 @@ app_license = "GPL-3"
 app_version = "0.0.1"
 required_apps = ["erpnext", "hrms"]
 
-# JS files for doctypes
+# JS files for doctypes - Corrected paths
 doctype_js = {
-    "Employee": "public/js/employee.js",
-    "Salary Slip": "public/js/salary_slip.js",
-    "PPh TER Table": "public/js/pph_ter_table.js",
-    "BPJS Payment Summary": "public/js/bpjs_payment_summary.js",
-    "PPh 21 Settings": "public/js/pph_21_settings.js",
-    "BPJS Settings": "public/js/bpjs_settings.js"
+    "Employee": "payroll_indonesia/public/js/employee.js",
+    "Salary Slip": "payroll_indonesia/public/js/salary_slip.js",
+    "PPh TER Table": "payroll_indonesia/payroll_indonesia/doctype/pph_ter_table/pph_ter_table.js",
+    "BPJS Payment Summary": "payroll_indonesia/payroll_indonesia/doctype/bpjs_payment_summary/bpjs_payment_summary.js",
+    "PPh 21 Settings": "payroll_indonesia/public/js/pph_21_settings.js",
+    "BPJS Settings": "payroll_indonesia/payroll_indonesia/doctype/bpjs_settings/bpjs_settings.js"
 }
 
-# List view JS 
+# List view JS - Corrected paths
 doctype_list_js = {
-    "PPh TER Table": "public/js/pph_ter_table_list.js",
-    "BPJS Payment Summary": "public/js/bpjs_payment_summary_list.js",
-    "Employee Tax Summary": "public/js/employee_tax_summary_list.js"
+    "PPh TER Table": "payroll_indonesia/payroll_indonesia/doctype/pph_ter_table/pph_ter_table_list.js",
+    "BPJS Payment Summary": "payroll_indonesia/payroll_indonesia/doctype/bpjs_payment_summary/bpjs_payment_summary_list.js",
+    "Employee Tax Summary": "payroll_indonesia/public/js/employee_tax_summary_list.js"
 }
 
 # Installation
@@ -151,7 +151,6 @@ fixtures = [
         ]
     },
     
-    "payroll_indonesia/payroll_indonesia/workspace/payroll_indonesia/payroll_indonesia.json",
     # Reports
     {
         "dt": "Report",
@@ -164,6 +163,172 @@ fixtures = [
         ]
     }
 ]
+
+# Define workspace config
+workspace_config = {
+    "Payroll Indonesia": {
+        "content": [
+            {
+                "type": "header",
+                "data": {
+                    "text": "Payroll Indonesia",
+                    "level": 1
+                }
+            },
+            {
+                "type": "paragraph",
+                "data": {
+                    "text": "Indonesian Payroll management with BPJS and PPh 21 calculations"
+                }
+            },
+            {
+                "type": "section",
+                "data": {
+                    "title": "Employee Management",
+                    "items": [
+                        {
+                            "type": "link",
+                            "data": {
+                                "label": "Employee",
+                                "name": "Employee",
+                                "doctype": "Employee",
+                                "dependencies": ["Employee"]
+                            }
+                        },
+                        {
+                            "type": "link",
+                            "data": {
+                                "label": "Jabatan",
+                                "name": "Jabatan",
+                                "doctype": "Jabatan",
+                                "dependencies": ["Jabatan"]
+                            }
+                        },
+                        {
+                            "type": "link",
+                            "data": {
+                                "label": "Golongan",
+                                "name": "Golongan",
+                                "doctype": "Golongan",
+                                "dependencies": ["Golongan"]
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "section",
+                "data": {
+                    "title": "BPJS Management",
+                    "items": [
+                        {
+                            "type": "link",
+                            "data": {
+                                "label": "BPJS Settings",
+                                "name": "BPJS Settings",
+                                "doctype": "BPJS Settings",
+                                "dependencies": ["BPJS Settings"]
+                            }
+                        },
+                        {
+                            "type": "link",
+                            "data": {
+                                "label": "BPJS Payment Summary",
+                                "name": "BPJS Payment Summary",
+                                "doctype": "BPJS Payment Summary",
+                                "dependencies": ["BPJS Payment Summary"]
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "section",
+                "data": {
+                    "title": "Tax Management",
+                    "items": [
+                        {
+                            "type": "link",
+                            "data": {
+                                "label": "PPh 21 Settings",
+                                "name": "PPh 21 Settings",
+                                "doctype": "PPh 21 Settings",
+                                "dependencies": ["PPh 21 Settings"]
+                            }
+                        },
+                        {
+                            "type": "link",
+                            "data": {
+                                "label": "Employee Tax Summary",
+                                "name": "Employee Tax Summary",
+                                "doctype": "Employee Tax Summary",
+                                "dependencies": ["Employee Tax Summary"]
+                            }
+                        },
+                        {
+                            "type": "link",
+                            "data": {
+                                "label": "PPh TER Table",
+                                "name": "PPh TER Table",
+                                "doctype": "PPh TER Table",
+                                "dependencies": ["PPh TER Table"]
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "section",
+                "data": {
+                    "title": "Reports",
+                    "items": [
+                        {
+                            "type": "link",
+                            "data": {
+                                "label": "PPh 21 Summary",
+                                "name": "PPh 21 Summary",
+                                "doctype": "Report",
+                                "report_type": "Script Report",
+                                "is_query_report": true
+                            }
+                        },
+                        {
+                            "type": "link",
+                            "data": {
+                                "label": "BPJS Monthly Report",
+                                "name": "BPJS Monthly Report",
+                                "doctype": "Report",
+                                "report_type": "Script Report",
+                                "is_query_report": true
+                            }
+                        },
+                        {
+                            "type": "link",
+                            "data": {
+                                "label": "TER vs Progressive Comparison",
+                                "name": "TER vs Progressive Comparison",
+                                "doctype": "Report",
+                                "report_type": "Script Report",
+                                "is_query_report": true
+                            }
+                        }
+                    ]
+                }
+            }
+        ],
+        "docstatus": 0,
+        "is_standard": 1,
+        "module": "Payroll Indonesia",
+        "name": "Payroll Indonesia",
+        "parent_page": "Payroll",
+        "public": 1,
+        "roles": [
+            {"role": "HR Manager"},
+            {"role": "HR User"},
+            {"role": "Employee"}
+        ]
+    }
+}
 
 # Control fixture loading order
 fixtures_import_order = [
