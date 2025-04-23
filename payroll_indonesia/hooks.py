@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, Danny Audian and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-23 11:44:55 by dannyaudian
+# Last modified: 2025-04-23 12:21:23 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -91,6 +91,7 @@ fixtures = [
     "BPJS Settings",
     "PPh 21 Settings",
     "PPh 21 Tax Bracket",
+    "PPh 21 TER Table",  # Tambahkan ini untuk PPh 21 TER Table
     
     # Master Data - Payroll
     "Golongan",
@@ -148,6 +149,7 @@ fixtures_import_order = [
     "BPJS Settings",
     "PPh 21 Settings",
     "PPh 21 Tax Bracket",
+    "PPh 21 TER Table",  # Tambahkan ini untuk PPh 21 TER Table
     "Golongan",
     "Jabatan",
     "Employee Tax Summary",

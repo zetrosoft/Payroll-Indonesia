@@ -18,6 +18,9 @@ def after_install():
     
     # Setup Settings
     setup_settings()
+    
+    # Setup TER rates for PPh 21
+    setup_pph21_ter()
 
 def create_accounts():
     """Create required Accounts"""
@@ -83,4 +86,72 @@ def create_supplier_group():
         except Exception as e:
             frappe.log_error(f"Failed to create Government supplier group: {str(e)}")
 
-# Removed create_bpjs_supplier() function as it's now handled by fixtures
+def setup_pph21_ter():
+    """Setup default TER rates based on PMK 168/2023"""
+    try:
+        # Check if the doctype exists
+        if not frappe.db.exists("DocType", "PPh 21 TER Table"):
+            frappe.log_error("PPh 21 TER Table DocType not found. Skipping TER setup.")
+            return
+            
+        # Update PPh 21 Settings to enable TER
+        if frappe.db.exists("DocType", "PPh 21 Settings"):
+            settings = frappe.get_single("PPh 21 Settings")
+            settings.calculation_method = "TER"
+            settings.use_ter = 1
+            settings.save()
+            
+        # Create TER rates based on PMK 168/2023
+        # These are sample rates - replace with actual rates from PMK 168/2023
+        default_rates = [
+            # TK0 - Tidak Kawin 0 Tanggungan
+            {"status_pajak": "TK0", "income_from": 0, "income_to": 4500000, "rate": 0.0},
+            {"status_pajak": "TK0", "income_from": 4500000, "income_to": 5000000, "rate": 0.5},
+            {"status_pajak": "TK0", "income_from": 5000000, "income_to": 6000000, "rate": 1.0},
+            {"status_pajak": "TK0", "income_from": 6000000, "income_to": 7000000, "rate": 1.75},
+            {"status_pajak": "TK0", "income_from": 7000000, "income_to": 8000000, "rate": 2.5},
+            {"status_pajak": "TK0", "income_from": 8000000, "income_to": 9000000, "rate": 3.0},
+            {"status_pajak": "TK0", "income_from": 9000000, "income_to": 10000000, "rate": 3.5},
+            {"status_pajak": "TK0", "income_from": 10000000, "income_to": 15000000, "rate": 4.5},
+            {"status_pajak": "TK0", "income_from": 15000000, "income_to": 20000000, "rate": 5.5},
+            {"status_pajak": "TK0", "income_from": 20000000, "income_to": 500000000, "rate": 7.5},
+            {"status_pajak": "TK0", "income_from": 500000000, "income_to": 0, "rate": 10.0, "is_highest_bracket": 1},
+            
+            # K0 - Kawin 0 Tanggungan
+            {"status_pajak": "K0", "income_from": 0, "income_to": 4875000, "rate": 0.0},
+            {"status_pajak": "K0", "income_from": 4875000, "income_to": 5500000, "rate": 0.5},
+            {"status_pajak": "K0", "income_from": 5500000, "income_to": 6500000, "rate": 1.0},
+            {"status_pajak": "K0", "income_from": 6500000, "income_to": 7500000, "rate": 1.75},
+            {"status_pajak": "K0", "income_from": 7500000, "income_to": 8500000, "rate": 2.25},
+            {"status_pajak": "K0", "income_from": 8500000, "income_to": 9500000, "rate": 2.75},
+            {"status_pajak": "K0", "income_from": 9500000, "income_to": 11000000, "rate": 3.25},
+            {"status_pajak": "K0", "income_from": 11000000, "income_to": 15500000, "rate": 4.0},
+            {"status_pajak": "K0", "income_from": 15500000, "income_to": 21500000, "rate": 5.0},
+            {"status_pajak": "K0", "income_from": 21500000, "income_to": 500000000, "rate": 7.0},
+            {"status_pajak": "K0", "income_from": 500000000, "income_to": 0, "rate": 9.5, "is_highest_bracket": 1},
+            
+            # Tambahkan status dan range lainnya (K1, K2, K3, TK1, TK2, TK3, HB0, HB1, HB2, HB3)
+            # berdasarkan PMK 168/2023
+        ]
+        
+        # Create TER rate records if they don't exist
+        count = 0
+        for rate_data in default_rates:
+            if not frappe.db.exists(
+                "PPh 21 TER Table",
+                {
+                    "status_pajak": rate_data["status_pajak"],
+                    "income_from": rate_data["income_from"],
+                    "income_to": rate_data["income_to"]
+                }
+            ):
+                doc = frappe.new_doc("PPh 21 TER Table")
+                doc.update(rate_data)
+                doc.insert(ignore_permissions=True)
+                count += 1
+        
+        if count > 0:
+            frappe.msgprint(_(f"Created {count} default TER rates based on PMK 168/2023"))
+            
+    except Exception as e:
+        frappe.log_error(f"Error setting up PPh 21 TER rates: {str(e)}")

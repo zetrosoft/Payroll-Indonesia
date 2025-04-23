@@ -1,0 +1,108 @@
+{
+    "actions": [],
+    "allow_rename": 0,
+    "creation": "2025-04-23 12:17:47",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "method_section",
+        "calculation_method",
+        "ptkp_section",
+        "ptkp_table",
+        "ter_section",
+        "use_ter",
+        "ter_notes"
+    ],
+    "fields": [
+        {
+            "fieldname": "method_section",
+            "fieldtype": "Section Break",
+            "label": "Calculation Method"
+        },
+        {
+            "default": "Progressive",
+            "fieldname": "calculation_method",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "PPh 21 Calculation Method",
+            "options": "Progressive\nTER",
+            "reqd": 1
+        },
+        {
+            "fieldname": "ptkp_section",
+            "fieldtype": "Section Break",
+            "label": "PTKP Settings"
+        },
+        {
+            "fieldname": "ptkp_table",
+            "fieldtype": "Table",
+            "label": "PTKP Values",
+            "options": "PPh 21 PTKP",
+            "reqd": 1
+        },
+        {
+            "depends_on": "eval:doc.calculation_method=='TER'",
+            "fieldname": "ter_section",
+            "fieldtype": "Section Break",
+            "label": "TER Settings"
+        },
+        {
+            "default": "1",
+            "depends_on": "eval:doc.calculation_method=='TER'",
+            "fieldname": "use_ter",
+            "fieldtype": "Check",
+            "label": "Use TER for Monthly Calculation"
+        },
+        {
+            "depends_on": "eval:doc.calculation_method=='TER'",
+            "fieldname": "ter_notes",
+            "fieldtype": "Small Text",
+            "label": "TER Notes",
+            "default": "TER rates are defined in the PPh 21 TER Table doctype based on PMK 168/2023."
+        }
+    ],
+    "modified": "2025-04-23 12:17:47",
+    "modified_by": "dannyaudian",
+    "module": "Payroll Indonesia",
+    "name": "PPh 21 Settings",
+    "owner": "dannyaudian",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        },
+        {
+            "create": 1,
+            "delete": 0,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "HR Manager",
+            "share": 1,
+            "write": 1
+        },
+        {
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "HR User",
+            "share": 1
+        }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}

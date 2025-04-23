@@ -1,77 +1,154 @@
 {
     "actions": [],
     "allow_rename": 0,
-    "autoname": "format:TER-{status_pajak}-{from_income}-{####}",
-    "creation": "2025-04-22 03:34:26",
+    "autoname": "format:PPh-TER-{#####}",
+    "creation": "2025-04-23 11:57:10",
     "doctype": "DocType",
     "engine": "InnoDB",
     "field_order": [
-        "status_pajak",
-        "income_range_section",
-        "from_income",
-        "to_income",
-        "column_break_4",
-        "ter_percent",
-        "title"
+        "company_section",
+        "company",
+        "posting_date",
+        "column_break_3",
+        "status",
+        "period_section",
+        "period",
+        "year",
+        "month_year_title",
+        "amended_from",
+        "details_section",
+        "details",
+        "accounts_section",
+        "account_details",
+        "section_break_total",
+        "total",
+        "payment_section",
+        "payment_entry"
     ],
     "fields": [
         {
-            "fieldname": "status_pajak",
-            "fieldtype": "Select",
+            "fieldname": "company_section",
+            "fieldtype": "Section Break",
+            "label": "Company Information"
+        },
+        {
+            "fieldname": "company",
+            "fieldtype": "Link",
             "in_list_view": 1,
             "in_standard_filter": 1,
-            "label": "Status Pajak",
-            "options": "TK0\nK0\nK1\nK2\nK3",
+            "label": "Company",
+            "options": "Company",
             "reqd": 1
         },
         {
-            "fieldname": "income_range_section",
-            "fieldtype": "Section Break",
-            "label": "Income Range"
-        },
-        {
-            "fieldname": "from_income",
-            "fieldtype": "Currency",
+            "fieldname": "posting_date",
+            "fieldtype": "Date",
             "in_list_view": 1,
-            "label": "From Income",
-            "reqd": 1,
-            "options": "Company:company:default_currency"
+            "label": "Posting Date",
+            "reqd": 1
         },
         {
-            "fieldname": "to_income",
-            "fieldtype": "Currency",
-            "in_list_view": 1,
-            "label": "To Income",
-            "description": "Set to 0 for unlimited upper range",
-            "reqd": 1,
-            "options": "Company:company:default_currency"
-        },
-        {
-            "fieldname": "column_break_4",
+            "fieldname": "column_break_3",
             "fieldtype": "Column Break"
         },
         {
-            "fieldname": "ter_percent",
-            "fieldtype": "Percent",
+            "default": "Draft",
+            "fieldname": "status",
+            "fieldtype": "Select",
             "in_list_view": 1,
-            "label": "TER Percentage",
-            "reqd": 1,
-            "precision": "2"
+            "in_standard_filter": 1,
+            "label": "Status",
+            "options": "Draft\nSubmitted\nPaid",
+            "read_only": 1
         },
         {
-            "fieldname": "title",
+            "fieldname": "period_section",
+            "fieldtype": "Section Break",
+            "label": "Period Information"
+        },
+        {
+            "fieldname": "period",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Period",
+            "options": "January\nFebruary\nMarch\nApril\nMay\nJune\nJuly\nAugust\nSeptember\nOctober\nNovember\nDecember",
+            "reqd": 1
+        },
+        {
+            "fieldname": "year",
+            "fieldtype": "Int",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Year",
+            "reqd": 1
+        },
+        {
+            "fieldname": "month_year_title",
             "fieldtype": "Data",
-            "label": "Title",
-            "hidden": 1,
-            "allow_in_quick_entry": 0,
-            "translatable": 0,
-            "in_standard_filter": 0,
-            "in_preview": 0
+            "label": "Period Title",
+            "read_only": 1,
+            "hidden": 1
+        },
+        {
+            "fieldname": "amended_from",
+            "fieldtype": "Link",
+            "label": "Amended From",
+            "no_copy": 1,
+            "options": "PPh TER Table",
+            "print_hide": 1,
+            "read_only": 1
+        },
+        {
+            "fieldname": "details_section",
+            "fieldtype": "Section Break",
+            "label": "Employee Details"
+        },
+        {
+            "fieldname": "details",
+            "fieldtype": "Table",
+            "label": "PPh TER Employee Details",
+            "options": "PPh TER Detail",
+            "reqd": 1
+        },
+        {
+            "fieldname": "accounts_section",
+            "fieldtype": "Section Break",
+            "label": "Accounting Details"
+        },
+        {
+            "fieldname": "account_details",
+            "fieldtype": "Table",
+            "label": "PPh TER Account Details",
+            "options": "PPh TER Account Detail"
+        },
+        {
+            "fieldname": "section_break_total",
+            "fieldtype": "Section Break"
+        },
+        {
+            "fieldname": "total",
+            "fieldtype": "Currency",
+            "in_list_view": 1,
+            "label": "Total PPh Amount",
+            "read_only": 1
+        },
+        {
+            "fieldname": "payment_section",
+            "fieldtype": "Section Break",
+            "label": "Payment Information"
+        },
+        {
+            "fieldname": "payment_entry",
+            "fieldtype": "Link",
+            "label": "Payment Entry",
+            "options": "Payment Entry",
+            "read_only": 1
         }
     ],
-    "index_web_pages_for_search": 1,
+    "is_submittable": 1,
     "links": [],
-    "modified": "2025-04-22 03:34:26",
+    "modified": "2025-04-23 11:57:10",
     "modified_by": "dannyaudian",
     "module": "Payroll Indonesia",
     "name": "PPh TER Table",
@@ -88,7 +165,10 @@
             "report": 1,
             "role": "System Manager",
             "share": 1,
-            "write": 1
+            "submit": 1,
+            "write": 1,
+            "cancel": 1,
+            "amend": 1
         },
         {
             "create": 1,
@@ -100,7 +180,10 @@
             "report": 1,
             "role": "HR Manager",
             "share": 1,
-            "write": 1
+            "submit": 1,
+            "write": 1,
+            "cancel": 1,
+            "amend": 1
         },
         {
             "read": 1,
@@ -111,6 +194,5 @@
     "sort_order": "DESC",
     "states": [],
     "track_changes": 1,
-    "title_field": "title",
-    "show_title_field_in_link": 1
+    "track_seen": 1
 }

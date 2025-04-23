@@ -1,95 +1,116 @@
+# -*- coding: utf-8 -*-
+# Copyright (c) 2025, Danny Audian and contributors
+# For license information, please see license.txt
+# Last modified: 2025-04-23 11:57:10 by dannyaudian
+
+from __future__ import unicode_literals
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, fmt_money
+from frappe.utils import today, flt, fmt_money
+
+def get_formatted_currency(value, company=None):
+    """Format currency value based on company settings"""
+    if company:
+        currency = frappe.get_cached_value('Company', company, 'default_currency')
+    else:
+        currency = frappe.db.get_default("currency")
+    return fmt_money(value, currency=currency)
 
 class PPhTERTable(Document):
-    def autoname(self):
-        """Set name as TER-{status_pajak}-{from_income}-{####}"""
-        if not self.title:
-            self.set_title()
-    
     def validate(self):
-        self.validate_income_range()
-        self.validate_overlapping_range()
-        self.set_title()
+        self.validate_company()
+        self.validate_details()
+        self.calculate_total()
+        self.validate_total()
     
-    def set_title(self):
-        """Set title for list view display"""
-        company = frappe.defaults.get_defaults().get('company')
-        currency = frappe.get_cached_value('Company', company, 'default_currency') if company else 'IDR'
-        
-        to_income_display = "∞" if not self.to_income or self.to_income == 0 else \
-            fmt_money(self.to_income, currency=currency)
+    def validate_company(self):
+        """Validate company and its default accounts"""
+        if not self.company:
+            frappe.throw(_("Company is mandatory"))
             
-        self.title = "{}: {} - {} @ {}%".format(
-            self.status_pajak,
-            fmt_money(self.from_income, currency=currency),
-            to_income_display,
-            self.ter_percent
-        )
+        # Check default accounts
+        company_doc = frappe.get_doc("Company", self.company)
+        if not company_doc.default_bank_account:
+            frappe.throw(_("Default Bank Account not set for Company {0}").format(self.company))
+        if not company_doc.default_payable_account:
+            frappe.throw(_("Default Payable Account not set for Company {0}").format(self.company))
     
-    def validate_income_range(self):
-        """Validate that from_income is less than to_income if to_income is not zero"""
-        if self.to_income and self.from_income >= self.to_income:
-            frappe.throw(
-                _("From Income ({0}) must be less than To Income ({1})")
-                .format(
-                    fmt_money(self.from_income),
-                    fmt_money(self.to_income)
-                )
+    def validate_details(self):
+        """Validate PPh TER details"""
+        if not self.details:
+            frappe.throw(_("At least one employee record is required for PPh TER"))
+            
+        for d in self.details:
+            if not d.amount or d.amount <= 0:
+                frappe.throw(_("PPh amount must be greater than 0 for employee {0}").format(d.employee_name))
+    
+    def calculate_total(self):
+        """Calculate total from details"""
+        self.total = sum(flt(d.amount) for d in self.details)
+    
+    def validate_total(self):
+        """Validate total amount is greater than 0"""
+        if not self.total or self.total <= 0:
+            frappe.throw(_("Total amount must be greater than 0"))
+    
+    def on_submit(self):
+        """Set status to Submitted"""
+        self.status = "Submitted"
+    
+    def on_cancel(self):
+        """Reset status to Draft"""
+        if self.payment_entry:
+            pe_status = frappe.db.get_value("Payment Entry", self.payment_entry, "docstatus")
+            if pe_status and int(pe_status) == 1:
+                frappe.throw(_("Cannot cancel document with submitted Payment Entry"))
+        self.status = "Draft"
+    
+    @frappe.whitelist()
+    def generate_payment_entry(self):
+        """Generate Payment Entry for PPh TER payment to tax office"""
+        if self.payment_entry:
+            frappe.throw(_("Payment Entry already exists"))
+            
+        if self.docstatus != 1:
+            frappe.throw(_("Document must be submitted first"))
+            
+        try:
+            # Create payment entry
+            pe = frappe.new_doc("Payment Entry")
+            pe.payment_type = "Pay"
+            pe.party_type = "Supplier"
+            pe.party = "Kantor Pajak"  # Tax Office
+            pe.posting_date = today()
+            pe.paid_amount = self.total
+            pe.received_amount = self.total
+            
+            # Set company and accounts
+            pe.company = self.company
+            pe.paid_from = frappe.get_cached_value('Company', self.company, 'default_bank_account')
+            pe.paid_to = frappe.get_cached_value('Company', self.company, 'default_payable_account')
+            
+            # Set references
+            pe.reference_doctype = self.doctype
+            pe.reference_name = self.name
+            
+            # Add custom remarks with period
+            period_text = f"{self.period} {self.year}"
+            pe.remarks = (
+                f"PPh 21 Payment for {period_text}\n"
+                f"Total Amount: {get_formatted_currency(self.total, pe.company)}"
             )
-    
-    def validate_overlapping_range(self):
-        """Check for overlapping ranges with the same status_pajak"""
-        if not self.from_income:
-            return
             
-        # Convert 0 to a very large number for comparison
-        to_income = self.to_income if self.to_income else 999999999999
-        
-        overlapping = frappe.db.sql("""
-            SELECT name, from_income, to_income, ter_percent
-            FROM `tabPPh TER Table`
-            WHERE status_pajak = %(status_pajak)s
-                AND name != %(name)s
-                AND (
-                    (%(from_income)s BETWEEN from_income 
-                        AND IFNULL(NULLIF(to_income, 0), 999999999999))
-                    OR
-                    (%(to_income)s BETWEEN from_income 
-                        AND IFNULL(NULLIF(to_income, 0), 999999999999))
-                    OR
-                    (from_income BETWEEN %(from_income)s AND %(to_income)s)
-                )
-        """, {
-            'status_pajak': self.status_pajak,
-            'name': self.name or 'New PPh TER Table',
-            'from_income': self.from_income,
-            'to_income': to_income
-        }, as_dict=1)
-        
-        if overlapping:
-            company = frappe.defaults.get_defaults().get('company')
-            currency = frappe.get_cached_value('Company', company, 'default_currency') if company else 'IDR'
+            # Save and submit
+            pe.insert()
+            pe.submit()
             
-            ranges = []
-            for o in overlapping:
-                to_income_str = "∞" if not o.to_income or o.to_income == 0 else \
-                    fmt_money(o.to_income, currency=currency)
-                ranges.append(
-                    _("{0}: {1} - {2} @ {3}%").format(
-                        o.name,
-                        fmt_money(o.from_income, currency=currency),
-                        to_income_str,
-                        o.ter_percent
-                    )
-                )
+            # Update this document
+            self.db_set('payment_entry', pe.name)
+            self.db_set('status', 'Paid')
             
-            frappe.throw(
-                _("Income range overlaps with existing record(s) for status {0}:<br>{1}")
-                .format(
-                    self.status_pajak,
-                    "<br>".join(ranges)
-                )
-            )
+            return pe.name
+            
+        except Exception as e:
+            frappe.msgprint(_("Error creating Payment Entry"))
+            frappe.throw(str(e))
