@@ -1,0 +1,173 @@
+{
+    "charts": [],
+    "content": [
+     {
+      "type": "header",
+      "data": {
+       "text": "Payroll Indonesia",
+       "level": 1
+      }
+     },
+     {
+      "type": "paragraph",
+      "data": {
+       "text": "Indonesian Payroll management with BPJS and PPh 21 calculations"
+      }
+     },
+     {
+      "type": "section",
+      "data": {
+       "title": "Employee Management",
+       "items": [
+        {
+         "type": "link",
+         "data": {
+          "label": "Employee",
+          "name": "Employee",
+          "doctype": "Employee",
+          "dependencies": ["Employee"]
+         }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "Jabatan",
+          "name": "Jabatan",
+          "doctype": "Jabatan",
+          "dependencies": ["Jabatan"]
+         }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "Golongan",
+          "name": "Golongan",
+          "doctype": "Golongan",
+          "dependencies": ["Golongan"]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "type": "section",
+      "data": {
+       "title": "BPJS Management",
+       "items": [
+        {
+         "type": "link",
+         "data": {
+          "label": "BPJS Settings",
+          "name": "BPJS Settings",
+          "doctype": "BPJS Settings",
+          "dependencies": ["BPJS Settings"]
+         }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "BPJS Payment Summary",
+          "name": "BPJS Payment Summary",
+          "doctype": "BPJS Payment Summary",
+          "dependencies": ["BPJS Payment Summary"]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "type": "section",
+      "data": {
+       "title": "Tax Management",
+       "items": [
+        {
+         "type": "link",
+         "data": {
+          "label": "PPh 21 Settings",
+          "name": "PPh 21 Settings",
+          "doctype": "PPh 21 Settings",
+          "dependencies": ["PPh 21 Settings"]
+         }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "Employee Tax Summary",
+          "name": "Employee Tax Summary",
+          "doctype": "Employee Tax Summary",
+          "dependencies": ["Employee Tax Summary"]
+         }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "PPh 21 TER Table",
+          "name": "PPh 21 TER Table",
+          "doctype": "PPh 21 TER Table",
+          "dependencies": ["PPh 21 TER Table"]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "type": "section",
+      "data": {
+       "title": "Reports",
+       "items": [
+        {
+         "type": "link",
+         "data": {
+          "label": "BPJS Monthly Report",
+          "name": "BPJS Monthly Report",
+          "doctype": "Report",
+          "report_type": "Script Report",
+          "is_query_report": true
+         }
+        },
+        {
+         "type": "link",
+         "data": {
+          "label": "Employee Tax Report",
+          "name": "Employee Tax Report",
+          "doctype": "Report",
+          "report_type": "Script Report",
+          "is_query_report": true
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "creation": "2025-04-25 10:00:00.000000",
+    "docstatus": 0,
+    "doctype": "Workspace",
+    "for_user": "",
+    "hide_custom": 0,
+    "is_hidden": 0,
+    "is_standard": 1,
+    "label": "Payroll Indonesia",
+    "links": [],
+    "modified": "2025-04-25 10:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Payroll Indonesia",
+    "name": "Payroll Indonesia",
+    "owner": "Administrator",
+    "parent_page": "Payroll",
+    "public": 1,
+    "quick_lists": [],
+    "roles": [
+     {
+      "role": "HR Manager"
+     },
+     {
+      "role": "HR User"
+     },
+     {
+      "role": "Employee"
+     }
+    ],
+    "sequence_id": 1,
+    "shortcuts": [],
+    "title": "Payroll Indonesia"
+   }

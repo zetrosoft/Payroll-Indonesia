@@ -151,6 +151,7 @@ fixtures = [
         ]
     },
     
+    "payroll_indonesia/payroll_indonesia/workspace/payroll_indonesia/payroll_indonesia.json",
     # Reports
     {
         "dt": "Report",
