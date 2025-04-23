@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, Danny Audian and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-23 12:21:23 by dannyaudian
+# Last modified: 2025-04-23 13:11:33 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -19,13 +19,16 @@ doctype_js = {
     "Employee": "public/js/employee.js",
     "Salary Slip": "public/js/salary_slip.js",
     "PPh TER Table": "public/js/pph_ter_table.js",
-    "BPJS Payment Summary": "public/js/bpjs_payment_summary.js"
+    "BPJS Payment Summary": "public/js/bpjs_payment_summary.js",
+    "PPh 21 Settings": "public/js/pph_21_settings.js",
+    "BPJS Settings": "public/js/bpjs_settings.js"
 }
 
 # List view JS 
 doctype_list_js = {
     "PPh TER Table": "public/js/pph_ter_table_list.js",
-    "BPJS Payment Summary": "public/js/bpjs_payment_summary_list.js"
+    "BPJS Payment Summary": "public/js/bpjs_payment_summary_list.js",
+    "Employee Tax Summary": "public/js/employee_tax_summary_list.js"
 }
 
 # Installation
@@ -44,7 +47,14 @@ doc_events = {
     },
     "Salary Slip": {
         "validate": "payroll_indonesia.override.salary_slip_functions.validate_salary_slip",
-        "on_submit": "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip"
+        "on_submit": "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
+        "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
+    },
+    "PPh 21 Settings": {
+        "on_update": "payroll_indonesia.payroll_indonesia.tax.pph21_settings.on_update"
+    },
+    "BPJS Settings": {
+        "on_update": "payroll_indonesia.payroll_indonesia.bpjs.bpjs_settings.on_update"
     }
 }
 
@@ -54,7 +64,7 @@ fixtures = [
     {
         "dt": "Custom Field",
         "filters": [
-            ["dt", "=", "Employee"]
+            ["dt", "in", ["Employee", "Salary Slip"]]
         ]
     },
     "Client Script",
@@ -87,11 +97,12 @@ fixtures = [
         ]
     },
     
-    # Payroll Indonesia Settings
+    # Payroll Indonesia Settings - Using DocType Names
     "BPJS Settings",
     "PPh 21 Settings",
     "PPh 21 Tax Bracket",
-    "PPh 21 TER Table",  # Tambahkan ini untuk PPh 21 TER Table
+    "PPh 21 TER Table",
+    "PPh 21 PTKP",
     
     # Master Data - Payroll
     "Golongan",
@@ -138,6 +149,18 @@ fixtures = [
         "filters": [
             ["name", "=", "Payroll Indonesia"]
         ]
+    },
+    
+    # Reports
+    {
+        "dt": "Report",
+        "filters": [
+            ["name", "in", [
+                "PPh 21 Summary", 
+                "BPJS Monthly Report",
+                "TER vs Progressive Comparison"
+            ]]
+        ]
     }
 ]
 
@@ -149,7 +172,8 @@ fixtures_import_order = [
     "BPJS Settings",
     "PPh 21 Settings",
     "PPh 21 Tax Bracket",
-    "PPh 21 TER Table",  # Tambahkan ini untuk PPh 21 TER Table
+    "PPh 21 TER Table",
+    "PPh 21 PTKP",
     "Golongan",
     "Jabatan",
     "Employee Tax Summary",
@@ -160,6 +184,7 @@ fixtures_import_order = [
     "Custom Field",
     "Property Setter",
     "Client Script",
+    "Report",
     "Workspace"
 ]
 
@@ -168,7 +193,10 @@ jinja = {
     "methods": [
         "payroll_indonesia.payroll_indonesia.utils.get_bpjs_settings",
         "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings",
-        "payroll_indonesia.payroll_indonesia.utils.calculate_bpjs_contributions"
+        "payroll_indonesia.payroll_indonesia.utils.calculate_bpjs_contributions",
+        "payroll_indonesia.payroll_indonesia.utils.get_ter_rate",
+        "payroll_indonesia.payroll_indonesia.utils.should_use_ter",
+        "payroll_indonesia.payroll_indonesia.utils.get_pph21_settings"
     ]
 }
 
@@ -202,3 +230,21 @@ states_in_transaction = {
     "BPJS Payment Summary": ["Draft", "Submitted", "Paid", "Cancelled"],
     "PPh TER Table": ["Draft", "Submitted", "Paid", "Cancelled"]
 }
+
+# Scheduled Tasks
+scheduler_events = {
+    "monthly": [
+        "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries"
+    ],
+    "yearly": [
+        "payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"
+    ]
+}
+
+# Boot Info
+boot_session = "payroll_indonesia.startup.boot.boot_session"
+
+# Web Routes
+website_route_rules = [
+    {"from_route": "/payslip/<path:payslip_name>", "to_route": "payroll_indonesia/templates/pages/payslip"}
+]
