@@ -9,6 +9,35 @@ def before_install():
 def after_install():
     """Setup requirements after installing the app"""
     # Create Accounts first (required for salary components)
+    try:
+        create_accounts()
+    except Exception as e:
+        frappe.log_error(f"Error creating accounts: {str(e)}")
+        frappe.msgprint(f"Warning: Some accounts could not be created: {str(e)}")
+    
+    # Setup additional requirements
+    try:
+        create_supplier_group()
+    except Exception as e:
+        frappe.log_error(f"Error creating supplier group: {str(e)}")
+        frappe.msgprint(f"Warning: Supplier group could not be created: {str(e)}")
+    
+    # Setup Settings - delay to ensure DocTypes are installed
+    frappe.enqueue(
+        setup_pph21_defaults,
+        queue='default',
+        timeout=600,
+        is_async=True
+    )
+    
+    frappe.enqueue(
+        setup_pph21_ter,
+        queue='default',
+        timeout=600,
+        is_async=True
+    )
+    """Setup requirements after installing the app"""
+    # Create Accounts first (required for salary components)
     create_accounts()
     
     # Setup additional requirements
@@ -96,6 +125,121 @@ def create_supplier_group():
             frappe.log_error(f"Failed to create Government supplier group: {str(e)}")
 
 def setup_pph21_defaults():
+    """Setup default PPh 21 configuration
+
+    Sets up the income tax settings with default PTKP values and tax brackets
+    according to Indonesian tax regulations
+    """
+    try:
+        # Check if PPh 21 Settings DocType exists
+        if not frappe.db.exists("DocType", "PPh 21 Settings"):
+            frappe.log_error("DocType 'PPh 21 Settings' tidak ditemukan. Pastikan DocType sudah diinstall dengan benar.")
+            frappe.msgprint("DocType 'PPh 21 Settings' tidak ditemukan. Skipping PPh 21 setup.")
+            return
+        
+        # Check if we need to create or just update
+        doc_exists = frappe.db.exists("PPh 21 Settings", "PPh 21 Settings")
+        
+        if not doc_exists:
+            try:
+                # Create new PPh 21 Settings
+                settings = frappe.new_doc("PPh 21 Settings")
+                settings.calculation_method = "Progressive"
+                settings.use_ter = 0
+                
+                # Add default PTKP values (sesuai peraturan terbaru)
+                ptkp_values = {
+                    "TK0": 54000000,  # tidak kawin, 0 tanggungan
+                    "TK1": 58500000,  # tidak kawin, 1 tanggungan
+                    "TK2": 63000000,  # tidak kawin, 2 tanggungan
+                    "TK3": 67500000,  # tidak kawin, 3 tanggungan
+                    "K0": 58500000,   # kawin, 0 tanggungan
+                    "K1": 63000000,   # kawin, 1 tanggungan
+                    "K2": 67500000,   # kawin, 2 tanggungan
+                    "K3": 72000000,   # kawin, 3 tanggungan
+                    "HB0": 112500000, # kawin penghasilan istri digabung, 0 tanggungan
+                    "HB1": 117000000, # kawin penghasilan istri digabung, 1 tanggungan
+                    "HB2": 121500000, # kawin penghasilan istri digabung, 2 tanggungan
+                    "HB3": 126000000  # kawin penghasilan istri digabung, 3 tanggungan
+                }
+                
+                # Add each PTKP value to the settings
+                for status, amount in ptkp_values.items():
+                    try:
+                        ptkp_row = {}
+                        ptkp_row["status_pajak"] = status
+                        ptkp_row["ptkp_amount"] = amount
+                        
+                        # Add description for better readability
+                        if status.startswith("TK"):
+                            tanggungan = status[2:]
+                            ptkp_row["description"] = f"Tidak Kawin, {tanggungan} Tanggungan"
+                        elif status.startswith("K"):
+                            tanggungan = status[1:]
+                            ptkp_row["description"] = f"Kawin, {tanggungan} Tanggungan" 
+                        elif status.startswith("HB"):
+                            tanggungan = status[2:]
+                            ptkp_row["description"] = f"Kawin (Penghasilan Istri Digabung), {tanggungan} Tanggungan"
+                            
+                        settings.append("ptkp_table", ptkp_row)
+                    except Exception as e:
+                        frappe.log_error(f"Error adding PTKP row: {str(e)}")
+                
+                # Add default tax brackets (pasal 17 UU PPh)
+                brackets = [
+                    {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
+                    {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
+                    {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
+                    {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
+                    {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
+                ]
+                
+                # Add each tax bracket to the settings
+                for bracket in brackets:
+                    try:
+                        settings.append("bracket_table", bracket)
+                    except Exception as e:
+                        frappe.log_error(f"Error adding bracket row: {str(e)}")
+                
+                try:
+                    settings.insert(ignore_permissions=True)
+                    frappe.db.commit()
+                    frappe.msgprint("Setup PPh 21 Settings completed successfully")
+                except Exception as e:
+                    frappe.log_error(f"Error saving PPh 21 Settings: {str(e)}")
+                    frappe.msgprint(f"Error saving PPh 21 Settings: {str(e)}")
+            except Exception as e:
+                frappe.log_error(f"Error creating PPh 21 Settings: {str(e)}")
+                frappe.msgprint(f"Error creating PPh 21 Settings: {str(e)}")
+        else:
+            # Settings exist but check if bracket table is populated
+            try:
+                settings = frappe.get_doc("PPh 21 Settings", "PPh 21 Settings")
+                
+                # Check if tables are empty and need to be populated
+                if not settings.bracket_table or len(settings.bracket_table) == 0:
+                    # Brackets empty, populate defaults
+                    brackets = [
+                        {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
+                        {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
+                        {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
+                        {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
+                        {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
+                    ]
+                    
+                    for bracket in brackets:
+                        settings.append("bracket_table", bracket)
+                    
+                    settings.save()
+                    frappe.db.commit()
+                    frappe.msgprint("Added default tax brackets to PPh 21 Settings")
+            except Exception as e:
+                frappe.log_error(f"Error updating PPh 21 Settings: {str(e)}")
+                frappe.msgprint(f"Error updating PPh 21 Settings: {str(e)}")
+    
+    except Exception as e:
+        frappe.log_error(f"Unexpected error in setup_pph21_defaults: {str(e)}")
+        frappe.msgprint(f"Warning: PPh 21 setup encountered an error: {str(e)}")
     """Setup default PPh 21 configuration
 
     Sets up the income tax settings with default PTKP values and tax brackets

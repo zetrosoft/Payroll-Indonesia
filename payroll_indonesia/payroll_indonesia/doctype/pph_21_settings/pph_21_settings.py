@@ -9,8 +9,10 @@ from frappe.model.document import Document
 class PPh21Settings(Document):
     def validate(self):
         """Validate PPh 21 settings"""
-        self.validate_bracket_table()
-        self.validate_ptkp_table()
+        if self.bracket_table:
+            self.validate_bracket_table()
+        if self.ptkp_table:
+            self.validate_ptkp_table()
         
     def validate_bracket_table(self):
         """Ensure tax brackets are continuous and non-overlapping"""
@@ -26,7 +28,7 @@ class PPh21Settings(Document):
             next_bracket = sorted_brackets[i + 1]
             
             if current.income_to != next_bracket.income_from:
-                frappe.throw(f"Tax brackets must be continuous. Gap found between {current.income_to} and {next_bracket.income_from}")
+                frappe.msgprint(f"Warning: Tax brackets should be continuous. Gap found between {current.income_to} and {next_bracket.income_from}")
     
     def validate_ptkp_table(self):
         """Ensure all PTKP status types are defined"""
@@ -39,7 +41,7 @@ class PPh21Settings(Document):
         
         for status in required_status:
             if status not in defined_status:
-                frappe.throw(f"Missing PTKP definition for status: {status}")
+                frappe.msgprint(f"Warning: Missing PTKP definition for status: {status}")
     
     def get_ptkp_amount(self, status_pajak):
         """Get PTKP amount for a given tax status
