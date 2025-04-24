@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-23 13:11:33 by dannyaudian
+# Last modified: 2025-04-24 09:47:00 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -143,9 +143,9 @@ fixtures = [
     "PPh TER Detail",
     "PPh TER Account Detail",
     
-    # Workspace & Reports
+    # Workspace - DISINI KITA PRIORITASKAN WORKSPACE JSON
     {
-        "dt": "Workspace",
+        "doctype": "Workspace",
         "filters": [
             ["name", "=", "Payroll Indonesia"]
         ]
@@ -163,172 +163,6 @@ fixtures = [
         ]
     }
 ]
-
-# Define workspace config
-workspace_config = {
-    "Payroll Indonesia": {
-        "content": [
-            {
-                "type": "header",
-                "data": {
-                    "text": "Payroll Indonesia",
-                    "level": 1
-                }
-            },
-            {
-                "type": "paragraph",
-                "data": {
-                    "text": "Indonesian Payroll management with BPJS and PPh 21 calculations"
-                }
-            },
-            {
-                "type": "section",
-                "data": {
-                    "title": "Employee Management",
-                    "items": [
-                        {
-                            "type": "link",
-                            "data": {
-                                "label": "Employee",
-                                "name": "Employee",
-                                "doctype": "Employee",
-                                "dependencies": ["Employee"]
-                            }
-                        },
-                        {
-                            "type": "link",
-                            "data": {
-                                "label": "Jabatan",
-                                "name": "Jabatan",
-                                "doctype": "Jabatan",
-                                "dependencies": ["Jabatan"]
-                            }
-                        },
-                        {
-                            "type": "link",
-                            "data": {
-                                "label": "Golongan",
-                                "name": "Golongan",
-                                "doctype": "Golongan",
-                                "dependencies": ["Golongan"]
-                            }
-                        }
-                    ]
-                }
-            },
-            {
-                "type": "section",
-                "data": {
-                    "title": "BPJS Management",
-                    "items": [
-                        {
-                            "type": "link",
-                            "data": {
-                                "label": "BPJS Settings",
-                                "name": "BPJS Settings",
-                                "doctype": "BPJS Settings",
-                                "dependencies": ["BPJS Settings"]
-                            }
-                        },
-                        {
-                            "type": "link",
-                            "data": {
-                                "label": "BPJS Payment Summary",
-                                "name": "BPJS Payment Summary",
-                                "doctype": "BPJS Payment Summary",
-                                "dependencies": ["BPJS Payment Summary"]
-                            }
-                        }
-                    ]
-                }
-            },
-            {
-                "type": "section",
-                "data": {
-                    "title": "Tax Management",
-                    "items": [
-                        {
-                            "type": "link",
-                            "data": {
-                                "label": "PPh 21 Settings",
-                                "name": "PPh 21 Settings",
-                                "doctype": "PPh 21 Settings",
-                                "dependencies": ["PPh 21 Settings"]
-                            }
-                        },
-                        {
-                            "type": "link",
-                            "data": {
-                                "label": "Employee Tax Summary",
-                                "name": "Employee Tax Summary",
-                                "doctype": "Employee Tax Summary",
-                                "dependencies": ["Employee Tax Summary"]
-                            }
-                        },
-                        {
-                            "type": "link",
-                            "data": {
-                                "label": "PPh TER Table",
-                                "name": "PPh TER Table",
-                                "doctype": "PPh TER Table",
-                                "dependencies": ["PPh TER Table"]
-                            }
-                        }
-                    ]
-                }
-            },
-            {
-                "type": "section",
-                "data": {
-                    "title": "Reports",
-                    "items": [
-                        {
-                            "type": "link",
-                            "data": {
-                                "label": "PPh 21 Summary",
-                                "name": "PPh 21 Summary",
-                                "doctype": "Report",
-                                "report_type": "Script Report",
-                                "is_query_report": True
-                            }
-                        },
-                        {
-                            "type": "link",
-                            "data": {
-                                "label": "BPJS Monthly Report",
-                                "name": "BPJS Monthly Report",
-                                "doctype": "Report",
-                                "report_type": "Script Report",
-                                "is_query_report": True
-                            }
-                        },
-                        {
-                            "type": "link",
-                            "data": {
-                                "label": "TER vs Progressive Comparison",
-                                "name": "TER vs Progressive Comparison",
-                                "doctype": "Report",
-                                "report_type": "Script Report",
-                                "is_query_report": True
-                            }
-                        }
-                    ]
-                }
-            }
-        ],
-        "docstatus": 0,
-        "is_standard": 1,
-        "module": "Payroll Indonesia",
-        "name": "Payroll Indonesia",
-        "parent_page": "Payroll",
-        "public": 1,
-        "roles": [
-            {"role": "HR Manager"},
-            {"role": "HR User"},
-            {"role": "Employee"}
-        ]
-    }
-}
 
 # Control fixture loading order
 fixtures_import_order = [
@@ -351,6 +185,7 @@ fixtures_import_order = [
     "Property Setter",
     "Client Script",
     "Report",
+    # Pastikan Workspace di-load terakhir agar tidak tertimpa
     "Workspace"
 ]
 
@@ -407,10 +242,10 @@ scheduler_events = {
     ]
 }
 
-# Boot Info
-# boot_session = "payroll_indonesia.startup.boot.boot_session"
-
 # Web Routes
 website_route_rules = [
     {"from_route": "/payslip/<path:payslip_name>", "to_route": "payroll_indonesia/templates/pages/payslip"}
 ]
+
+# HAPUS ATAU KOMENTARI KONFIGURASI WORKSPACE BERIKUT
+# workspace_config = { ... }
