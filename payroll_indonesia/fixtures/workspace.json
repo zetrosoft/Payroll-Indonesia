@@ -1,7 +1,7 @@
 {
   "charts": [],
   "content": "[{\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Payroll Indonesia</span>\",\"level\":1}},{\"type\":\"spacer\",\"data\":{\"height\":20}},{\"type\":\"paragraph\",\"data\":{\"text\":\"Modul untuk manajemen penggajian karyawan di Indonesia dengan fitur-fitur khusus untuk peraturan perpajakan dan BPJS di Indonesia.\"}}]",
-  "creation": "2025-04-24 04:57:14",
+  "creation": "2025-04-24 05:03:19",
   "docstatus": 0,
   "doctype": "Workspace",
   "for_user": "",
@@ -81,7 +81,7 @@
       "type": "Link"
     }
   ],
-  "modified": "2025-04-24 04:57:14",
+  "modified": "2025-04-24 05:03:19",
   "modified_by": "dannyaudian",
   "module": "Payroll Indonesia",
   "name": "Payroll Indonesia",
