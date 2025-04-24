@@ -408,7 +408,7 @@ scheduler_events = {
 }
 
 # Boot Info
-boot_session = "payroll_indonesia.startup.boot.boot_session"
+# boot_session = "payroll_indonesia.startup.boot.boot_session"
 
 # Web Routes
 website_route_rules = [
