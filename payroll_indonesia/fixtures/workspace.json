@@ -1,299 +1,277 @@
 {
-  "Name": "Payroll Indonesia",
-  "Title": "Payroll Indonesia",
-  "Sequence Id": 7.0,
-  "For User": "",
-  "Parent Page": "HR",
-  "Module": "Payroll Indonesia",
-  "Icon": "hr",
-  "Indicator Color": "",
-  "Restrict to Domain": "",
-  "Hide Custom DocTypes and Reports": 0,
-  "Public": 1,
-  "Is Hidden": 0,
-  "Content": "[{\"id\":\"px9s17dYkx\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Payroll Indonesia</b></span>\",\"col\":12}},{\"id\":\"aW2i5R5GRP\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"f5K0dYJ3QS\",\"type\":\"paragraph\",\"data\":{\"text\":\"Modul untuk manajemen penggajian karyawan di Indonesia dengan fitur-fitur khusus untuk peraturan perpajakan dan BPJS di Indonesia.\",\"col\":12}},{\"id\":\"1it3dCOnm6\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Akses Cepat</b></span>\",\"col\":12}},{\"id\":\"x7pLl-spS4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Slip Gaji\",\"col\":3}},{\"id\":\"SSGrXWmY-H\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Employee\",\"col\":3}},{\"id\":\"-5J_yLxDaS\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Salary Structure\",\"col\":3}},{\"id\":\"6YEYpnIBKV\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"PPh TER Table\",\"col\":3}},{\"id\":\"c_GjZuZ2oN\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Pengaturan BPJS\",\"col\":3}},{\"id\":\"mX-9DJSyT2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Jabatan\",\"col\":3}},{\"id\":\"oNjjNbnUHp\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"0BcePLg0g1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Dokumen & Master</b></span>\",\"col\":12}},{\"id\":\"uze5dJ1ipL\",\"type\":\"card\",\"data\":{\"card_name\":\"Dokumen Penggajian\",\"col\":4}},{\"id\":\"3j2fYwMAkq\",\"type\":\"card\",\"data\":{\"card_name\":\"Pengaturan Pajak\",\"col\":4}},{\"id\":\"xImm8NepFt\",\"type\":\"card\",\"data\":{\"card_name\":\"Struktur Gaji\",\"col\":4}},{\"id\":\"6MjIe7KCQo\",\"type\":\"card\",\"data\":{\"card_name\":\"Master Data\",\"col\":4}},{\"id\":\"lBu2EKgmJF\",\"type\":\"card\",\"data\":{\"card_name\":\"Laporan\",\"col\":4}}]",
-  "shortcuts": [
-    {
-      "ID (Shortcuts)": "pi1eqoo214",
-      "Color (Shortcuts)": "Blue",
-      "Count Filter (Shortcuts)": "{\"docstatus\": 0}",
-      "DocType View (Shortcuts)": "List",
-      "Format (Shortcuts)": "{} Tersedia",
-      "Label (Shortcuts)": "Slip Gaji",
-      "Link To (Shortcuts)": "Salary Slip",
-      "Type (Shortcuts)": "DocType"
-    },
-    {
-      "ID (Shortcuts)": "pi18lu6je2",
-      "Color (Shortcuts)": "Purple",
-      "DocType View (Shortcuts)": "List",
-      "Label (Shortcuts)": "Employee",
-      "Link To (Shortcuts)": "Employee",
-      "Type (Shortcuts)": "DocType"
-    },
-    {
-      "ID (Shortcuts)": "pi1lc4i7rg",
-      "Color (Shortcuts)": "Green",
-      "DocType View (Shortcuts)": "List",
-      "Label (Shortcuts)": "Salary Structure",
-      "Link To (Shortcuts)": "Salary Structure",
-      "Type (Shortcuts)": "DocType"
-    },
-    {
-      "ID (Shortcuts)": "pi17j5t3gd",
-      "Color (Shortcuts)": "Red",
-      "Count Filter (Shortcuts)": "{\"docstatus\": 0}",
-      "DocType View (Shortcuts)": "List",
-      "Format (Shortcuts)": "{} Pending",
-      "Label (Shortcuts)": "PPh TER Table",
-      "Link To (Shortcuts)": "PPh TER Table",
-      "Type (Shortcuts)": "DocType"
-    },
-    {
-      "ID (Shortcuts)": "pi1k2n3ch0",
-      "Color (Shortcuts)": "Yellow",
-      "DocType View (Shortcuts)": "List",
-      "Label (Shortcuts)": "Pengaturan BPJS",
-      "Link To (Shortcuts)": "BPJS Settings",
-      "Type (Shortcuts)": "DocType"
-    },
-    {
-      "ID (Shortcuts)": "pi1j5t3gda",
-      "Color (Shortcuts)": "Grey",
-      "DocType View (Shortcuts)": "List",
-      "Label (Shortcuts)": "Jabatan",
-      "Link To (Shortcuts)": "Jabatan",
-      "Type (Shortcuts)": "DocType"
-    }
-  ],
+  "doctype": "Workspace",
+  "name": "Payroll Indonesia",
+  "category": "Modules",
+  "charts": [],
+  "content": "[{\"id\":\"px9s17dYkx\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Payroll Indonesia</b></span>\",\"col\":12}},{\"id\":\"aW2i5R5GRP\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"f5K0dYJ3QS\",\"type\":\"paragraph\",\"data\":{\"text\":\"Modul untuk manajemen penggajian karyawan di Indonesia dengan fitur-fitur khusus untuk peraturan perpajakan dan BPJS di Indonesia.\",\"col\":12}},{\"id\":\"1it3dCOnm6\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Akses Cepat</b></span>\",\"col\":12}},{\"id\":\"x7pLl-spS4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Slip Gaji\",\"col\":3}},{\"id\":\"SSGrXWmY-H\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Employee\",\"col\":3}},{\"id\":\"-5J_yLxDaS\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Salary Structure\",\"col\":3}},{\"id\":\"6YEYpnIBKV\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"PPh TER Table\",\"col\":3}},{\"id\":\"c_GjZuZ2oN\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Pengaturan BPJS\",\"col\":3}},{\"id\":\"mX-9DJSyT2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Jabatan\",\"col\":3}},{\"id\":\"oNjjNbnUHp\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"0BcePLg0g1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Dokumen & Master</b></span>\",\"col\":12}},{\"id\":\"uze5dJ1ipL\",\"type\":\"card\",\"data\":{\"card_name\":\"Dokumen Penggajian\",\"col\":4}},{\"id\":\"3j2fYwMAkq\",\"type\":\"card\",\"data\":{\"card_name\":\"Pengaturan Pajak\",\"col\":4}},{\"id\":\"xImm8NepFt\",\"type\":\"card\",\"data\":{\"card_name\":\"Struktur Gaji\",\"col\":4}},{\"id\":\"6MjIe7KCQo\",\"type\":\"card\",\"data\":{\"card_name\":\"Master Data\",\"col\":4}},{\"id\":\"lBu2EKgmJF\",\"type\":\"card\",\"data\":{\"card_name\":\"Laporan\",\"col\":4}}]",
+  "creation": "2025-04-24 08:50:52",
+  "custom_blocks": [],
+  "developer_mode_only": 0,
+  "disable_user_customization": 0,
+  "docstatus": 0,
+  "extends_another_page": 0,
+  "for_user": "",
+  "hide_custom": 0,
+  "icon": "hr",
+  "idx": 0,
+  "is_default": 0,
+  "is_hidden": 0,
+  "is_standard": 1,
+  "label": "Payroll Indonesia",
   "links": [
     {
-      "ID (Links)": "pi1qh5bujp",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Dokumen Penggajian",
-      "Link Count (Links)": 0,
-      "Type (Links)": "Card Break"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Dokumen Penggajian",
+      "link_type": "DocType",
+      "type": "Card Break"
     },
     {
-      "ID (Links)": "pi1q32er0d",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Slip Gaji",
-      "Link To (Links)": "Salary Slip",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Slip Gaji",
+      "link_to": "Salary Slip",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi1g2s7811",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Pembayaran BPJS",
-      "Link To (Links)": "BPJS Payment Summary",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Pembayaran BPJS",
+      "link_to": "BPJS Payment Summary",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi1sddloi1",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "PPh TER Table",
-      "Link To (Links)": "PPh TER Table",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "PPh TER Table",
+      "link_to": "PPh TER Table",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi1ebpb9ln",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Salary Assignment",
-      "Link To (Links)": "Salary Assignment",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Salary Assignment",
+      "link_to": "Salary Assignment",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi18l024b4",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Pengaturan Pajak",
-      "Link Count (Links)": 0,
-      "Type (Links)": "Card Break"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Pengaturan Pajak",
+      "link_type": "DocType",
+      "type": "Card Break"
     },
     {
-      "ID (Links)": "pi115krkbo",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Pengaturan PPh 21",
-      "Link To (Links)": "PPh 21 Settings",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Pengaturan PPh 21",
+      "link_to": "PPh 21 Settings",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi1hel6uv2",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Pengaturan BPJS",
-      "Link To (Links)": "BPJS Settings",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Pengaturan BPJS",
+      "link_to": "BPJS Settings",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi182794o9",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Struktur Gaji",
-      "Link Count (Links)": 0,
-      "Type (Links)": "Card Break"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Struktur Gaji",
+      "link_type": "DocType",
+      "type": "Card Break"
     },
     {
-      "ID (Links)": "pi1n1i3jh7",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Salary Structure",
-      "Link To (Links)": "Salary Structure",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Salary Structure",
+      "link_to": "Salary Structure",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi1qd09kn5",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Salary Component",
-      "Link To (Links)": "Salary Component",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Salary Component",
+      "link_to": "Salary Component",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi1lk6l51l",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Master Data",
-      "Link Count (Links)": 0,
-      "Type (Links)": "Card Break"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Master Data",
+      "link_type": "DocType",
+      "type": "Card Break"
     },
     {
-      "ID (Links)": "pi19ukqgin",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Employee",
-      "Link To (Links)": "Employee",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Employee",
+      "link_to": "Employee",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi1a9kv8ou",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Jabatan",
-      "Link To (Links)": "Jabatan",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Jabatan",
+      "link_to": "Jabatan",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi1a9kv8ov",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Golongan",
-      "Link To (Links)": "Golongan",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Golongan",
+      "link_to": "Golongan",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi1a9kv8ow",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "PPh 21 TER Table",
-      "Link To (Links)": "PPh 21 TER Table",
-      "Link Type (Links)": "DocType",
-      "Onboard (Links)": 0,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "PPh 21 TER Table",
+      "link_to": "PPh 21 TER Table",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi1a9kv8ox",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 0,
-      "Label (Links)": "Laporan",
-      "Link Count (Links)": 0,
-      "Type (Links)": "Card Break"
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Laporan",
+      "link_type": "Report",
+      "type": "Card Break"
     },
     {
-      "ID (Links)": "pi1a9kv8oy",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 1,
-      "Label (Links)": "Laporan PPh 21",
-      "Link To (Links)": "PPh 21 Report",
-      "Link Type (Links)": "Report",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 1,
+      "label": "Laporan PPh 21",
+      "link_to": "PPh 21 Report",
+      "link_type": "Report",
+      "onboard": 1,
+      "type": "Link"
     },
     {
-      "ID (Links)": "pi1a9kv8oz",
-      "Hidden (Links)": 0,
-      "Is Query Report (Links)": 1,
-      "Label (Links)": "Laporan BPJS",
-      "Link To (Links)": "BPJS Report",
-      "Link Type (Links)": "Report",
-      "Onboard (Links)": 1,
-      "Type (Links)": "Link"
+      "hidden": 0,
+      "is_query_report": 1,
+      "label": "Laporan BPJS",
+      "link_to": "BPJS Report",
+      "link_type": "Report",
+      "onboard": 1,
+      "type": "Link"
     }
   ],
+  "modified": "2025-04-24 08:50:52",
+  "modified_by": "Administrator",
+  "module": "Payroll Indonesia",
+  "number_cards": [],
+  "owner": "Administrator",
+  "parent_page": "HR",
+  "pin_to_bottom": 0,
+  "pin_to_top": 0,
+  "public": 1,
   "quick_lists": [
     {
-      "ID (Quick Lists)": "pi1q1",
-      "DocType (Quick Lists)": "Salary Slip",
-      "Label (Quick Lists)": "Slip Gaji (Draft)",
-      "Quick List Filter (Quick Lists)": "docstatus,=,0"
+      "document_type": "Salary Slip",
+      "label": "Slip Gaji (Draft)",
+      "filter_by": "docstatus,=,0"
     },
     {
-      "ID (Quick Lists)": "pi1q2",
-      "DocType (Quick Lists)": "BPJS Payment Summary",
-      "Label (Quick Lists)": "Pembayaran BPJS (Draft)",
-      "Quick List Filter (Quick Lists)": "docstatus,=,0"
+      "document_type": "BPJS Payment Summary",
+      "label": "Pembayaran BPJS (Draft)",
+      "filter_by": "docstatus,=,0"
     },
     {
-      "ID (Quick Lists)": "pi1q3",
-      "DocType (Quick Lists)": "PPh TER Table",
-      "Label (Quick Lists)": "PPh TER (Draft)",
-      "Quick List Filter (Quick Lists)": "docstatus,=,0"
+      "document_type": "PPh TER Table",
+      "label": "PPh TER (Draft)",
+      "filter_by": "docstatus,=,0"
     },
     {
-      "ID (Quick Lists)": "pi1q4",
-      "DocType (Quick Lists)": "Salary Structure",
-      "Label (Quick Lists)": "Struktur Gaji",
-      "Quick List Filter (Quick Lists)": "docstatus,=,1"
+      "document_type": "Salary Structure",
+      "label": "Struktur Gaji",
+      "filter_by": "docstatus,=,1"
     }
   ],
+  "restrict_to_domain": "",
   "roles": [
     {
-      "ID (Roles)": "pi1r1",
-      "Role (Roles)": "HR Manager"
+      "role": "HR Manager"
     },
     {
-      "ID (Roles)": "pi1r2",
-      "Role (Roles)": "HR User"
+      "role": "HR User"
     },
     {
-      "ID (Roles)": "pi1r3",
-      "Role (Roles)": "Employee"
+      "role": "Employee"
     }
   ],
-  "doctype": "Workspace",
-  "creation": "2025-04-24 06:43:29",
-  "modified": "2025-04-24 06:43:29",
-  "modified_by": "Aministrator",
-  "owner": "Administrator",
-  "charts": [],
-  "number_cards": [],
-  "custom_blocks": []
+  "sequence_id": 7.0,
+  "shortcuts": [
+    {
+      "color": "Blue",
+      "doc_view": "List",
+      "format": "{} Tersedia",
+      "label": "Slip Gaji",
+      "link_to": "Salary Slip",
+      "stats_filter": "[[\"Salary Slip\",\"docstatus\",\"=\",\"0\",false]]",
+      "type": "DocType"
+    },
+    {
+      "color": "Purple",
+      "doc_view": "List",
+      "label": "Employee",
+      "link_to": "Employee",
+      "type": "DocType"
+    },
+    {
+      "color": "Green",
+      "doc_view": "List",
+      "label": "Salary Structure",
+      "link_to": "Salary Structure",
+      "type": "DocType"
+    },
+    {
+      "color": "Red",
+      "doc_view": "List",
+      "format": "{} Pending",
+      "label": "PPh TER Table",
+      "link_to": "PPh TER Table",
+      "stats_filter": "[[\"PPh TER Table\",\"docstatus\",\"=\",\"0\",false]]",
+      "type": "DocType"
+    },
+    {
+      "color": "Yellow",
+      "doc_view": "List",
+      "label": "Pengaturan BPJS",
+      "link_to": "BPJS Settings",
+      "type": "DocType"
+    },
+    {
+      "color": "Grey",
+      "doc_view": "List",
+      "label": "Jabatan",
+      "link_to": "Jabatan",
+      "type": "DocType"
+    }
+  ],
+  "title": "Payroll Indonesia"
 }
