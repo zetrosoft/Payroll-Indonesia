@@ -4,7 +4,7 @@
   "category": "Modules",
   "charts": [],
   "content": "[{\"id\":\"px9s17dYkx\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Payroll Indonesia</b></span>\",\"col\":12}},{\"id\":\"aW2i5R5GRP\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"f5K0dYJ3QS\",\"type\":\"paragraph\",\"data\":{\"text\":\"Modul untuk manajemen penggajian karyawan di Indonesia dengan fitur-fitur khusus untuk peraturan perpajakan dan BPJS di Indonesia.\",\"col\":12}},{\"id\":\"1it3dCOnm6\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Akses Cepat</b></span>\",\"col\":12}},{\"id\":\"x7pLl-spS4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Slip Gaji\",\"col\":3}},{\"id\":\"SSGrXWmY-H\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Employee\",\"col\":3}},{\"id\":\"-5J_yLxDaS\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Salary Structure\",\"col\":3}},{\"id\":\"6YEYpnIBKV\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"PPh TER Table\",\"col\":3}},{\"id\":\"c_GjZuZ2oN\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Pengaturan BPJS\",\"col\":3}},{\"id\":\"mX-9DJSyT2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Jabatan\",\"col\":3}},{\"id\":\"oNjjNbnUHp\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"0BcePLg0g1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Dokumen & Master</b></span>\",\"col\":12}},{\"id\":\"uze5dJ1ipL\",\"type\":\"card\",\"data\":{\"card_name\":\"Dokumen Penggajian\",\"col\":4}},{\"id\":\"3j2fYwMAkq\",\"type\":\"card\",\"data\":{\"card_name\":\"Pengaturan Pajak\",\"col\":4}},{\"id\":\"xImm8NepFt\",\"type\":\"card\",\"data\":{\"card_name\":\"Struktur Gaji\",\"col\":4}},{\"id\":\"6MjIe7KCQo\",\"type\":\"card\",\"data\":{\"card_name\":\"Master Data\",\"col\":4}},{\"id\":\"lBu2EKgmJF\",\"type\":\"card\",\"data\":{\"card_name\":\"Laporan\",\"col\":4}}]",
-  "creation": "2025-04-24 08:50:52",
+  "creation": "2025-04-24 08:58:12",
   "custom_blocks": [],
   "developer_mode_only": 0,
   "disable_user_customization": 0,
@@ -13,20 +13,23 @@
   "for_user": "",
   "hide_custom": 0,
   "icon": "hr",
-  "idx": 0,
   "is_default": 0,
   "is_hidden": 0,
   "is_standard": 1,
   "label": "Payroll Indonesia",
   "links": [
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Dokumen Penggajian",
+      "link_count": 4,
       "link_type": "DocType",
+      "onboard": 0,
       "type": "Card Break"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Slip Gaji",
@@ -36,6 +39,7 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Pembayaran BPJS",
@@ -45,6 +49,7 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "PPh TER Table",
@@ -54,6 +59,7 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Salary Assignment",
@@ -63,13 +69,17 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Pengaturan Pajak",
+      "link_count": 2,
       "link_type": "DocType",
+      "onboard": 0,
       "type": "Card Break"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Pengaturan PPh 21",
@@ -79,6 +89,7 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Pengaturan BPJS",
@@ -88,13 +99,17 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Struktur Gaji",
+      "link_count": 2,
       "link_type": "DocType",
+      "onboard": 0,
       "type": "Card Break"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Salary Structure",
@@ -104,6 +119,7 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Salary Component",
@@ -113,13 +129,17 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Master Data",
+      "link_count": 4,
       "link_type": "DocType",
+      "onboard": 0,
       "type": "Card Break"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Employee",
@@ -129,6 +149,7 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Jabatan",
@@ -138,6 +159,7 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Golongan",
@@ -147,6 +169,7 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "PPh 21 TER Table",
@@ -156,13 +179,17 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 0,
       "label": "Laporan",
+      "link_count": 2,
       "link_type": "Report",
+      "onboard": 0,
       "type": "Card Break"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 1,
       "label": "Laporan PPh 21",
@@ -172,6 +199,7 @@
       "type": "Link"
     },
     {
+      "dependencies": "",
       "hidden": 0,
       "is_query_report": 1,
       "label": "Laporan BPJS",
@@ -181,11 +209,11 @@
       "type": "Link"
     }
   ],
-  "modified": "2025-04-24 08:50:52",
-  "modified_by": "Administrator",
+  "modified": "2025-04-24 08:58:12",
+  "modified_by": "dannyaudian",
   "module": "Payroll Indonesia",
   "number_cards": [],
-  "owner": "Administrator",
+  "owner": "dannyaudian",
   "parent_page": "HR",
   "pin_to_bottom": 0,
   "pin_to_top": 0,
@@ -224,7 +252,7 @@
       "role": "Employee"
     }
   ],
-  "sequence_id": 7.0,
+  "sequence_id": 7,
   "shortcuts": [
     {
       "color": "Blue",
