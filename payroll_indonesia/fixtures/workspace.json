@@ -1,16 +1,22 @@
 {
+  "Payroll Indonesia": "Payroll Indonesia",
+  "category": "Modules",
   "charts": [],
-  "content": "[{\"id\":\"p1vsl7dYkx\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Payroll Indonesia</span>\",\"col\":12}},{\"id\":\"BjBjUGMx60\",\"type\":\"spacer\",\"data\":{\"height\":20}},{\"id\":\"f5K0dYJ3QS\",\"type\":\"paragraph\",\"data\":{\"text\":\"Modul untuk manajemen penggajian karyawan di Indonesia dengan fitur-fitur khusus untuk peraturan perpajakan dan BPJS di Indonesia.\",\"col\":12}}]",
-  "creation": "2025-04-24 05:43:22",
+  "content": "[{\"id\":\"p1vsl7dYkx\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Payroll Indonesia</b></span>\",\"col\":12}},{\"id\":\"BjBjUGMx60\",\"type\":\"spacer\",\"data\":{\"height\":20,\"col\":12}},{\"id\":\"f5K0dYJ3QS\",\"type\":\"paragraph\",\"data\":{\"text\":\"Modul untuk manajemen penggajian karyawan di Indonesia dengan fitur-fitur khusus untuk peraturan perpajakan dan BPJS di Indonesia.\",\"col\":12}},{\"id\":\"oNjjNbnUHp\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"0BcePLg0g1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Akses Cepat</b></span>\",\"col\":12}},{\"id\":\"x7pLl-spS4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Slip Gaji\",\"col\":3}},{\"id\":\"SSGrXWmY-H\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Pembayaran BPJS\",\"col\":3}},{\"id\":\"-5J_yLxDaS\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Pengaturan PPh 21\",\"col\":3}},{\"id\":\"6YEYpnIBKV\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Buat Slip Gaji Baru\",\"col\":3}},{\"id\":\"oNjjNbnUH2\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"0BcePLg0g2\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Dokumen & Laporan</b></span>\",\"col\":12}},{\"id\":\"uze5dJ1ipL\",\"type\":\"card\",\"data\":{\"card_name\":\"Dokumen Penggajian\",\"col\":4}},{\"id\":\"3j2fYwMAkq\",\"type\":\"card\",\"data\":{\"card_name\":\"Laporan\",\"col\":4}}]",
+  "creation": "2025-04-24 05:53:02",
   "custom_blocks": [],
+  "developer_mode_only": 0,
+  "disable_user_customization": 0,
   "docstatus": 0,
   "doctype": "Workspace",
+  "extends_another_page": 0,
   "for_user": "",
   "hide_custom": 0,
   "icon": "hr",
-  "idx": 1,
-  "indicator_color": "green",
+  "idx": 0,
+  "is_default": 0,
   "is_hidden": 0,
+  "is_standard": 1,
   "label": "Payroll Indonesia",
   "links": [
     {
@@ -52,15 +58,47 @@
       "link_type": "DocType",
       "onboard": 0,
       "type": "Link"
+    },
+    {
+      "description": "Laporan terkait penggajian dan perpajakan",
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Laporan",
+      "link_count": 2,
+      "link_type": "Report",
+      "onboard": 0,
+      "type": "Card Break"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 1,
+      "label": "Laporan PPh 21",
+      "link_count": 0,
+      "link_to": "PPh 21 Report",
+      "link_type": "Report",
+      "onboard": 0,
+      "type": "Link"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 1,
+      "label": "Laporan BPJS",
+      "link_count": 0,
+      "link_to": "BPJS Report",
+      "link_type": "Report",
+      "onboard": 0,
+      "type": "Link"
     }
   ],
-  "modified": "2025-04-24 05:43:22",
+  "modified": "2025-04-24 05:53:02",
   "modified_by": "dannyaudian",
   "module": "Payroll Indonesia",
   "name": "Payroll Indonesia",
   "number_cards": [],
   "owner": "dannyaudian",
   "parent_page": "",
+  "pin_to_bottom": 0,
+  "pin_to_top": 0,
   "public": 1,
   "quick_lists": [
     {
@@ -86,7 +124,7 @@
       "role": "Employee"
     }
   ],
-  "sequence_id": 28.1,
+  "sequence_id": 1,
   "shortcuts": [
     {
       "color": "Blue",
@@ -98,19 +136,19 @@
       "type": "DocType"
     },
     {
-      "color": "Green",
-      "doc_view": "List",
-      "label": "Pengaturan PPh 21",
-      "link_to": "PPh 21 Settings",
-      "type": "DocType"
-    },
-    {
       "color": "Orange",
       "doc_view": "List",
       "format": "{} Menunggu",
       "label": "Pembayaran BPJS",
       "link_to": "BPJS Payment Summary",
       "stats_filter": "[[\"BPJS Payment Summary\",\"docstatus\",\"=\",\"0\",false]]",
+      "type": "DocType"
+    },
+    {
+      "color": "Green",
+      "doc_view": "List",
+      "label": "Pengaturan PPh 21",
+      "link_to": "PPh 21 Settings",
       "type": "DocType"
     },
     {
