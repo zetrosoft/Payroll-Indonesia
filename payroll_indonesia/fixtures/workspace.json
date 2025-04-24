@@ -1,11 +1,12 @@
 {
   "charts": [],
   "content": "[{\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Payroll Indonesia</span>\",\"level\":1}},{\"type\":\"spacer\",\"data\":{\"height\":20}},{\"type\":\"paragraph\",\"data\":{\"text\":\"Modul untuk manajemen penggajian karyawan di Indonesia dengan fitur-fitur khusus untuk peraturan perpajakan dan BPJS di Indonesia.\"}}]",
-  "creation": "2025-04-24 05:03:19",
+  "creation": "2025-04-24 05:30:43",
   "docstatus": 0,
   "doctype": "Workspace",
   "for_user": "",
   "hide_custom": 0,
+  "icon": "hr",
   "is_hidden": 0,
   "is_standard": 1,
   "label": "Payroll Indonesia",
@@ -49,39 +50,9 @@
       "link_type": "DocType",
       "onboard": 0,
       "type": "Link"
-    },
-    {
-      "description": "Laporan terkait penggajian dan perpajakan",
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Laporan",
-      "link_count": 2,
-      "link_type": "Report",
-      "onboard": 0,
-      "type": "Card Break"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 1,
-      "label": "Laporan PPh 21",
-      "link_count": 0,
-      "link_to": "PPh 21 Report",
-      "link_type": "Report",
-      "onboard": 0,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 1,
-      "label": "Laporan BPJS",
-      "link_count": 0,
-      "link_to": "BPJS Report",
-      "link_type": "Report",
-      "onboard": 0,
-      "type": "Link"
     }
   ],
-  "modified": "2025-04-24 05:03:19",
+  "modified": "2025-04-24 05:30:43",
   "modified_by": "dannyaudian",
   "module": "Payroll Indonesia",
   "name": "Payroll Indonesia",
@@ -98,11 +69,6 @@
       "document_type": "BPJS Payment Summary",
       "label": "Pembayaran BPJS (Draft)",
       "filter_by": "docstatus,=,0"
-    },
-    {
-      "document_type": "Salary Structure",
-      "label": "Struktur Gaji",
-      "filter_by": "docstatus,=,1"
     }
   ],
   "roles": [
@@ -133,37 +99,6 @@
       "label": "Pengaturan PPh 21",
       "link_to": "PPh 21 Settings",
       "type": "DocType"
-    },
-    {
-      "color": "Orange",
-      "doc_view": "List",
-      "format": "{} Menunggu",
-      "label": "Pembayaran BPJS",
-      "link_to": "BPJS Payment Summary",
-      "stats_filter": "{\"docstatus\": 0}",
-      "type": "DocType"
-    },
-    {
-      "color": "Grey",
-      "doc_view": "New",
-      "label": "Buat Slip Gaji Baru",
-      "link_to": "Salary Slip",
-      "stats_filter": "[]",
-      "type": "DocType"
-    },
-    {
-      "color": "Yellow",
-      "doc_view": "List",
-      "label": "Karyawan",
-      "link_to": "Employee",
-      "type": "DocType"
-    },
-    {
-      "color": "Grey",
-      "doc_view": "List",
-      "label": "Panduan Penggunaan",
-      "type": "URL",
-      "url": "https://github.com/dannyaudian/Payroll-Indonesia"
     }
   ],
   "title": "Payroll Indonesia"
