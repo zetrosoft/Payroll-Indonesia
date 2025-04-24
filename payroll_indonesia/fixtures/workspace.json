@@ -1,7 +1,7 @@
 {
   "charts": [],
-  "content": "[{\"type\":\"header\",\"data\":{\"text\":\"Payroll Indonesia\",\"level\":1}},{\"type\":\"spacer\",\"data\":{\"height\":20}},{\"type\":\"paragraph\",\"data\":{\"text\":\"Sistem Penggajian Indonesia dengan Perhitungan BPJS dan PPh 21 (TER dan Progresif)\"}},{\"type\":\"card\",\"data\":{\"title\":\"Master Data\",\"items\":[{\"type\":\"link\",\"data\":{\"label\":\"Employee\",\"name\":\"Employee\",\"doctype\":\"Employee\",\"onboard\":1}},{\"type\":\"link\",\"data\":{\"label\":\"Jabatan\",\"name\":\"Jabatan\",\"doctype\":\"Jabatan\"}},{\"type\":\"link\",\"data\":{\"label\":\"Golongan\",\"name\":\"Golongan\",\"doctype\":\"Golongan\"}}]}},{\"type\":\"card\",\"data\":{\"title\":\"Payroll Processing\",\"items\":[{\"type\":\"link\",\"data\":{\"label\":\"Salary Structure\",\"name\":\"Salary Structure\",\"doctype\":\"Salary Structure\"}},{\"type\":\"link\",\"data\":{\"label\":\"Salary Slip\",\"name\":\"Salary Slip\",\"doctype\":\"Salary Slip\"}},{\"type\":\"link\",\"data\":{\"label\":\"Payroll Log\",\"name\":\"Payroll Log\",\"doctype\":\"Payroll Log\"}},{\"type\":\"link\",\"data\":{\"label\":\"Salary Component\",\"name\":\"Salary Component\",\"doctype\":\"Salary Component\"}}]}},{\"type\":\"card\",\"data\":{\"title\":\"BPJS Management\",\"items\":[{\"type\":\"link\",\"data\":{\"label\":\"BPJS Settings\",\"name\":\"BPJS Settings\",\"doctype\":\"BPJS Settings\"}},{\"type\":\"link\",\"data\":{\"label\":\"BPJS Payment Summary\",\"name\":\"BPJS Payment Summary\",\"doctype\":\"BPJS Payment Summary\"}},{\"type\":\"link\",\"data\":{\"label\":\"BPJS Payment Component\",\"name\":\"BPJS Payment Component\",\"doctype\":\"BPJS Payment Component\"}}]}},{\"type\":\"card\",\"data\":{\"title\":\"PPh 21 Management\",\"items\":[{\"type\":\"link\",\"data\":{\"label\":\"PPh 21 Settings\",\"name\":\"PPh 21 Settings\",\"doctype\":\"PPh 21 Settings\"}},{\"type\":\"link\",\"data\":{\"label\":\"PPh 21 Tax Bracket\",\"name\":\"PPh 21 Tax Bracket\",\"doctype\":\"PPh 21 Tax Bracket\"}},{\"type\":\"link\",\"data\":{\"label\":\"PPh 21 TER Table\",\"name\":\"PPh 21 TER Table\",\"doctype\":\"PPh 21 TER Table\"}},{\"type\":\"link\",\"data\":{\"label\":\"PPh 21 PTKP\",\"name\":\"PPh 21 PTKP\",\"doctype\":\"PPh 21 PTKP\"}},{\"type\":\"link\",\"data\":{\"label\":\"Employee Tax Summary\",\"name\":\"Employee Tax Summary\",\"doctype\":\"Employee Tax Summary\"}}]}},{\"type\":\"card\",\"data\":{\"title\":\"Reports & Analisis\",\"items\":[{\"type\":\"link\",\"data\":{\"label\":\"BPJS Monthly Report\",\"name\":\"BPJS Monthly Report\",\"doctype\":\"Report\",\"report_type\":\"Script Report\",\"is_query_report\":1}},{\"type\":\"link\",\"data\":{\"label\":\"PPh 21 Summary\",\"name\":\"PPh 21 Summary\",\"doctype\":\"Report\",\"report_type\":\"Script Report\",\"is_query_report\":1}},{\"type\":\"link\",\"data\":{\"label\":\"TER vs Progressive Comparison\",\"name\":\"TER vs Progressive Comparison\",\"doctype\":\"Report\",\"report_type\":\"Script Report\",\"is_query_report\":1}}]}}]",
-  "creation": "2025-04-24 03:49:29",
+  "content": "[{\"type\":\"header\",\"data\":{\"text\":\"Payroll Indonesia\",\"level\":1}},{\"type\":\"spacer\",\"data\":{\"height\":20}},{\"type\":\"paragraph\",\"data\":{\"text\":\"Sistem Penggajian Indonesia dengan Perhitungan BPJS dan PPh 21 (TER dan Progresif)\"}},{\"type\":\"card\",\"data\":{\"title\":\"Reports & Analisis\",\"items\":[{\"type\":\"link\",\"data\":{\"label\":\"BPJS Monthly Report\",\"name\":\"BPJS Monthly Report\",\"doctype\":\"Report\",\"report_type\":\"Script Report\",\"is_query_report\":1}},{\"type\":\"link\",\"data\":{\"label\":\"PPh 21 Summary\",\"name\":\"PPh 21 Summary\",\"doctype\":\"Report\",\"report_type\":\"Script Report\",\"is_query_report\":1}},{\"type\":\"link\",\"data\":{\"label\":\"TER vs Progressive Comparison\",\"name\":\"TER vs Progressive Comparison\",\"doctype\":\"Report\",\"report_type\":\"Script Report\",\"is_query_report\":1}}]}}]",
+  "creation": "2025-04-24 04:24:38",
   "docstatus": 0,
   "doctype": "Workspace",
   "for_user": "",
@@ -9,12 +9,133 @@
   "is_hidden": 0,
   "is_standard": 1,
   "label": "Payroll Indonesia",
-  "links": [],
-  "modified": "2025-04-24 03:49:29",
-  "modified_by": "Administrator",
+  "links": [
+    {
+      "dependencies": [],
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Master Data",
+      "link_count": 0,
+      "link_to": "",
+      "link_type": "DocType",
+      "onboard": 0,
+      "only_for": "",
+      "type": "Card Break"
+    },
+    {
+      "dependencies": [],
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Employee",
+      "link_count": 0,
+      "link_to": "Employee",
+      "link_type": "DocType",
+      "onboard": 1,
+      "only_for": "",
+      "type": "Link"
+    },
+    {
+      "dependencies": [],
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Jabatan",
+      "link_count": 0,
+      "link_to": "Jabatan",
+      "link_type": "DocType",
+      "onboard": 0,
+      "only_for": "",
+      "type": "Link"
+    },
+    {
+      "dependencies": [],
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Golongan",
+      "link_count": 0,
+      "link_to": "Golongan",
+      "link_type": "DocType",
+      "onboard": 0,
+      "only_for": "",
+      "type": "Link"
+    },
+    {
+      "dependencies": [],
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Payroll Processing",
+      "link_count": 0,
+      "link_to": "",
+      "link_type": "DocType",
+      "onboard": 0,
+      "only_for": "",
+      "type": "Card Break"
+    },
+    {
+      "dependencies": [],
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Salary Structure",
+      "link_count": 0,
+      "link_to": "Salary Structure",
+      "link_type": "DocType",
+      "onboard": 1,
+      "only_for": "",
+      "type": "Link"
+    },
+    {
+      "dependencies": [],
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Salary Component",
+      "link_count": 0,
+      "link_to": "Salary Component",
+      "link_type": "DocType",
+      "onboard": 0,
+      "only_for": "",
+      "type": "Link"
+    },
+    {
+      "dependencies": [],
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Settings",
+      "link_count": 0,
+      "link_to": "",
+      "link_type": "DocType",
+      "onboard": 0,
+      "only_for": "",
+      "type": "Card Break"
+    },
+    {
+      "dependencies": [],
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "BPJS Settings",
+      "link_count": 0,
+      "link_to": "BPJS Settings",
+      "link_type": "DocType",
+      "onboard": 1,
+      "only_for": "",
+      "type": "Link"
+    },
+    {
+      "dependencies": [],
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "PPh 21 Settings",
+      "link_count": 0,
+      "link_to": "PPh 21 Settings",
+      "link_type": "DocType",
+      "onboard": 1,
+      "only_for": "",
+      "type": "Link"
+    }
+  ],
+  "modified": "2025-04-24 04:24:38",
+  "modified_by": "dannyaudian",
   "module": "Payroll Indonesia",
   "name": "Payroll Indonesia",
-  "owner": "Administrator",
+  "owner": "dannyaudian",
   "parent_page": "Payroll",
   "public": 1,
   "quick_lists": [
@@ -55,18 +176,6 @@
       "label": "PPh 21 Settings",
       "link_to": "PPh 21 Settings",
       "type": "DocType"
-    },
-    {
-      "color": "Blue",
-      "label": "BPJS Settings",
-      "link_to": "BPJS Settings",
-      "type": "DocType"
-    },
-    {
-      "color": "Orange",
-      "label": "PPh 21 Summary",
-      "link_to": "PPh 21 Summary",
-      "type": "Report"
     }
   ],
   "title": "Payroll Indonesia"
