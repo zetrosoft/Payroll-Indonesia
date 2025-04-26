@@ -7,7 +7,7 @@ from __future__ import unicode_literals
 
 # Konfigurasi app dasar
 app_name = "payroll_indonesia"
-# HAPUS app_title sebagai list karena itu sumber masalah
+app_title = "Payroll Indonesia"
 app_publisher = "PT. Innovasi Terbaik Bangsa"
 app_description = "Payroll module for Indonesian companies with local regulatory features"
 app_email = "danny.a.pratama@cao-group.co.id"
