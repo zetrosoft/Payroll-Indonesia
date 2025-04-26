@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
+# Last modified: 2025-04-26 06:45:22 by dannyaudian
 
 import frappe
 from frappe import _
@@ -85,85 +86,85 @@ class CustomSalarySlip(SalarySlip):
                 "Error calculating salary components: {0}"
             ).format(str(e)))
     
-   def calculate_bpjs_components(self, employee, gaji_pokok):
-    """Calculate and update BPJS components based on settings"""
-    if not hasattr(employee, 'ikut_bpjs_ketenagakerjaan'):
-        employee.ikut_bpjs_ketenagakerjaan = 0
-        
-    if not hasattr(employee, 'ikut_bpjs_kesehatan'):
-        employee.ikut_bpjs_kesehatan = 0
-        
-    if not employee.ikut_bpjs_ketenagakerjaan and not employee.ikut_bpjs_kesehatan:
-        return
-    
-    try:
-        # Ambil BPJS Settings
-        bpjs_settings = frappe.get_single("BPJS Settings")
-        
-        # Hitung kontribusi kesehatan
-        if employee.ikut_bpjs_kesehatan:
-            # Batasi gaji untuk perhitungan BPJS Kesehatan
-            kesehatan_salary = min(gaji_pokok, bpjs_settings.kesehatan_max_salary)
-            kesehatan_employee = kesehatan_salary * (bpjs_settings.kesehatan_employee_percent / 100)
+    def calculate_bpjs_components(self, employee, gaji_pokok):
+        """Calculate and update BPJS components based on settings"""
+        if not hasattr(employee, 'ikut_bpjs_ketenagakerjaan'):
+            employee.ikut_bpjs_ketenagakerjaan = 0
             
-            self.update_component_amount(
-                "BPJS Kesehatan Employee", 
-                kesehatan_employee,
-                "deductions"
+        if not hasattr(employee, 'ikut_bpjs_kesehatan'):
+            employee.ikut_bpjs_kesehatan = 0
+            
+        if not employee.ikut_bpjs_ketenagakerjaan and not employee.ikut_bpjs_kesehatan:
+            return
+        
+        try:
+            # Ambil BPJS Settings
+            bpjs_settings = frappe.get_single("BPJS Settings")
+            
+            # Hitung kontribusi kesehatan
+            if employee.ikut_bpjs_kesehatan:
+                # Batasi gaji untuk perhitungan BPJS Kesehatan
+                kesehatan_salary = min(gaji_pokok, bpjs_settings.kesehatan_max_salary)
+                kesehatan_employee = kesehatan_salary * (bpjs_settings.kesehatan_employee_percent / 100)
+                
+                self.update_component_amount(
+                    "BPJS Kesehatan Employee", 
+                    kesehatan_employee,
+                    "deductions"
+                )
+            
+            # Hitung kontribusi ketenagakerjaan
+            if employee.ikut_bpjs_ketenagakerjaan:
+                # JHT tidak ada batas maksimal gaji
+                jht_employee = gaji_pokok * (bpjs_settings.jht_employee_percent / 100)
+                
+                # Batasi gaji untuk perhitungan JP
+                jp_salary = min(gaji_pokok, bpjs_settings.jp_max_salary)
+                jp_employee = jp_salary * (bpjs_settings.jp_employee_percent / 100)
+                
+                # Update komponen
+                self.update_component_amount(
+                    "BPJS JHT Employee", 
+                    jht_employee,
+                    "deductions"
+                )
+                
+                self.update_component_amount(
+                    "BPJS JP Employee",
+                    jp_employee,
+                    "deductions"
+                )
+            
+            # Calculate total BPJS for tax purposes
+            total_bpjs_kesehatan = employee.ikut_bpjs_kesehatan and \
+                self.get_component_amount("BPJS Kesehatan Employee", "deductions") or 0
+                
+            total_bpjs_jht = employee.ikut_bpjs_ketenagakerjaan and \
+                self.get_component_amount("BPJS JHT Employee", "deductions") or 0
+                
+            total_bpjs_jp = employee.ikut_bpjs_ketenagakerjaan and \
+                self.get_component_amount("BPJS JP Employee", "deductions") or 0
+            
+            self.total_bpjs = total_bpjs_kesehatan + total_bpjs_jht + total_bpjs_jp
+            
+            # Update payroll note with BPJS details
+            self.payroll_note += f"\n\n=== Perhitungan BPJS ==="
+            
+            if employee.ikut_bpjs_kesehatan:
+                self.payroll_note += f"\nBPJS Kesehatan ({bpjs_settings.kesehatan_employee_percent}%): Rp {total_bpjs_kesehatan:,.0f}"
+            
+            if employee.ikut_bpjs_ketenagakerjaan:
+                self.payroll_note += f"\nBPJS JHT ({bpjs_settings.jht_employee_percent}%): Rp {total_bpjs_jht:,.0f}"
+                self.payroll_note += f"\nBPJS JP ({bpjs_settings.jp_employee_percent}%): Rp {total_bpjs_jp:,.0f}"
+            
+            self.payroll_note += f"\nTotal BPJS: Rp {self.total_bpjs:,.0f}"
+                
+        except Exception as e:
+            frappe.log_error(
+                "BPJS Calculation Error",
+                f"Employee: {employee.name}\nError: {str(e)}"
             )
-        
-        # Hitung kontribusi ketenagakerjaan
-        if employee.ikut_bpjs_ketenagakerjaan:
-            # JHT tidak ada batas maksimal gaji
-            jht_employee = gaji_pokok * (bpjs_settings.jht_employee_percent / 100)
-            
-            # Batasi gaji untuk perhitungan JP
-            jp_salary = min(gaji_pokok, bpjs_settings.jp_max_salary)
-            jp_employee = jp_salary * (bpjs_settings.jp_employee_percent / 100)
-            
-            # Update komponen
-            self.update_component_amount(
-                "BPJS JHT Employee", 
-                jht_employee,
-                "deductions"
-            )
-            
-            self.update_component_amount(
-                "BPJS JP Employee",
-                jp_employee,
-                "deductions"
-            )
-        
-        # Calculate total BPJS for tax purposes
-        total_bpjs_kesehatan = employee.ikut_bpjs_kesehatan and \
-            self.get_component_amount("BPJS Kesehatan Employee", "deductions") or 0
-            
-        total_bpjs_jht = employee.ikut_bpjs_ketenagakerjaan and \
-            self.get_component_amount("BPJS JHT Employee", "deductions") or 0
-            
-        total_bpjs_jp = employee.ikut_bpjs_ketenagakerjaan and \
-            self.get_component_amount("BPJS JP Employee", "deductions") or 0
-        
-        self.total_bpjs = total_bpjs_kesehatan + total_bpjs_jht + total_bpjs_jp
-        
-        # Update payroll note with BPJS details
-        self.payroll_note += f"\n\n=== Perhitungan BPJS ==="
-        
-        if employee.ikut_bpjs_kesehatan:
-            self.payroll_note += f"\nBPJS Kesehatan ({bpjs_settings.kesehatan_employee_percent}%): Rp {total_bpjs_kesehatan:,.0f}"
-        
-        if employee.ikut_bpjs_ketenagakerjaan:
-            self.payroll_note += f"\nBPJS JHT ({bpjs_settings.jht_employee_percent}%): Rp {total_bpjs_jht:,.0f}"
-            self.payroll_note += f"\nBPJS JP ({bpjs_settings.jp_employee_percent}%): Rp {total_bpjs_jp:,.0f}"
-        
-        self.payroll_note += f"\nTotal BPJS: Rp {self.total_bpjs:,.0f}"
-            
-    except Exception as e:
-        frappe.log_error(
-            "BPJS Calculation Error",
-            f"Employee: {employee.name}\nError: {str(e)}"
-        )
-        raise
+            raise
     
     def calculate_tax_components(self, employee):
         """Calculate tax related components"""
@@ -591,4 +592,3 @@ class CustomSalarySlip(SalarySlip):
             if component.salary_component == component_name:
                 return flt(component.amount)
         return 0
-
