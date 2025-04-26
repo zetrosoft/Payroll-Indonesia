@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 06:45:22 by dannyaudian
+# Last modified: 2025-04-26 16:48:30 by dannyaudian
 
 import frappe
 from frappe import _
@@ -52,13 +52,35 @@ class CustomSalarySlip(SalarySlip):
             frappe.throw(_(
                 "Required salary components not found: {0}"
             ).format(", ".join(missing)))
-    
-    def calculate_component_amounts(self):
-        """Calculate salary components with Indonesian payroll rules"""
+
+    # Perbaikan: Menambahkan parameter component_type yang diperlukan
+    def calculate_component_amounts(self, component_type):
+        """
+        Calculate salary components with Indonesian payroll rules.
+        
+        Args:
+            component_type (str): Type of component (earnings or deductions)
+        """
         try:
             # Call standard ERPNext calculation first
-            super().calculate_component_amounts()
+            super().calculate_component_amounts(component_type)
             
+            # Setelah kedua component types dihitung, lakukan perhitungan khusus Indonesia
+            if component_type == "deductions":
+                self.calculate_indonesia_specific_components()
+                
+        except Exception as e:
+            frappe.log_error(
+                "Salary Slip Calculation Error",
+                f"Employee: {self.employee}\nError: {str(e)}"
+            )
+            frappe.throw(_(
+                "Error calculating {0} components: {1}"
+            ).format(component_type, str(e)))
+    
+    def calculate_indonesia_specific_components(self):
+        """Calculate Indonesia-specific salary components"""
+        try:
             # Get basic salary (Gaji Pokok)
             gaji_pokok = self.get_component_amount("Gaji Pokok", "earnings")
             if not gaji_pokok:
@@ -79,11 +101,11 @@ class CustomSalarySlip(SalarySlip):
             
         except Exception as e:
             frappe.log_error(
-                "Salary Slip Calculation Error",
+                "Indonesia Salary Component Calculation Error",
                 f"Employee: {self.employee}\nError: {str(e)}"
             )
             frappe.throw(_(
-                "Error calculating salary components: {0}"
+                "Error calculating Indonesia-specific components: {0}"
             ).format(str(e)))
     
     def calculate_bpjs_components(self, employee, gaji_pokok):
@@ -196,6 +218,33 @@ class CustomSalarySlip(SalarySlip):
                 f"Employee: {employee.name}\nError: {str(e)}"
             )
             raise
+    
+    # Override metode get_holidays_for_employee untuk lebih toleran
+    def get_holidays_for_employee(self, start_date, end_date):
+        """
+        Override untuk get_holidays_for_employee yang tidak melempar error jika Holiday List tidak ditemukan
+        """
+        holidays = []
+        try:
+            # Coba dapatkan holiday list dari employee atau company
+            holiday_list = frappe.db.get_value("Employee", self.employee, "holiday_list")
+            if not holiday_list:
+                holiday_list = frappe.db.get_value("Company", self.company, "default_holiday_list")
+                
+            # Kalau ada holiday list, ambil holidays-nya
+            if holiday_list:
+                holidays = frappe.get_all(
+                    "Holiday",
+                    filters={"parent": holiday_list, "holiday_date": ["between", [start_date, end_date]]},
+                    fields=["holiday_date", "description"],
+                    order_by="holiday_date",
+                )
+                
+        except Exception as e:
+            frappe.log_error(f"Error getting holidays for employee {self.employee}: {str(e)}", "Holiday List Error")
+            
+        # Return holidays atau empty list jika tidak ada
+        return holidays
 
     def calculate_monthly_pph(self, employee):
         """Calculate PPh 21 for regular months"""
@@ -550,9 +599,6 @@ class CustomSalarySlip(SalarySlip):
 
     def get_ytd_totals(self, year):
         """Get year-to-date totals for the employee"""
-        # This is a simplified implementation - in a real app you'd query
-        # the database to get actual YTD totals from previous salary slips
-
         # Create a default result with zeros
         result = {"gross": 0, "bpjs": 0, "pph21": 0}
 
