@@ -77,6 +77,18 @@
             "reqd": 1
         },
         {
+            "fieldname": "employee_details",
+            "fieldtype": "Table",
+            "label": "Employee BPJS Details",
+            "options": "BPJS Payment Summary Detail"
+        },
+        {
+            "fieldname": "account_details",
+            "fieldtype": "Table",
+            "label": "Account Details",
+            "options": "BPJS Payment Account Detail"
+        },
+        {
             "fieldname": "section_break_8",
             "fieldtype": "Section Break"
         },

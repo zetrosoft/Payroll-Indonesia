@@ -123,3 +123,47 @@ class BPJSPaymentSummary(Document):
         except Exception as e:
             frappe.msgprint(_("Error creating Payment Entry"))
             frappe.throw(str(e))
+
+    def populate_employee_details(self): 
+        if not self.employee_details:
+            # Get employees that participate in BPJS
+            employees = frappe.get_all(
+                "Employee",
+                filters={"status": "Active", "ikut_bpjs_ketenagakerjaan": 1},
+                fields=["name", "employee_name"]
+            )
+        
+        # Calculate BPJS components for each employee
+        for emp in employees:
+            employee_doc = frappe.get_doc("Employee", emp.name)
+            gaji_pokok = frappe.db.get_value(
+                "Salary Structure Assignment",
+                {"employee": emp.name, "docstatus": 1},
+                "base"
+            ) or 0
+            
+            # Skip if no salary
+            if not gaji_pokok:
+                continue
+                
+            # Calculate BPJS components
+            from payroll_indonesia.payroll_indonesia.utils import calculate_bpjs_contributions
+            bpjs_data = calculate_bpjs_contributions(gaji_pokok)
+            
+            # Add row to child table
+            self.append("employee_details", {
+                "employee": emp.name,
+                "employee_name": emp.employee_name,
+                "bpjs_kesehatan": bpjs_data["kesehatan"]["karyawan"] + bpjs_data["kesehatan"]["perusahaan"],
+                "bpjs_jht": bpjs_data["ketenagakerjaan"]["jht"]["karyawan"] + bpjs_data["ketenagakerjaan"]["jht"]["perusahaan"],
+                "bpjs_jp": bpjs_data["ketenagakerjaan"]["jp"]["karyawan"] + bpjs_data["ketenagakerjaan"]["jp"]["perusahaan"],
+                "bpjs_jkk": bpjs_data["ketenagakerjaan"]["jkk"]["perusahaan"],
+                "bpjs_jkm": bpjs_data["ketenagakerjaan"]["jkm"]["perusahaan"],
+                "amount": (
+                    bpjs_data["kesehatan"]["karyawan"] + bpjs_data["kesehatan"]["perusahaan"] +
+                    bpjs_data["ketenagakerjaan"]["jht"]["karyawan"] + bpjs_data["ketenagakerjaan"]["jht"]["perusahaan"] +
+                    bpjs_data["ketenagakerjaan"]["jp"]["karyawan"] + bpjs_data["ketenagakerjaan"]["jp"]["perusahaan"] +
+                    bpjs_data["ketenagakerjaan"]["jkk"]["perusahaan"] + 
+                    bpjs_data["ketenagakerjaan"]["jkm"]["perusahaan"]
+                )
+            })
