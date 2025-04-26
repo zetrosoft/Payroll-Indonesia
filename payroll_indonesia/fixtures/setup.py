@@ -30,6 +30,9 @@ def after_install():
         "Payroll Indonesia berhasil diinstal. PPh 21 Settings telah dikonfigurasi dengan metode TER."
     ), indicator="green", title=_("Installation Complete"))
 
+    # Setup income tax slab
+    setup_income_tax_slab()
+
 def create_accounts():
     """Create required Accounts for Indonesian payroll management
 
@@ -577,3 +580,41 @@ def setup_pph21_ter():
     except Exception as e:
         frappe.log_error(f"Error setting up PPh 21 TER rates: {str(e)}")
         frappe.msgprint(f"Error saat mengatur rate TER: {str(e)}", indicator="red")
+
+def setup_income_tax_slab():
+    """Create default Income Tax Slab for Indonesia"""
+    
+    # Check if already exists
+    if frappe.db.exists("Income Tax Slab", {"currency": "IDR", "is_default": 1}):
+        frappe.msgprint(_("Default Income Tax Slab for Indonesia already exists"))
+        return
+        
+    # Create tax slab
+    try:
+        tax_slab = frappe.new_doc("Income Tax Slab")
+        tax_slab.name = "Indonesia Tax Slab - IDR"
+        tax_slab.effective_from = getdate("2023-01-01")
+        tax_slab.company = frappe.db.get_default("company")
+        tax_slab.currency = "IDR"
+        tax_slab.is_default = 1
+        tax_slab.disabled = 0
+        
+        # Add slabs
+        tax_slabs = [
+            {"from_amount": 0, "to_amount": 60000000, "percent_deduction": 5},
+            {"from_amount": 60000000, "to_amount": 250000000, "percent_deduction": 15},
+            {"from_amount": 250000000, "to_amount": 500000000, "percent_deduction": 25},
+            {"from_amount": 500000000, "to_amount": 5000000000, "percent_deduction": 30},
+            {"from_amount": 5000000000, "to_amount": 0, "percent_deduction": 35}
+        ]
+        
+        for slab in tax_slabs:
+            tax_slab.append("slabs", slab)
+            
+        tax_slab.insert(ignore_permissions=True)
+        frappe.db.commit()
+        frappe.msgprint(_("Created default Income Tax Slab for Indonesia"))
+        
+    except Exception as e:
+        frappe.log_error(f"Error creating Income Tax Slab: {str(e)}")
+        frappe.msgprint(f"Error creating Income Tax Slab: {str(e)}", indicator="red")
