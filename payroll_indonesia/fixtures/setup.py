@@ -217,6 +217,241 @@ def setup_pph21_ter():
         frappe.db.commit()
         
         # Create TER rates based on PMK-168/PMK.010/2023
+        # Data sesuai dengan Lampiran PMK-168/PMK.010/2023
+        
+        # Daftar semua status pajak
+        status_list = ["TK0", "TK1", "TK2", "TK3", "K0", "K1", "K2", "K3", "HB0", "HB1", "HB2", "HB3"]
+        
+        # Dictionary berisi semua rate TER berdasarkan PMK-168/PMK.010/2023
+        ter_rates = {
+            # TK0 (Tidak Kawin 0 Tanggungan)
+            "TK0": [
+                {"income_from": 0, "income_to": 4500000, "rate": 0},
+                {"income_from": 4500000, "income_to": 5000000, "rate": 0.5},
+                {"income_from": 5000000, "income_to": 6000000, "rate": 1.0},
+                {"income_from": 6000000, "income_to": 7000000, "rate": 1.75},
+                {"income_from": 7000000, "income_to": 8000000, "rate": 2.5},
+                {"income_from": 8000000, "income_to": 9000000, "rate": 3.0},
+                {"income_from": 9000000, "income_to": 10000000, "rate": 3.5},
+                {"income_from": 10000000, "income_to": 15000000, "rate": 4.5},
+                {"income_from": 15000000, "income_to": 20000000, "rate": 5.5},
+                {"income_from": 20000000, "income_to": 500000000, "rate": 7.5},
+                {"income_from": 500000000, "income_to": 0, "rate": 10.0}
+            ],
+            
+            # TK1 (Tidak Kawin 1 Tanggungan)
+            "TK1": [
+                {"income_from": 0, "income_to": 4875000, "rate": 0},
+                {"income_from": 4875000, "income_to": 5500000, "rate": 0.5},
+                {"income_from": 5500000, "income_to": 6500000, "rate": 1.0},
+                {"income_from": 6500000, "income_to": 7500000, "rate": 1.75},
+                {"income_from": 7500000, "income_to": 8500000, "rate": 2.25},
+                {"income_from": 8500000, "income_to": 9500000, "rate": 2.75},
+                {"income_from": 9500000, "income_to": 11000000, "rate": 3.25},
+                {"income_from": 11000000, "income_to": 15500000, "rate": 4.0},
+                {"income_from": 15500000, "income_to": 21500000, "rate": 5.0},
+                {"income_from": 21500000, "income_to": 500000000, "rate": 7.0},
+                {"income_from": 500000000, "income_to": 0, "rate": 9.5}
+            ],
+            
+            # TK2 (Tidak Kawin 2 Tanggungan)
+            "TK2": [
+                {"income_from": 0, "income_to": 5250000, "rate": 0},
+                {"income_from": 5250000, "income_to": 6000000, "rate": 0.5},
+                {"income_from": 6000000, "income_to": 7000000, "rate": 1.0},
+                {"income_from": 7000000, "income_to": 8000000, "rate": 1.5},
+                {"income_from": 8000000, "income_to": 9000000, "rate": 2.0},
+                {"income_from": 9000000, "income_to": 10000000, "rate": 2.5},
+                {"income_from": 10000000, "income_to": 12000000, "rate": 3.0},
+                {"income_from": 12000000, "income_to": 16000000, "rate": 3.75},
+                {"income_from": 16000000, "income_to": 23000000, "rate": 4.75},
+                {"income_from": 23000000, "income_to": 500000000, "rate": 6.75},
+                {"income_from": 500000000, "income_to": 0, "rate": 9.25}
+            ],
+            
+            # TK3 (Tidak Kawin 3 Tanggungan)
+            "TK3": [
+                {"income_from": 0, "income_to": 5625000, "rate": 0},
+                {"income_from": 5625000, "income_to": 6500000, "rate": 0.5},
+                {"income_from": 6500000, "income_to": 7500000, "rate": 1.0},
+                {"income_from": 7500000, "income_to": 8500000, "rate": 1.5},
+                {"income_from": 8500000, "income_to": 9500000, "rate": 1.75},
+                {"income_from": 9500000, "income_to": 10500000, "rate": 2.25},
+                {"income_from": 10500000, "income_to": 13000000, "rate": 2.75},
+                {"income_from": 13000000, "income_to": 16500000, "rate": 3.5},
+                {"income_from": 16500000, "income_to": 24500000, "rate": 4.5},
+                {"income_from": 24500000, "income_to": 500000000, "rate": 6.5},
+                {"income_from": 500000000, "income_to": 0, "rate": 9.0}
+            ],
+            
+            # K0 (Kawin 0 Tanggungan)
+            "K0": [
+                {"income_from": 0, "income_to": 4875000, "rate": 0},
+                {"income_from": 4875000, "income_to": 5500000, "rate": 0.5},
+                {"income_from": 5500000, "income_to": 6500000, "rate": 1.0},
+                {"income_from": 6500000, "income_to": 7500000, "rate": 1.75},
+                {"income_from": 7500000, "income_to": 8500000, "rate": 2.25},
+                {"income_from": 8500000, "income_to": 9500000, "rate": 2.75},
+                {"income_from": 9500000, "income_to": 11000000, "rate": 3.25},
+                {"income_from": 11000000, "income_to": 15500000, "rate": 4.0},
+                {"income_from": 15500000, "income_to": 21500000, "rate": 5.0},
+                {"income_from": 21500000, "income_to": 500000000, "rate": 7.0},
+                {"income_from": 500000000, "income_to": 0, "rate": 9.5}
+            ],
+            
+            # K1 (Kawin 1 Tanggungan)
+            "K1": [
+                {"income_from": 0, "income_to": 5250000, "rate": 0},
+                {"income_from": 5250000, "income_to": 6000000, "rate": 0.5},
+                {"income_from": 6000000, "income_to": 7000000, "rate": 1.0},
+                {"income_from": 7000000, "income_to": 8000000, "rate": 1.5},
+                {"income_from": 8000000, "income_to": 9000000, "rate": 2.0},
+                {"income_from": 9000000, "income_to": 10000000, "rate": 2.5},
+                {"income_from": 10000000, "income_to": 12000000, "rate": 3.0},
+                {"income_from": 12000000, "income_to": 16000000, "rate": 3.75},
+                {"income_from": 16000000, "income_to": 23000000, "rate": 4.75},
+                {"income_from": 23000000, "income_to": 500000000, "rate": 6.75},
+                {"income_from": 500000000, "income_to": 0, "rate": 9.25}
+            ],
+            
+            # K2 (Kawin 2 Tanggungan)
+            "K2": [
+                {"income_from": 0, "income_to": 5625000, "rate": 0},
+                {"income_from": 5625000, "income_to": 6500000, "rate": 0.5},
+                {"income_from": 6500000, "income_to": 7500000, "rate": 1.0},
+                {"income_from": 7500000, "income_to": 8500000, "rate": 1.5},
+                {"income_from": 8500000, "income_to": 9500000, "rate": 1.75},
+                {"income_from": 9500000, "income_to": 10500000, "rate": 2.25},
+                {"income_from": 10500000, "income_to": 13000000, "rate": 2.75},
+                {"income_from": 13000000, "income_to": 16500000, "rate": 3.5},
+                {"income_from": 16500000, "income_to": 24500000, "rate": 4.5},
+                {"income_from": 24500000, "income_to": 500000000, "rate": 6.5},
+                {"income_from": 500000000, "income_to": 0, "rate": 9.0}
+            ],
+            
+            # K3 (Kawin 3 Tanggungan)
+            "K3": [
+                {"income_from": 0, "income_to": 6000000, "rate": 0},
+                {"income_from": 6000000, "income_to": 7000000, "rate": 0.5},
+                {"income_from": 7000000, "income_to": 8000000, "rate": 1.0},
+                {"income_from": 8000000, "income_to": 9000000, "rate": 1.25},
+                {"income_from": 9000000, "income_to": 10000000, "rate": 1.75},
+                {"income_from": 10000000, "income_to": 11000000, "rate": 2.0},
+                {"income_from": 11000000, "income_to": 14000000, "rate": 2.5},
+                {"income_from": 14000000, "income_to": 17000000, "rate": 3.25},
+                {"income_from": 17000000, "income_to": 26000000, "rate": 4.25},
+                {"income_from": 26000000, "income_to": 500000000, "rate": 6.25},
+                {"income_from": 500000000, "income_to": 0, "rate": 8.75}
+            ],
+            
+            # HB0 (Kawin Penghasilan Istri-Suami Digabung 0 Tanggungan)
+            "HB0": [
+                {"income_from": 0, "income_to": 9375000, "rate": 0},
+                {"income_from": 9375000, "income_to": 10500000, "rate": 0.5},
+                {"income_from": 10500000, "income_to": 12500000, "rate": 1.0},
+                {"income_from": 12500000, "income_to": 14500000, "rate": 1.75},
+                {"income_from": 14500000, "income_to": 16500000, "rate": 2.25},
+                {"income_from": 16500000, "income_to": 18500000, "rate": 2.75},
+                {"income_from": 18500000, "income_to": 23000000, "rate": 3.5},
+                {"income_from": 23000000, "income_to": 31000000, "rate": 4.25},
+                {"income_from": 31000000, "income_to": 43000000, "rate": 5.25},
+                {"income_from": 43000000, "income_to": 500000000, "rate": 7.25},
+                {"income_from": 500000000, "income_to": 0, "rate": 9.75}
+            ],
+            
+            # HB1 (Kawin Penghasilan Istri-Suami Digabung 1 Tanggungan)
+            "HB1": [
+                {"income_from": 0, "income_to": 9750000, "rate": 0},
+                {"income_from": 9750000, "income_to": 11000000, "rate": 0.5},
+                {"income_from": 11000000, "income_to": 13000000, "rate": 1.0},
+                {"income_from": 13000000, "income_to": 15000000, "rate": 1.5},
+                {"income_from": 15000000, "income_to": 17000000, "rate": 2.0},
+                {"income_from": 17000000, "income_to": 19000000, "rate": 2.5},
+                {"income_from": 19000000, "income_to": 24000000, "rate": 3.25},
+                {"income_from": 24000000, "income_to": 32000000, "rate": 4.0},
+                {"income_from": 32000000, "income_to": 46000000, "rate": 5.0},
+                {"income_from": 46000000, "income_to": 500000000, "rate": 7.0},
+                {"income_from": 500000000, "income_to": 0, "rate": 9.5}
+            ],
+            
+            # HB2 (Kawin Penghasilan Istri-Suami Digabung 2 Tanggungan)
+            "HB2": [
+                {"income_from": 0, "income_to": 10125000, "rate": 0},
+                {"income_from": 10125000, "income_to": 11500000, "rate": 0.5},
+                {"income_from": 11500000, "income_to": 13500000, "rate": 1.0},
+                {"income_from": 13500000, "income_to": 15500000, "rate": 1.25},
+                {"income_from": 15500000, "income_to": 17500000, "rate": 1.75},
+                {"income_from": 17500000, "income_to": 19500000, "rate": 2.25},
+                {"income_from": 19500000, "income_to": 25000000, "rate": 3.0},
+                {"income_from": 25000000, "income_to": 33000000, "rate": 3.75},
+                {"income_from": 33000000, "income_to": 49000000, "rate": 4.75},
+                {"income_from": 49000000, "income_to": 500000000, "rate": 6.75},
+                {"income_from": 500000000, "income_to": 0, "rate": 9.25}
+            ],
+            
+            # HB3 (Kawin Penghasilan Istri-Suami Digabung 3 Tanggungan)
+            "HB3": [
+                {"income_from": 0, "income_to": 10500000, "rate": 0},
+                {"income_from": 10500000, "income_to": 12000000, "rate": 0.5},
+                {"income_from": 12000000, "income_to": 14000000, "rate": 0.75},
+                {"income_from": 14000000, "income_to": 16000000, "rate": 1.25},
+                {"income_from": 16000000, "income_to": 18000000, "rate": 1.5},
+                {"income_from": 18000000, "income_to": 20000000, "rate": 2.0},
+                {"income_from": 20000000, "income_to": 26000000, "rate": 2.75},
+                {"income_from": 26000000, "income_to": 34000000, "rate": 3.5},
+                {"income_from": 34000000, "income_to": 52000000, "rate": 4.5},
+                {"income_from": 52000000, "income_to": 500000000, "rate": 6.5},
+                {"income_from": 500000000, "income_to": 0, "rate": 9.0}
+            ]
+        }
+        
+        # Counter untuk jumlah record yang diinsert
+        count = 0
+        
+        # Loop semua status pajak
+        for status in status_list:
+            if status in ter_rates:
+                # Loop semua rate bracket untuk status pajak ini
+                for rate_data in ter_rates[status]:
+                    # Buat deskripsi yang informatif
+                    description = f"{status} "
+                    
+                    if rate_data["income_to"] == 0:
+                        description += f"di atas Rp{rate_data['income_from']:,.0f}"
+                    elif rate_data["income_from"] == 0:
+                        description += f"s.d Rp{rate_data['income_to']:,.0f}"
+                    else:
+                        description += f"Rp{rate_data['income_from']:,.0f} s.d Rp{rate_data['income_to']:,.0f}"
+                    
+                    # Buat record TER baru
+                    doc = frappe.get_doc({
+                        "doctype": "PPh 21 TER Table",
+                        "status_pajak": status,
+                        "income_from": rate_data["income_from"],
+                        "income_to": rate_data["income_to"],
+                        "rate": rate_data["rate"],
+                        "description": description
+                    })
+                    doc.insert(ignore_permissions=True)
+                    count += 1
+        
+        frappe.db.commit()
+        frappe.msgprint(_(f"Berhasil membuat {count} rate TER untuk {len(status_list)} status pajak sesuai PMK-168/PMK.010/2023"))
+            
+    except Exception as e:
+        frappe.log_error(f"Error setting up PPh 21 TER rates: {str(e)}")
+        frappe.msgprint(f"Error saat mengatur rate TER: {str(e)}", indicator="red")
+    try:
+        # Check if the doctype exists
+        if not frappe.db.exists("DocType", "PPh 21 TER Table"):
+            frappe.log_error("PPh 21 TER Table DocType not found. Skipping TER setup.")
+            return
+        
+        # Clear existing TER rates to avoid duplicates
+        frappe.db.sql("DELETE FROM `tabPPh 21 TER Table`")
+        frappe.db.commit()
+        
+        # Create TER rates based on PMK-168/PMK.010/2023
         # Data sesuai dengan PMK-168/PMK.010/2023
         default_rates = [
             # STATUS TK0 (Tidak Kawin 0 Tanggungan)
