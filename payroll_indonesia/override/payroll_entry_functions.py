@@ -58,3 +58,47 @@ def on_submit(doc, method=None):
         f"Payroll Entry {doc.name} for period {doc.start_date} to {doc.end_date} submitted by {frappe.session.user}",
         "Payroll Entry Submission"
     )
+
+def before_validate(doc, method=None):
+    """Fungsi yang dijalankan sebelum validasi"""
+    # Debug untuk memeriksa filters yang digunakan
+    if hasattr(doc, 'employees') and not doc.employees:
+        frappe.msgprint(_("Tidak ada karyawan yang ditemukan. Memeriksa filter..."))
+        
+        # Cek karyawan aktif di perusahaan
+        active_employees = frappe.db.sql("""
+            SELECT name, employee_name
+            FROM `tabEmployee`
+            WHERE status = 'Active' AND company = %s
+        """, (doc.company), as_dict=True)
+        
+        if not active_employees:
+            frappe.msgprint(_("Tidak ada karyawan aktif di perusahaan {0}").format(doc.company))
+        else:
+            # Cek salary structure assignment
+            employees_with_structure = []
+            for emp in active_employees:
+                has_structure = frappe.db.exists("Salary Structure Assignment", {
+                    "employee": emp.name,
+                    "docstatus": 1
+                })
+                
+                if has_structure:
+                    employees_with_structure.append(emp)
+            
+            if not employees_with_structure:
+                frappe.msgprint(_("Karyawan aktif tidak memiliki Salary Structure Assignment"))
+            else:
+                # Cek karyawan dengan slip gaji yang sudah ada
+                for emp in employees_with_structure:
+                    existing_slip = frappe.db.exists("Salary Slip", {
+                        "employee": emp.name,
+                        "start_date": doc.start_date,
+                        "end_date": doc.end_date,
+                        "docstatus": ["!=", 2]  # Not cancelled
+                    })
+                    
+                    if existing_slip:
+                        frappe.msgprint(_(
+                            "Karyawan {0} sudah memiliki slip gaji untuk periode ini: {1}"
+                        ).format(emp.employee_name, existing_slip))

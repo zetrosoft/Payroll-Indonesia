@@ -57,10 +57,11 @@ doc_events = {
     },
     "BPJS Settings": {
         "on_update": "payroll_indonesia.payroll_indonesia.bpjs.bpjs_settings.on_update"
-    },
-    "Payroll Entry": {  # Menambahkan event untuk Payroll Entry
-        "validate": "payroll_indonesia.override.payroll_entry_functions.validate_payroll_entry",
-        "on_submit": "payroll_indonesia.override.payroll_entry_functions.on_submit"
+    },  
+    "Payroll Entry": {
+    "before_validate": "payroll_indonesia.override.payroll_entry_functions.before_validate",
+    "validate": "payroll_indonesia.override.payroll_entry_functions.validate_payroll_entry",
+    "on_submit": "payroll_indonesia.override.payroll_entry_functions.on_submit"
     }
 }
 
