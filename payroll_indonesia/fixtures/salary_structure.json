@@ -3,6 +3,7 @@
   "name": "Struktur Gaji Tetap G1",
   "is_active": "Yes",
   "payroll_frequency": "Monthly",
+  "company": "%",
   "mode_of_payment": "Cash",
   "currency": "IDR",
   "income_tax_slab": "Indonesia Tax Slab - IDR",

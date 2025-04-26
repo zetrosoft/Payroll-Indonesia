@@ -3,7 +3,11 @@
 # For license information, please see license.txt
 
 import frappe
+import os
+import json
 from frappe import _
+from frappe.utils import cstr
+from payroll_indonesia.utilities.tax_slab import get_default_tax_slab
 
 def process_fixtures():
     """
@@ -19,13 +23,64 @@ def fix_salary_structure_submit_status():
     """
     frappe.log_error("Fixing Salary Structure submit status", "Fixture Handling")
     
+    try:
+        # First, try to restore from saved state
+        restore_from_saved_state()
+        
+        # If no saved state or restore failed, fix using predefined values
+        fix_using_defaults()
+        
+        frappe.db.commit()
+        frappe.log_error("Completed fixing Salary Structure submit status", "Fixture Handling")
+        
+    except Exception as e:
+        frappe.log_error(f"Error in fix_salary_structure_submit_status: {cstr(e)}", "Fixture Error")
+
+def restore_from_saved_state():
+    """Restore Salary Structure from previously saved state"""
+    state_file_path = os.path.join(frappe.get_site_path("private", "fixtures"), "salary_structure_state.json")
+    
+    if os.path.exists(state_file_path):
+        try:
+            # Load saved state
+            with open(state_file_path, "r") as f:
+                state = json.load(f)
+            
+            frappe.log_error(f"Loaded saved state: {state}", "Fixture Handling")
+            
+            # Update document if it exists
+            if frappe.db.exists("Salary Structure", state["name"]):
+                # Get actual Income Tax Slab if needed
+                if not state.get("income_tax_slab"):
+                    state["income_tax_slab"] = get_default_tax_slab()
+                
+                # Update fields
+                frappe.db.set_value("Salary Structure", state["name"], {
+                    "company": state.get("company", "%"),
+                    "income_tax_slab": state.get("income_tax_slab"),
+                    "tax_calculation_method": state.get("tax_calculation_method", "Manual"),
+                    "docstatus": state.get("docstatus", 1)  # Default to submitted if not specified
+                })
+                
+                frappe.log_error(f"Restored {state['name']} from saved state", "Fixture Handling")
+                return True
+        except Exception as e:
+            frappe.log_error(f"Error restoring from saved state: {cstr(e)}", "Fixture Error")
+    
+    return False
+
+def fix_using_defaults():
+    """Fix Salary Structure using default values"""
+    # Get default Income Tax Slab
+    tax_slab = get_default_tax_slab()
+    
     # Define structures that should be in submit status
     structures_to_submit = [
         {
             "name": "Struktur Gaji Tetap G1",
-            "company": frappe.defaults.get_global_default("company") or "%",
+            "company": "%",  # Keep as % for universal usage
             "update_fields": {
-                "income_tax_slab": frappe.db.get_value("Income Tax Slab", {"currency": "IDR", "is_default": 1}, "name"),
+                "income_tax_slab": tax_slab,
                 "tax_calculation_method": "Manual"
             }
         }
@@ -39,10 +94,10 @@ def fix_salary_structure_submit_status():
             needs_update = False
             
             # Check if company needs to be updated
-            if ss.company != structure["company"] and structure["company"] != "%":
+            if ss.company != structure["company"]:
                 frappe.db.set_value("Salary Structure", structure["name"], "company", structure["company"])
                 needs_update = True
-                frappe.log_error(f"Updated company for {structure['name']}", "Fixture Fix")
+                frappe.log_error(f"Updated company for {structure['name']} to {structure['company']}", "Fixture Fix")
             
             # Update additional fields if needed
             if "update_fields" in structure:
@@ -50,7 +105,7 @@ def fix_salary_structure_submit_status():
                     if value and getattr(ss, field, None) != value:
                         frappe.db.set_value("Salary Structure", structure["name"], field, value)
                         needs_update = True
-                        frappe.log_error(f"Updated {field} for {structure['name']}", "Fixture Fix")
+                        frappe.log_error(f"Updated {field} for {structure['name']} to {value}", "Fixture Fix")
             
             # Check docstatus and submit if needed
             if ss.docstatus == 0:  # If in draft state
@@ -64,7 +119,4 @@ def fix_salary_structure_submit_status():
                         frappe.db.set_value("Salary Structure", structure["name"], "amended_from", None)
                         
                 except Exception as e:
-                    frappe.log_error(f"Error submitting {structure['name']}: {str(e)}", "Fixture Fix Error")
-    
-    frappe.db.commit()
-    frappe.log_error("Completed fixing Salary Structure submit status", "Fixture Handling")
+                    frappe.log_error(f"Error submitting {structure['name']}: {cstr(e)}", "Fixture Fix Error")

@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 08:17:16 by dannyaudian
+# Last modified: 2025-04-26 09:10:00 by dannyaudian
 
 from __future__ import unicode_literals
 from payroll_indonesia.fixtures.after_migrate import process_fixtures
+from payroll_indonesia.hooks.before_fixtures import before_fixtures
 
 app_name = "payroll_indonesia"
 app_title = "Payroll Indonesia"
@@ -19,7 +20,7 @@ required_apps = ["erpnext", "hrms"]
 doctype_js = {
     "Employee": "payroll_indonesia/public/js/employee.js",
     "Salary Slip": "payroll_indonesia/public/js/salary_slip.js",
-    "Payroll Entry": "payroll_indonesia/public/js/payroll_entry.js",  # Menambahkan JS untuk Payroll Entry
+    "Payroll Entry": "payroll_indonesia/public/js/payroll_entry.js",
     "PPh TER Table": "payroll_indonesia/payroll_indonesia/doctype/pph_ter_table/pph_ter_table.js",
     "BPJS Payment Summary": "payroll_indonesia/payroll_indonesia/doctype/bpjs_payment_summary/bpjs_payment_summary.js",
     "PPh 21 Settings": "payroll_indonesia/public/js/pph_21_settings.js",
@@ -39,7 +40,8 @@ after_install = "payroll_indonesia.fixtures.setup.after_install"
 # DocType Class Override
 override_doctype_class = {
     "Salary Slip": "payroll_indonesia.override.salary_slip.CustomSalarySlip",
-    "Payroll Entry": "payroll_indonesia.override.payroll_entry.CustomPayrollEntry"  # Menambahkan override untuk Payroll Entry
+    "Payroll Entry": "payroll_indonesia.override.payroll_entry.CustomPayrollEntry",
+    "Salary Structure": "payroll_indonesia.override.salary_structure.CustomSalaryStructure"
 }
 
 # Document Events
@@ -72,18 +74,18 @@ fixtures = [
     {
         "dt": "Custom Field",
         "filters": [
-            ["dt", "in", ["Employee", "Salary Slip", "Payroll Entry"]]  # Menambahkan Payroll Entry
+            ["dt", "in", ["Employee", "Salary Slip", "Payroll Entry"]]
         ]
     },
     "Client Script",
     {
         "dt": "Property Setter",
         "filters": [
-            ["doc_type", "in", ["Employee", "Payroll Entry"]]  # Menambahkan Payroll Entry
+            ["doc_type", "in", ["Employee", "Payroll Entry"]]
         ]
     },
     
-    # Tambahkan Income Tax Slab
+    # Income Tax Slab
     {
         "dt": "Income Tax Slab",
         "filters": [
@@ -159,7 +161,7 @@ fixtures = [
     "PPh TER Detail",
     "PPh TER Account Detail",
     
-    # Workspace - DISINI KITA PRIORITASKAN WORKSPACE JSON
+    # Workspace
     {
         "doctype": "Workspace",
         "filters": [
@@ -185,7 +187,7 @@ fixtures_import_order = [
     "Supplier Group",
     "Supplier",
     "Tax Category",
-    "Income Tax Slab", # Tambahkan di urutan awal
+    "Income Tax Slab", 
     "BPJS Settings",
     "PPh 21 Settings",
     "PPh 21 Tax Bracket",
@@ -202,7 +204,6 @@ fixtures_import_order = [
     "Property Setter",
     "Client Script",
     "Report",
-    # Pastikan Workspace di-load terakhir agar tidak tertimpa
     "Workspace"
 ]
 
@@ -234,7 +235,7 @@ regional_overrides = {
     "Indonesia": {
         "controller_overrides": {
             "Salary Slip": "payroll_indonesia.override.salary_slip",
-            "Payroll Entry": "payroll_indonesia.override.payroll_entry"  # Tambahkan override untuk Payroll Entry
+            "Payroll Entry": "payroll_indonesia.override.payroll_entry"
         }
     }
 }
@@ -276,10 +277,17 @@ website_route_rules = [
     {"from_route": "/payslip/<path:payslip_name>", "to_route": "payroll_indonesia/templates/pages/payslip"}
 ]
 
+# Before fixtures hook - untuk menyimpan status dokumen sebelum fixture diproses
+before_fixtures = [
+    "payroll_indonesia.hooks.before_fixtures.before_fixtures"
+]
+
+# After migrate hook - untuk memastikan status submit dan nilai-nilai penting terjaga setelah migrate
 after_migrate = [
     "payroll_indonesia.fixtures.after_migrate.process_fixtures"
 ]
 
-before_fixtures = [
-    "payroll_indonesia.hooks.before_fixtures.before_fixtures"
+# After fixtures hook - untuk mengembalikan status dokumen setelah fixture diproses
+after_fixtures = [
+    "payroll_indonesia.fixtures.after_migrate.process_fixtures"
 ]
