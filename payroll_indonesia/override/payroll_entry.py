@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 08:40:12 by dannyaudian
+# Last modified: 2025-04-26 11:48:30 by dannyaudian
 
 import frappe
 from frappe import _
@@ -36,7 +36,8 @@ class CustomPayrollEntry(PayrollEntry):
                 and company = %s
         """, (self.company), as_dict=True)
         
-        frappe.log_error(f"Minimal employee list: {minimal_emp_list}", "Employee Query")
+        # Log jumlah karyawan bukan seluruh data untuk menghindari error truncated
+        frappe.log_error(f"Employee count: {len(minimal_emp_list)}", "Employee Query")
         
         # Filter karyawan yang memiliki salary structure assignment
         emp_list_with_structure = []
@@ -57,9 +58,19 @@ class CustomPayrollEntry(PayrollEntry):
         # Filter: hilangkan employee yang None atau kosong
         filtered_emp_list = [emp for emp in emp_list_with_structure if emp.get('employee')]
         
-        # Tampilkan daftar karyawan yang akan diproses
+        # Tampilkan daftar karyawan yang akan diproses (batasi jumlah nama yang ditampilkan)
         if filtered_emp_list:
-            employee_names = ", ".join([f"{emp.get('employee_name')} ({emp.get('employee')})" for emp in filtered_emp_list])
+            # Batasi jumlah karyawan yang ditampilkan untuk menghindari pesan terlalu panjang
+            max_display = 5
+            displayed_emps = filtered_emp_list[:max_display]
+            
+            employee_names = ", ".join([f"{emp.get('employee_name')} ({emp.get('employee')})" for emp in displayed_emps])
+            
+            # Tambahkan teks "+X lainnya" jika karyawan lebih dari max_display
+            if len(filtered_emp_list) > max_display:
+                remaining = len(filtered_emp_list) - max_display
+                employee_names += f" dan {remaining} karyawan lainnya"
+                
             frappe.msgprint(_(f"Karyawan yang akan diproses: {employee_names}"))
         else:
             frappe.msgprint(_("Tidak ada karyawan yang memenuhi kriteria untuk payroll ini"))
@@ -96,6 +107,7 @@ class CustomPayrollEntry(PayrollEntry):
         # Lanjutkan dengan pemrosesan standar
         salary_slips_exist_for = self.get_existing_salary_slips(employees)
         count = 0
+        error_count = 0
         
         for emp in employees:
             employee = emp.get('employee')
@@ -118,19 +130,32 @@ class CustomPayrollEntry(PayrollEntry):
                 
                 # Update progress if needed
                 if publish_progress:
+                    denominator = max(1, len(set(employees) - set(salary_slips_exist_for)))
                     frappe.publish_progress(
-                        count * 100 / len(set(employees) - set(salary_slips_exist_for)),
+                        count * 100 / denominator,
                         title=_("Creating Salary Slips...")
                     )
                     
             except Exception as e:
+                error_count += 1
+                error_msg = f"Gagal membuat Salary Slip untuk {employee}: {str(e)}"
+                
+                # Batasi panjang error message untuk log
+                if len(error_msg) > 900:  # Batas aman untuk field `message` pada Error Log
+                    error_msg = error_msg[:900] + "... [truncated]"
+                    
                 frappe.msgprint(
-                    _("Gagal membuat Salary Slip untuk {0}: {1}").format(employee, str(e)),
+                    _("Gagal membuat Salary Slip untuk {0}").format(employee),
                     title=_("Salary Slip Creation Failed")
                 )
                 frappe.log_error(
-                    f"Payroll Entry - Gagal membuat Salary Slip untuk employee {employee}: {str(e)}"
+                    message=error_msg,
+                    title="Salary Slip Creation Error"
                 )
+        
+        # Log ringkasan hasil
+        result_msg = f"Created {count} salary slips, {error_count} errors"
+        frappe.log_error(message=result_msg, title="Salary Slip Creation Summary")
         
         return salary_slips_exist_for, count
     
