@@ -7,10 +7,10 @@ from __future__ import unicode_literals
 from payroll_indonesia.fixtures.after_migrate import process_fixtures
 from payroll_indonesia.hooks.before_fixtures import before_fixtures
 
-app_name = "payroll_indonesia"
-app_title = ["Payroll Indonesia"]  # List bukan string
-app_publisher = "PT. Innovasi Terbaik Bangsa" 
-app_description = "Payroll module for Indonesian companies with local regulatory features"
+app_name = "payroll_indonesia" 
+app_title = ["Payroll Indonesia"]  # Gunakan list
+app_description = ["Payroll module for Indonesian companies with local regulatory features"]  # Gunakan list
+app_publisher = "PT. Innovasi Terbaik Bangsa"
 app_email = "danny.a.pratama@cao-group.co.id"
 app_license = "GPL-3"
 app_version = "0.0.1"
