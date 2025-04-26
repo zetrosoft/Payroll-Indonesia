@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
+# Last modified: 2025-04-26 11:44:36 by dannyaudian
 
 import frappe
 from frappe import _
 from hrms.payroll.doctype.salary_structure.salary_structure import SalaryStructure
+from payroll_indonesia.utilities.tax_slab import get_default_tax_slab, create_income_tax_slab
 
 class CustomSalaryStructure(SalaryStructure):
     def validate(self):
@@ -55,8 +57,8 @@ class CustomSalaryStructure(SalaryStructure):
                 tax_slab_value = getattr(self, 'income_tax_slab', None) or frappe.db.get_value("Salary Structure", self.name, "income_tax_slab")
                 
                 if not tax_slab_value:
-                    # Cek apakah ada Income Tax Slab default
-                    tax_slab = frappe.db.get_value("Income Tax Slab", {"currency": self.currency, "is_default": 1}, "name")
+                    # Dapatkan tax slab default
+                    tax_slab = get_default_tax_slab()
                     
                     if tax_slab:
                         try:
@@ -79,12 +81,18 @@ class CustomSalaryStructure(SalaryStructure):
 def create_default_salary_structure():
     """Buat atau update Salary Structure secara programatis"""
     try:
+        # Pastikan Income Tax Slab tersedia
+        create_income_tax_slab()
+        
         # Definisi struktur gaji default
         structure_name = "Struktur Gaji Tetap G1"
         
         # Dapatkan company default dari site
         default_company = frappe.defaults.get_global_default("company")
         company_value = default_company or "%"
+        
+        # Dapatkan default tax slab
+        default_tax_slab = get_default_tax_slab()
         
         # Definisi komponen earnings
         earnings = [
@@ -217,9 +225,11 @@ def create_default_salary_structure():
             # Note
             ss.note = "Nilai komponen BPJS dan PPh 21 dihitung otomatis berdasarkan pengaturan di BPJS Settings dan PPh 21 Settings."
             
-            # Coba set tax calculation method jika field ada
+            # Coba set tax calculation method dan tax slab jika field ada
             try:
                 ss.tax_calculation_method = "Manual"
+                if default_tax_slab and hasattr(ss, 'income_tax_slab'):
+                    ss.income_tax_slab = default_tax_slab
             except:
                 pass
                 
@@ -249,9 +259,11 @@ def create_default_salary_structure():
             # Buat dokumen baru
             ss = frappe.get_doc(ss_dict)
             
-            # Coba set tax calculation method jika field ada
+            # Coba set tax calculation method dan tax slab jika field ada
             try:
                 ss.tax_calculation_method = "Manual"
+                if default_tax_slab and hasattr(ss, 'income_tax_slab'):
+                    ss.income_tax_slab = default_tax_slab
             except:
                 pass
                 
@@ -260,6 +272,11 @@ def create_default_salary_structure():
             
             frappe.db.commit()
             print(f"Created Salary Structure: {structure_name}")
+            
+        # Setelah membuat struktur, update assignment jika perlu
+        if default_tax_slab:
+            from payroll_indonesia.utilities.tax_slab import update_existing_assignments
+            update_existing_assignments()
             
         return True
         
@@ -315,8 +332,16 @@ def create_salary_components():
 def update_salary_structures():
     """Task terjadwal untuk memperbarui salary structure"""
     try:
+        # Pastikan Income Tax Slab sudah dibuat
+        from payroll_indonesia.utilities.tax_slab import create_income_tax_slab
+        create_income_tax_slab()
+        
+        # Buat komponen salary
         create_salary_components()
+        
+        # Buat atau update struktur gaji
         create_default_salary_structure()
+        
         return "Updated salary structures successfully"
     except Exception as e:
         frappe.log_error(f"Failed to update salary structures: {str(e)}", "Scheduled Task")

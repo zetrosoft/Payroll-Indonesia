@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 11:36:17 by dannyaudian
+# Last modified: 2025-04-26 11:42:05 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -67,15 +67,12 @@ doc_events = {
     }
 }
 
-# Fixtures - HAPUS "Salary Structure" dari fixtures karena sekarang dibuat melalui kode
+# Fixtures - HAPUS "Salary Structure" dan "Income Tax Slab" dari fixtures karena sekarang dibuat melalui kode
 fixtures = [
     # Basic Setup
     "Custom Field",
     "Client Script",
     "Property Setter",
-    
-    # Income Tax Slab
-    "Income Tax Slab",
     
     # Master Data
     "Supplier Group",
@@ -116,9 +113,10 @@ fixtures = [
     "Report"
 ]
 
-# Scheduler tasks - tambahkan update_salary_structures untuk memastikan struktur terupdate
+# Scheduler tasks - tambahkan create_default_tax_slab dan update untuk tax slab dan salary structure
 scheduler_events = {
     "daily": [
+        "payroll_indonesia.utilities.tax_slab.create_income_tax_slab", 
         "payroll_indonesia.override.salary_structure.update_salary_structures"
     ],
     "monthly": [
@@ -189,5 +187,8 @@ website_route_rules = [
     {"from_route": "/payslip/<path:payslip_name>", "to_route": "payroll_indonesia/templates/pages/payslip"}
 ]
 
-# TAMBAHKAN after_migrate untuk membuat salary structure setelah migrasi
-after_migrate = "payroll_indonesia.override.salary_structure.create_default_salary_structure"
+# TAMBAHKAN after_migrate untuk membuat tax slab dan salary structure setelah migrasi
+after_migrate = [
+    "payroll_indonesia.utilities.tax_slab.create_income_tax_slab",
+    "payroll_indonesia.override.salary_structure.create_default_salary_structure"
+]
