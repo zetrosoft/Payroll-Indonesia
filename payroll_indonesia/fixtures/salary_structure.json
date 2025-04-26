@@ -16,12 +16,12 @@
     },
     {
       "salary_component": "Tunjangan Makan",
-      "amount": 500000,
+      "amount": 0,
       "condition": ""
     },
     {
       "salary_component": "Tunjangan Transport",
-      "amount": 300000,
+      "amount": 0,
       "condition": ""
     },
     {

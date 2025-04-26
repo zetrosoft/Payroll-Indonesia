@@ -35,17 +35,39 @@ class CustomSalaryStructure(SalaryStructure):
                 has_tax_component = True
                 break
                 
-        # Jika ada komponen PPh 21 tapi tidak ada income_tax_slab, coba isi
-        if has_tax_component and not self.income_tax_slab:
-            # Cek apakah ada Income Tax Slab default
-            tax_slab = frappe.db.get_value("Income Tax Slab", {"currency": self.currency, "is_default": 1}, "name")
-            if tax_slab:
-                self.income_tax_slab = tax_slab
-                self.tax_calculation_method = "Manual"  # Untuk PPh 21 Indonesia
+        # Periksa apakah field income_tax_slab ada dalam doctype
+        field_exists = False
+        try:
+            # Cek apakah attribut ada atau bisa diakses dari db
+            if hasattr(self, 'income_tax_slab'):
+                field_exists = True
+            else:
+                # Coba ambil dari database
+                tax_slab_value = frappe.db.get_value("Salary Structure", self.name, "income_tax_slab")
+                if tax_slab_value is not None:
+                    field_exists = True
+        except Exception:
+            field_exists = False
                 
-                # Save langsung ke DB untuk menghindari trigger validasi lagi
-                frappe.db.set_value("Salary Structure", self.name, {
-                    "income_tax_slab": tax_slab,
-                    "tax_calculation_method": "Manual"
-                })
-                frappe.db.commit()
+        # Jika ada komponen PPh 21 dan field income_tax_slab ada, tapi nilainya kosong
+        if has_tax_component and field_exists:
+            tax_slab_value = getattr(self, 'income_tax_slab', None) or frappe.db.get_value("Salary Structure", self.name, "income_tax_slab")
+            
+            if not tax_slab_value:
+                # Cek apakah ada Income Tax Slab default
+                tax_slab = frappe.db.get_value("Income Tax Slab", {"currency": self.currency, "is_default": 1}, "name")
+                
+                if tax_slab:
+                    try:
+                        # Update langsung ke DB untuk menghindari error
+                        update_dict = {"tax_calculation_method": "Manual"}
+                        
+                        # Tambahkan income_tax_slab jika field ada di DocType
+                        if field_exists:
+                            update_dict["income_tax_slab"] = tax_slab
+                            
+                        frappe.db.set_value("Salary Structure", self.name, update_dict)
+                        frappe.db.commit()
+                    except Exception as e:
+                        # Log error tapi jangan crash
+                        frappe.log_error(f"Failed to update income_tax_slab: {str(e)}", "CustomSalaryStructure")
