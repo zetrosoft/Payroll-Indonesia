@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 11:42:05 by dannyaudian
+# Last modified: 2025-04-26 18:58:20 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -64,6 +64,9 @@ doc_events = {
         "before_validate": "payroll_indonesia.override.payroll_entry_functions.before_validate",
         "validate": "payroll_indonesia.override.payroll_entry_functions.validate_payroll_entry",
         "on_submit": "payroll_indonesia.override.payroll_entry_functions.on_submit"
+    },
+    "Employee Tax Summary": {
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.validate"
     }
 }
 
@@ -92,6 +95,7 @@ fixtures = [
     
     # Tracking & Component DocTypes
     "Employee Tax Summary",
+    "Employee Monthly Tax Detail",
     "Payroll Log",
     "BPJS Payment Component",
     
