@@ -23,6 +23,20 @@
       "salary_component": "Tunjangan Transport",
       "amount": 300000,
       "condition": ""
+    },
+    {
+      "salary_component": "Insentif",
+      "amount": 0,
+      "amount_based_on_formula": 0,
+      "condition": "",
+      "description": "Diisi manual sesuai kinerja karyawan"
+    },
+    {
+      "salary_component": "Bonus",
+      "amount": 0,
+      "amount_based_on_formula": 0,
+      "condition": "",
+      "description": "Diisi manual sesuai kebijakan perusahaan"
     }
   ],
   "deductions": [
@@ -53,11 +67,51 @@
       "amount": 0,
       "condition": "not penghasilan_final",
       "do_not_include_in_total": 0
+    },
+    {
+      "salary_component": "BPJS JHT Employer",
+      "amount_based_on_formula": 0,
+      "amount": 0,
+      "condition": "ikut_bpjs_ketenagakerjaan",
+      "statistical_component": 1,
+      "do_not_include_in_total": 1
+    },
+    {
+      "salary_component": "BPJS JP Employer",
+      "amount_based_on_formula": 0,
+      "amount": 0,
+      "condition": "ikut_bpjs_ketenagakerjaan",
+      "statistical_component": 1,
+      "do_not_include_in_total": 1
+    },
+    {
+      "salary_component": "BPJS JKK",
+      "amount_based_on_formula": 0,
+      "amount": 0,
+      "condition": "ikut_bpjs_ketenagakerjaan",
+      "statistical_component": 1,
+      "do_not_include_in_total": 1
+    },
+    {
+      "salary_component": "BPJS JKM",
+      "amount_based_on_formula": 0,
+      "amount": 0,
+      "condition": "ikut_bpjs_ketenagakerjaan",
+      "statistical_component": 1,
+      "do_not_include_in_total": 1
+    },
+    {
+      "salary_component": "BPJS Kesehatan Employer",
+      "amount_based_on_formula": 0,
+      "amount": 0,
+      "condition": "ikut_bpjs_kesehatan",
+      "statistical_component": 1,
+      "do_not_include_in_total": 1
     }
   ],
-  "modified": "2025-04-26 06:32:45",
+  "modified": "2025-04-26 06:44:15",
   "modified_by": "dannyaudian",
   "owner": "Administrator",
   "tax_calculation_method": "auto",
-  "note": "Nilai komponen BPJS dan PPh 21 dihitung otomatis berdasarkan pengaturan di BPJS Settings dan PPh 21 Settings."
+  "note": "Nilai komponen BPJS dan PPh 21 dihitung otomatis berdasarkan pengaturan di BPJS Settings dan PPh 21 Settings. Komponen employer ditandai sebagai statistical_component dan do_not_include_in_total."
 }

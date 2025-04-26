@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 05:19:23 by dannyaudian
+# Last modified: 2025-04-26 06:31:01 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -59,9 +59,9 @@ doc_events = {
         "on_update": "payroll_indonesia.payroll_indonesia.bpjs.bpjs_settings.on_update"
     },  
     "Payroll Entry": {
-    "before_validate": "payroll_indonesia.override.payroll_entry_functions.before_validate",
-    "validate": "payroll_indonesia.override.payroll_entry_functions.validate_payroll_entry",
-    "on_submit": "payroll_indonesia.override.payroll_entry_functions.on_submit"
+        "before_validate": "payroll_indonesia.override.payroll_entry_functions.before_validate",
+        "validate": "payroll_indonesia.override.payroll_entry_functions.validate_payroll_entry",
+        "on_submit": "payroll_indonesia.override.payroll_entry_functions.on_submit"
     }
 }
 
@@ -199,12 +199,23 @@ fixtures_import_order = [
 # Jinja template methods
 jinja = {
     "methods": [
+        # BPJS Settings & Functions
         "payroll_indonesia.payroll_indonesia.utils.get_bpjs_settings",
-        "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings",
         "payroll_indonesia.payroll_indonesia.utils.calculate_bpjs_contributions",
+        
+        # PPh 21 Settings & Functions
+        "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings",
         "payroll_indonesia.payroll_indonesia.utils.get_ter_rate",
         "payroll_indonesia.payroll_indonesia.utils.should_use_ter",
-        "payroll_indonesia.payroll_indonesia.utils.get_pph21_settings"
+        "payroll_indonesia.payroll_indonesia.utils.get_pph21_settings",
+        "payroll_indonesia.payroll_indonesia.utils.get_pph21_brackets",
+        
+        # Tax Reporting Functions
+        "payroll_indonesia.payroll_indonesia.utils.get_ytd_tax_info",
+        "payroll_indonesia.payroll_indonesia.utils.create_tax_summary_doc",
+        
+        # Dynamic Salary Calculation Functions
+        "payroll_indonesia.payroll_indonesia.utils.get_spt_month"
     ]
 }
 
@@ -254,6 +265,3 @@ scheduler_events = {
 website_route_rules = [
     {"from_route": "/payslip/<path:payslip_name>", "to_route": "payroll_indonesia/templates/pages/payslip"}
 ]
-
-# HAPUS ATAU KOMENTARI KONFIGURASI WORKSPACE BERIKUT
-# workspace_config = { ... }

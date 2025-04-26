@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-23 13:01:41 by dannyaudian
+# Last modified: 2025-04-26 06:48:25 by dannyaudian
 
 import frappe
 import os
@@ -15,16 +15,26 @@ def get_bpjs_settings():
         if frappe.db.exists("DocType", "BPJS Settings") and frappe.db.get_all("BPJS Settings"):
             doc = frappe.get_single("BPJS Settings")
             return {
-                'kesehatan_employee': doc.kesehatan_employee_percent,
-                'kesehatan_employer': doc.kesehatan_employer_percent,
-                'jht_employee': doc.jht_employee_percent,
-                'jht_employer': doc.jht_employer_percent,
-                'jp_employee': doc.jp_employee_percent,
-                'jp_employer': doc.jp_employer_percent,
-                'jkk_employer': doc.jkk_percent,
-                'jkm_employer': doc.jkm_percent,
-                'max_salary_kesehatan': doc.kesehatan_max_salary,
-                'max_salary_jp': doc.jp_max_salary
+                "kesehatan": {
+                    "employee_percent": flt(doc.kesehatan_employee_percent),
+                    "employer_percent": flt(doc.kesehatan_employer_percent),
+                    "max_salary": flt(doc.kesehatan_max_salary)
+                },
+                "jht": {
+                    "employee_percent": flt(doc.jht_employee_percent),
+                    "employer_percent": flt(doc.jht_employer_percent)
+                },
+                "jp": {
+                    "employee_percent": flt(doc.jp_employee_percent),
+                    "employer_percent": flt(doc.jp_employer_percent),
+                    "max_salary": flt(doc.jp_max_salary)
+                },
+                "jkk": {
+                    "percent": flt(doc.jkk_percent)
+                },
+                "jkm": {
+                    "percent": flt(doc.jkm_percent)
+                }
             }
     except Exception:
         # Fall back to config methods if DocType approach fails
@@ -72,8 +82,119 @@ def get_bpjs_settings():
     for key, value in defaults.items():
         if key not in settings:
             settings[key] = value
-            
-    return settings
+    
+    # Convert to structured format
+    return {
+        "kesehatan": {
+            "employee_percent": settings.get('kesehatan_employee'),
+            "employer_percent": settings.get('kesehatan_employer'),
+            "max_salary": settings.get('max_salary_kesehatan')
+        },
+        "jht": {
+            "employee_percent": settings.get('jht_employee'),
+            "employer_percent": settings.get('jht_employer')
+        },
+        "jp": {
+            "employee_percent": settings.get('jp_employee'),
+            "employer_percent": settings.get('jp_employer'),
+            "max_salary": settings.get('max_salary_jp')
+        },
+        "jkk": {
+            "percent": settings.get('jkk_employer')
+        },
+        "jkm": {
+            "percent": settings.get('jkm_employer')
+        }
+    }
+
+def calculate_bpjs_contributions(salary, bpjs_settings=None):
+    """
+    Calculate BPJS contributions based on salary and settings
+    
+    Args:
+        salary (float): Base salary amount
+        bpjs_settings (object, optional): BPJS Settings or dict. Will fetch if not provided.
+        
+    Returns:
+        dict: Dictionary containing BPJS contribution details
+    """
+    if not bpjs_settings:
+        bpjs_settings = get_bpjs_settings()
+    
+    # Check if bpjs_settings is a dict or an object
+    if isinstance(bpjs_settings, dict):
+        # Use dict values
+        kesehatan_employee_percent = bpjs_settings.get("kesehatan", {}).get("employee_percent", 1)
+        kesehatan_employer_percent = bpjs_settings.get("kesehatan", {}).get("employer_percent", 4)
+        kesehatan_max_salary = bpjs_settings.get("kesehatan", {}).get("max_salary", 12000000)
+        
+        jht_employee_percent = bpjs_settings.get("jht", {}).get("employee_percent", 2)
+        jht_employer_percent = bpjs_settings.get("jht", {}).get("employer_percent", 3.7)
+        
+        jp_employee_percent = bpjs_settings.get("jp", {}).get("employee_percent", 1)
+        jp_employer_percent = bpjs_settings.get("jp", {}).get("employer_percent", 2)
+        jp_max_salary = bpjs_settings.get("jp", {}).get("max_salary", 9077600)
+        
+        jkk_percent = bpjs_settings.get("jkk", {}).get("percent", 0.24)
+        jkm_percent = bpjs_settings.get("jkm", {}).get("percent", 0.3)
+    else:
+        # Use object attributes
+        kesehatan_employee_percent = flt(bpjs_settings.kesehatan_employee_percent)
+        kesehatan_employer_percent = flt(bpjs_settings.kesehatan_employer_percent)
+        kesehatan_max_salary = flt(bpjs_settings.kesehatan_max_salary)
+        
+        jht_employee_percent = flt(bpjs_settings.jht_employee_percent)
+        jht_employer_percent = flt(bpjs_settings.jht_employer_percent)
+        
+        jp_employee_percent = flt(bpjs_settings.jp_employee_percent)
+        jp_employer_percent = flt(bpjs_settings.jp_employer_percent)
+        jp_max_salary = flt(bpjs_settings.jp_max_salary)
+        
+        jkk_percent = flt(bpjs_settings.jkk_percent)
+        jkm_percent = flt(bpjs_settings.jkm_percent)
+    
+    # Cap salaries at maximum thresholds
+    kesehatan_salary = min(flt(salary), kesehatan_max_salary)
+    jp_salary = min(flt(salary), jp_max_salary)
+    
+    # Calculate BPJS Kesehatan
+    kesehatan_karyawan = kesehatan_salary * (kesehatan_employee_percent / 100)
+    kesehatan_perusahaan = kesehatan_salary * (kesehatan_employer_percent / 100)
+    
+    # Calculate BPJS Ketenagakerjaan - JHT
+    jht_karyawan = flt(salary) * (jht_employee_percent / 100)
+    jht_perusahaan = flt(salary) * (jht_employer_percent / 100)
+    
+    # Calculate BPJS Ketenagakerjaan - JP
+    jp_karyawan = jp_salary * (jp_employee_percent / 100)
+    jp_perusahaan = jp_salary * (jp_employer_percent / 100)
+    
+    # Calculate BPJS Ketenagakerjaan - JKK and JKM
+    jkk = flt(salary) * (jkk_percent / 100)
+    jkm = flt(salary) * (jkm_percent / 100)
+    
+    # Return structured result
+    return {
+        "kesehatan": {
+            "karyawan": kesehatan_karyawan,
+            "perusahaan": kesehatan_perusahaan,
+            "total": kesehatan_karyawan + kesehatan_perusahaan
+        },
+        "ketenagakerjaan": {
+            "jht": {
+                "karyawan": jht_karyawan,
+                "perusahaan": jht_perusahaan,
+                "total": jht_karyawan + jht_perusahaan
+            },
+            "jp": {
+                "karyawan": jp_karyawan,
+                "perusahaan": jp_perusahaan,
+                "total": jp_karyawan + jp_perusahaan
+            },
+            "jkk": jkk,
+            "jkm": jkm
+        }
+    }
 
 def get_ptkp_settings():
     """Get PTKP settings from PPh 21 Settings DocType or .env file or defaults"""
@@ -141,62 +262,6 @@ def get_ptkp_settings():
         settings['HB3'] = 2 * settings['pribadi'] + settings['kawin'] + (3 * settings['anak'])
             
     return settings
-
-def calculate_bpjs_contributions(gaji_pokok):
-    """Calculate BPJS contributions based on salary
-    
-    Args:
-        gaji_pokok (float): Base salary amount
-        
-    Returns:
-        dict: Dictionary containing BPJS contribution values
-    """
-    # Get BPJS settings
-    settings = get_bpjs_settings()
-    
-    # Get percentages (convert to decimal)
-    jht_karyawan = settings.get('jht_employee', 2.0) / 100
-    jht_perusahaan = settings.get('jht_employer', 3.7) / 100
-    jp_karyawan = settings.get('jp_employee', 1.0) / 100
-    jp_perusahaan = settings.get('jp_employer', 2.0) / 100
-    jkk_perusahaan = settings.get('jkk_employer', 0.24) / 100
-    jkm_perusahaan = settings.get('jkm_employer', 0.3) / 100
-    kesehatan_karyawan = settings.get('kesehatan_employee', 1.0) / 100
-    kesehatan_perusahaan = settings.get('kesehatan_employer', 4.0) / 100
-    
-    # Get salary caps
-    jp_max_salary = settings.get('max_salary_jp', 9077600)
-    kesehatan_max_salary = settings.get('max_salary_kesehatan', 12000000)
-    
-    # Apply salary caps
-    jp_base = min(gaji_pokok, jp_max_salary)
-    kesehatan_base = min(gaji_pokok, kesehatan_max_salary)
-    
-    # Calculate contributions
-    result = {
-        "ketenagakerjaan": {
-            "jht": {
-                "karyawan": flt(gaji_pokok * jht_karyawan),
-                "perusahaan": flt(gaji_pokok * jht_perusahaan)
-            },
-            "jp": {
-                "karyawan": flt(jp_base * jp_karyawan),
-                "perusahaan": flt(jp_base * jp_perusahaan)
-            },
-            "jkk": {
-                "perusahaan": flt(gaji_pokok * jkk_perusahaan)
-            },
-            "jkm": {
-                "perusahaan": flt(gaji_pokok * jkm_perusahaan)
-            }
-        },
-        "kesehatan": {
-            "karyawan": flt(kesehatan_base * kesehatan_karyawan),
-            "perusahaan": flt(kesehatan_base * kesehatan_perusahaan)
-        }
-    }
-    
-    return result
 
 def get_spt_month():
     """Get the month for annual SPT calculation from .env file or default"""

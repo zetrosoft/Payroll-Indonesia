@@ -85,21 +85,18 @@ class CustomSalarySlip(SalarySlip):
                 "Error calculating salary components: {0}"
             ).format(str(e)))
     
-    def calculate_bpjs_components(self, employee, gaji_pokok):
-        """Calculate and update BPJS components"""
-        from payroll_indonesia.payroll_indonesia.utils import calculate_bpjs_contributions
+   def calculate_bpjs_components(self, employee, gaji_pokok):
+    """Calculate and update BPJS components based on settings"""
+    if not hasattr(employee, 'ikut_bpjs_ketenagakerjaan'):
+        employee.ikut_bpjs_ketenagakerjaan = 0
         
-        """Calculate and update BPJS components based on settings"""
-        if not hasattr(employee, 'ikut_bpjs_ketenagakerjaan'):
-            employee.ikut_bpjs_ketenagakerjaan = 0
-            
-        if not hasattr(employee, 'ikut_bpjs_kesehatan'):
-            employee.ikut_bpjs_kesehatan = 0
-            
-        if not employee.ikut_bpjs_ketenagakerjaan and not employee.ikut_bpjs_kesehatan:
-            return
+    if not hasattr(employee, 'ikut_bpjs_kesehatan'):
+        employee.ikut_bpjs_kesehatan = 0
         
-        try:
+    if not employee.ikut_bpjs_ketenagakerjaan and not employee.ikut_bpjs_kesehatan:
+        return
+    
+    try:
         # Ambil BPJS Settings
         bpjs_settings = frappe.get_single("BPJS Settings")
         
@@ -167,7 +164,7 @@ class CustomSalarySlip(SalarySlip):
             f"Employee: {employee.name}\nError: {str(e)}"
         )
         raise
-
+    
     def calculate_tax_components(self, employee):
         """Calculate tax related components"""
         try:
