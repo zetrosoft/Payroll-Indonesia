@@ -4,25 +4,22 @@
 # Last modified: 2025-04-26 10:15:16 by dannyaudian
 
 from __future__ import unicode_literals
-from payroll_indonesia.fixtures.after_migrate import process_fixtures
-from payroll_indonesia.hooks.before_fixtures import before_fixtures
 
-app_name = "payroll_indonesia" 
-app_title = ["Payroll Indonesia"]  # Gunakan list
-app_description = ["Payroll module for Indonesian companies with local regulatory features"]  # Gunakan list
+# Konfigurasi app dasar
+app_name = "payroll_indonesia"
+# HAPUS app_title sebagai list karena itu sumber masalah
 app_publisher = "PT. Innovasi Terbaik Bangsa"
+app_description = "Payroll module for Indonesian companies with local regulatory features"
 app_email = "danny.a.pratama@cao-group.co.id"
 app_license = "GPL-3"
 app_version = "0.0.1"
 required_apps = ["erpnext", "hrms"]
 
-# Ubah hook ini untuk menggunakan patch dari __init__.py
-before_app_init = "payroll_indonesia.__init__.patch_get_versions"
+# App patches dan hooks
+# Menggunakan fix_app_title_at_runtime untuk menghindari error saat startup
+on_app_init = "payroll_indonesia.fix_app_title_at_runtime"
 
-# Hapus hook ini karena fungsinya sudah ada di __init__.py
-# after_app_load = "payroll_indonesia.utilities.boot_override.apply_patches"
-
-# JS files for doctypes - Corrected paths
+# JS files untuk doctypes
 doctype_js = {
     "Employee": "payroll_indonesia/public/js/employee.js",
     "Salary Slip": "payroll_indonesia/public/js/salary_slip.js",
@@ -33,7 +30,7 @@ doctype_js = {
     "BPJS Settings": "payroll_indonesia/payroll_indonesia/doctype/bpjs_settings/bpjs_settings.js"
 }
 
-# List view JS - Corrected paths
+# List view JS
 doctype_list_js = {
     "PPh TER Table": "payroll_indonesia/payroll_indonesia/doctype/pph_ter_table/pph_ter_table_list.js",
     "BPJS Payment Summary": "payroll_indonesia/payroll_indonesia/doctype/bpjs_payment_summary/bpjs_payment_summary_list.js",
@@ -41,7 +38,7 @@ doctype_list_js = {
 }
 
 # Installation
-after_install = "payroll_indonesia.fixtures.setup.after_install"
+after_install = "payroll_indonesia.setup.after_install"
 
 # DocType Class Override
 override_doctype_class = {
@@ -74,54 +71,22 @@ doc_events = {
     }
 }
 
-# Fixtures (organized by load order)
+# Fixtures - Disederhanakan untuk mengurangi kompleksitas
 fixtures = [
     # Basic Setup
-    {
-        "dt": "Custom Field",
-        "filters": [
-            ["dt", "in", ["Employee", "Salary Slip", "Payroll Entry"]]
-        ]
-    },
+    "Custom Field",
     "Client Script",
-    {
-        "dt": "Property Setter",
-        "filters": [
-            ["doc_type", "in", ["Employee", "Payroll Entry"]]
-        ]
-    },
+    "Property Setter",
     
     # Income Tax Slab
-    {
-        "dt": "Income Tax Slab",
-        "filters": [
-            ["currency", "=", "IDR"]
-        ]
-    },
+    "Income Tax Slab",
     
-    # Master Data - First Level (Groups)
-    {
-        "dt": "Supplier Group",
-        "filters": [
-            ["supplier_group_name", "=", "Government"]
-        ]
-    },
+    # Master Data
+    "Supplier Group",
+    "Supplier",
+    "Tax Category",
     
-    # Master Data - Second Level (Dependent Items)
-    {
-        "dt": "Supplier",
-        "filters": [
-            ["name", "=", "BPJS"]
-        ]
-    },
-    {
-        "dt": "Tax Category",
-        "filters": [
-            ["name", "=", "Government"]
-        ]
-    },
-    
-    # Payroll Indonesia Settings - Using DocType Names
+    # Payroll Indonesia Settings
     "BPJS Settings",
     "PPh 21 Settings",
     "PPh 21 Tax Bracket",
@@ -137,27 +102,11 @@ fixtures = [
     "Payroll Log",
     "BPJS Payment Component",
     
-    # Salary Components (need to load before structure)
-    {
-        "dt": "Salary Component",
-        "filters": [
-            ["name", "in", [
-                "Gaji Pokok", "Tunjangan Makan", "Tunjangan Transport", 
-                "Insentif", "Bonus", "PPh 21",
-                "BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee",
-                "BPJS JHT Employer", "BPJS JP Employer", "BPJS JKK",
-                "BPJS JKM", "BPJS Kesehatan Employer"
-            ]]
-        ]
-    },
+    # Salary Components
+    "Salary Component",
     
-    # Salary Structure (loads after components)
-    {
-        "dt": "Salary Structure",
-        "filters": [
-            ["name", "=", "Struktur Gaji Tetap G1"]
-        ]
-    },
+    # Salary Structure
+    "Salary Structure",
     
     # Transaction DocTypes
     "BPJS Payment Summary",
@@ -168,49 +117,10 @@ fixtures = [
     "PPh TER Account Detail",
     
     # Workspace
-    {
-        "doctype": "Workspace",
-        "filters": [
-            ["name", "=", "Payroll Indonesia"]
-        ]
-    },
+    "Workspace",
     
     # Reports
-    {
-        "dt": "Report",
-        "filters": [
-            ["name", "in", [
-                "PPh 21 Summary", 
-                "BPJS Monthly Report",
-                "TER vs Progressive Comparison"
-            ]]
-        ]
-    }
-]
-
-# Control fixture loading order
-fixtures_import_order = [
-    "Supplier Group",
-    "Supplier",
-    "Tax Category",
-    "Income Tax Slab", 
-    "BPJS Settings",
-    "PPh 21 Settings",
-    "PPh 21 Tax Bracket",
-    "PPh 21 TER Table",
-    "PPh 21 PTKP",
-    "Golongan",
-    "Jabatan",
-    "Employee Tax Summary",
-    "Payroll Log",
-    "BPJS Payment Component",
-    "Salary Component",
-    "Salary Structure",
-    "Custom Field",
-    "Property Setter",
-    "Client Script",
-    "Report",
-    "Workspace"
+    "Report"
 ]
 
 # Jinja template methods
@@ -283,17 +193,7 @@ website_route_rules = [
     {"from_route": "/payslip/<path:payslip_name>", "to_route": "payroll_indonesia/templates/pages/payslip"}
 ]
 
-# Before fixtures hook - untuk menyimpan status dokumen sebelum fixture diproses
-before_fixtures = [
-    "payroll_indonesia.hooks.before_fixtures.before_fixtures"
-]
-
-# After migrate hook - untuk memastikan status submit dan nilai-nilai penting terjaga setelah migrate
-after_migrate = [
-    "payroll_indonesia.fixtures.after_migrate.process_fixtures"
-]
-
-# After fixtures hook - untuk mengembalikan status dokumen setelah fixture diproses
-after_fixtures = [
-    "payroll_indonesia.fixtures.after_migrate.process_fixtures"
-]
+# HAPUS SELURUH HOOK MIGRASI KOMPLEKS
+# before_fixtures = ["payroll_indonesia.hooks.before_fixtures.before_fixtures"]
+# after_migrate = ["payroll_indonesia.fixtures.after_migrate.process_fixtures"]
+# after_fixtures = ["payroll_indonesia.fixtures.after_migrate.process_fixtures"]
