@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 08:34:00 by dannyaudian
+# Last modified: 2025-04-26 08:40:12 by dannyaudian
 
 import frappe
 from frappe import _
@@ -23,58 +23,12 @@ class CustomPayrollEntry(PayrollEntry):
         if start_month != end_month:
             frappe.throw(_("Untuk perhitungan pajak Indonesia, periode payroll harus berada dalam bulan yang sama"))
     
-    def get_filter_condition(self):
-        """Override untuk menyesuaikan filter pencarian karyawan"""
-        cond = super().get_filter_condition()
-        
-        # Log kondisi filter saat ini untuk debugging
-        frappe.log_error(f"Filter condition: {cond}", "Payroll Filter Debug")
-        
-        # Tampilkan kondisi filter pada UI
-        frappe.msgprint(_(f"Filter yang digunakan: {cond}"))
-        
-        return cond
-    
     def get_emp_list(self):
         """Override untuk mendapatkan daftar karyawan yang valid"""
-        # Ambil semua filter yang akan digunakan
-        filters = self.get_filter_condition()
-        salary_slip_name = self.get_sal_slip_condition()
-        joining_date_condition = self.get_joining_relieving_condition()
-        
-        # Log untuk debugging
-        frappe.log_error(f"""
-        Filters: {filters}
-        Salary Slip Condition: {salary_slip_name}
-        Joining Date Condition: {joining_date_condition}
-        """, "Employee Filter Debug")
-        
-        # Query manual untuk debugging
-        debug_query = f"""
-        SELECT 
-            emp.name,
-            emp.employee_name,
-            emp.department,
-            emp.designation,
-            emp.status,
-            emp.date_of_joining,
-            IFNULL((SELECT name FROM `tabSalary Structure Assignment`
-                    WHERE employee = emp.name
-                    AND docstatus = 1
-                    ORDER BY modified DESC LIMIT 1), '') as salary_structure
-        FROM `tabEmployee` emp
-        WHERE 
-            emp.status = 'Active' AND
-            emp.company = '{self.company}'
-        """
-        
-        debug_results = frappe.db.sql(debug_query, as_dict=1)
-        frappe.log_error(f"Debug results: {debug_results}", "Employee Debug Query")
-        
         # Coba ambil daftar karyawan dengan filter minimal
         minimal_emp_list = frappe.db.sql("""
             select
-                name as employee, employee_name
+                name as employee, employee_name, department, designation
             from
                 `tabEmployee`
             where
@@ -82,35 +36,26 @@ class CustomPayrollEntry(PayrollEntry):
                 and company = %s
         """, (self.company), as_dict=True)
         
-        frappe.log_error(f"Minimal employee list: {minimal_emp_list}", "Minimal Employee Query")
+        frappe.log_error(f"Minimal employee list: {minimal_emp_list}", "Employee Query")
         
-        # Panggil method parent class
-        emp_list = PayrollEntry.get_emp_list(self)
+        # Filter karyawan yang memiliki salary structure assignment
+        emp_list_with_structure = []
+        for emp in minimal_emp_list:
+            # Cek apakah karyawan memiliki salary structure assignment
+            has_structure = frappe.db.exists("Salary Structure Assignment", {
+                "employee": emp.employee,
+                "docstatus": 1
+            })
+            
+            if has_structure:
+                emp_list_with_structure.append(emp)
         
-        # Jika tidak ada hasil dari query standar, coba dengan filter lebih sederhana
-        if not emp_list:
-            frappe.msgprint(_("Tidak ada karyawan yang ditemukan dengan filter standar. Menggunakan filter minimal."))
-            
-            # Filter karyawan yang memiliki salary structure
-            emp_list_with_structure = []
-            for emp in minimal_emp_list:
-                # Cek apakah karyawan memiliki salary structure assignment
-                has_structure = frappe.db.exists("Salary Structure Assignment", {
-                    "employee": emp.employee,
-                    "docstatus": 1
-                })
-                
-                if has_structure:
-                    emp_list_with_structure.append(emp)
-            
-            if not emp_list_with_structure:
-                frappe.msgprint(_("Karyawan tidak memiliki Salary Structure Assignment yang aktif."), 
-                                title=_("Salary Structure Missing"), indicator="red")
-            
-            emp_list = emp_list_with_structure
+        if not emp_list_with_structure:
+            frappe.msgprint(_("Tidak ada karyawan yang memiliki Salary Structure Assignment aktif."), 
+                           title=_("Salary Structure Missing"), indicator="red")
         
         # Filter: hilangkan employee yang None atau kosong
-        filtered_emp_list = [emp for emp in emp_list if emp.get('employee')]
+        filtered_emp_list = [emp for emp in emp_list_with_structure if emp.get('employee')]
         
         # Tampilkan daftar karyawan yang akan diproses
         if filtered_emp_list:
