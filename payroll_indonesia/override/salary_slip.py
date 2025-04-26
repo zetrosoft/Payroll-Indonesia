@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 16:48:30 by dannyaudian
+# Last modified: 2025-04-26 16:58:30 by dannyaudian
 
 import frappe
 from frappe import _
@@ -15,20 +15,40 @@ class CustomSalarySlip(SalarySlip):
         if not self.employee:
             frappe.throw(_("Employee is mandatory for Salary Slip"))
             
+        # Initialize custom fields first to avoid NoneType errors
+        self.initialize_custom_fields()
+        
+        # Then call parent validate
         super().validate()
         self.validate_required_components()
-        self.initialize_custom_fields()
         
     def initialize_custom_fields(self):
         """Initialize custom fields with default values"""
-        self.is_final_gabung_suami = 0
-        self.koreksi_pph21 = 0
-        self.payroll_note = ""
-        self.biaya_jabatan = 0
-        self.netto = 0
-        self.total_bpjs = 0
-        self.is_using_ter = 0  # Flag untuk menandai penggunaan TER
-        self.ter_rate = 0      # Menyimpan rate TER yang digunakan
+        # Pastikan semua field diinisialisasi dengan nilai default yang tepat
+        if not hasattr(self, 'is_final_gabung_suami') or self.is_final_gabung_suami is None:
+            self.is_final_gabung_suami = 0
+            
+        if not hasattr(self, 'koreksi_pph21') or self.koreksi_pph21 is None:
+            self.koreksi_pph21 = 0
+            
+        # Pastikan payroll_note adalah string kosong, bukan None
+        if not hasattr(self, 'payroll_note') or self.payroll_note is None:
+            self.payroll_note = ""
+            
+        if not hasattr(self, 'biaya_jabatan') or self.biaya_jabatan is None:
+            self.biaya_jabatan = 0
+            
+        if not hasattr(self, 'netto') or self.netto is None:
+            self.netto = 0
+            
+        if not hasattr(self, 'total_bpjs') or self.total_bpjs is None:
+            self.total_bpjs = 0
+            
+        if not hasattr(self, 'is_using_ter') or self.is_using_ter is None:
+            self.is_using_ter = 0
+            
+        if not hasattr(self, 'ter_rate') or self.ter_rate is None:
+            self.ter_rate = 0
     
     def validate_required_components(self):
         """Validate existence of required salary components"""
@@ -53,7 +73,6 @@ class CustomSalarySlip(SalarySlip):
                 "Required salary components not found: {0}"
             ).format(", ".join(missing)))
 
-    # Perbaikan: Menambahkan parameter component_type yang diperlukan
     def calculate_component_amounts(self, component_type):
         """
         Calculate salary components with Indonesian payroll rules.
@@ -67,6 +86,10 @@ class CustomSalarySlip(SalarySlip):
             
             # Setelah kedua component types dihitung, lakukan perhitungan khusus Indonesia
             if component_type == "deductions":
+                # Pastikan payroll_note diinisialisasi sebagai string kosong sebelum kalkulasi
+                if not hasattr(self, 'payroll_note') or self.payroll_note is None:
+                    self.payroll_note = ""
+                    
                 self.calculate_indonesia_specific_components()
                 
         except Exception as e:
@@ -81,6 +104,10 @@ class CustomSalarySlip(SalarySlip):
     def calculate_indonesia_specific_components(self):
         """Calculate Indonesia-specific salary components"""
         try:
+            # Pastikan lagi payroll_note diinisialisasi sebagai string kosong
+            if not hasattr(self, 'payroll_note') or self.payroll_note is None:
+                self.payroll_note = ""
+                
             # Get basic salary (Gaji Pokok)
             gaji_pokok = self.get_component_amount("Gaji Pokok", "earnings")
             if not gaji_pokok:
@@ -110,6 +137,10 @@ class CustomSalarySlip(SalarySlip):
     
     def calculate_bpjs_components(self, employee, gaji_pokok):
         """Calculate and update BPJS components based on settings"""
+        # Pastikan lagi payroll_note diinisialisasi sebagai string kosong
+        if not hasattr(self, 'payroll_note') or self.payroll_note is None:
+            self.payroll_note = ""
+            
         if not hasattr(employee, 'ikut_bpjs_ketenagakerjaan'):
             employee.ikut_bpjs_ketenagakerjaan = 0
             
