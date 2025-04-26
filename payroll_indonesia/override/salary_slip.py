@@ -89,6 +89,7 @@ class CustomSalarySlip(SalarySlip):
         """Calculate and update BPJS components"""
         from payroll_indonesia.payroll_indonesia.utils import calculate_bpjs_contributions
         
+        """Calculate and update BPJS components based on settings"""
         if not hasattr(employee, 'ikut_bpjs_ketenagakerjaan'):
             employee.ikut_bpjs_ketenagakerjaan = 0
             
@@ -99,42 +100,74 @@ class CustomSalarySlip(SalarySlip):
             return
         
         try:
-            bpjs_result = calculate_bpjs_contributions(gaji_pokok)
+        # Ambil BPJS Settings
+        bpjs_settings = frappe.get_single("BPJS Settings")
+        
+        # Hitung kontribusi kesehatan
+        if employee.ikut_bpjs_kesehatan:
+            # Batasi gaji untuk perhitungan BPJS Kesehatan
+            kesehatan_salary = min(gaji_pokok, bpjs_settings.kesehatan_max_salary)
+            kesehatan_employee = kesehatan_salary * (bpjs_settings.kesehatan_employee_percent / 100)
             
-            # Update BPJS components
-            if employee.ikut_bpjs_ketenagakerjaan:
-                self.update_component_amount(
-                    "BPJS JHT Employee", 
-                    bpjs_result["ketenagakerjaan"]["jht"]["karyawan"],
-                    "deductions"
-                )
-                self.update_component_amount(
-                    "BPJS JP Employee",
-                    bpjs_result["ketenagakerjaan"]["jp"]["karyawan"],
-                    "deductions"
-                )
+            self.update_component_amount(
+                "BPJS Kesehatan Employee", 
+                kesehatan_employee,
+                "deductions"
+            )
+        
+        # Hitung kontribusi ketenagakerjaan
+        if employee.ikut_bpjs_ketenagakerjaan:
+            # JHT tidak ada batas maksimal gaji
+            jht_employee = gaji_pokok * (bpjs_settings.jht_employee_percent / 100)
             
-            if employee.ikut_bpjs_kesehatan:
-                self.update_component_amount(
-                    "BPJS Kesehatan Employee",
-                    bpjs_result["kesehatan"]["karyawan"],
-                    "deductions"
-                )
+            # Batasi gaji untuk perhitungan JP
+            jp_salary = min(gaji_pokok, bpjs_settings.jp_max_salary)
+            jp_employee = jp_salary * (bpjs_settings.jp_employee_percent / 100)
             
-            # Store total BPJS for tax calculation
-            self.total_bpjs = (
-                (bpjs_result["ketenagakerjaan"]["jht"]["karyawan"] if employee.ikut_bpjs_ketenagakerjaan else 0) +
-                (bpjs_result["ketenagakerjaan"]["jp"]["karyawan"] if employee.ikut_bpjs_ketenagakerjaan else 0) +
-                (bpjs_result["kesehatan"]["karyawan"] if employee.ikut_bpjs_kesehatan else 0)
+            # Update komponen
+            self.update_component_amount(
+                "BPJS JHT Employee", 
+                jht_employee,
+                "deductions"
             )
             
-        except Exception as e:
-            frappe.log_error(
-                "BPJS Calculation Error",
-                f"Employee: {employee.name}\nError: {str(e)}"
+            self.update_component_amount(
+                "BPJS JP Employee",
+                jp_employee,
+                "deductions"
             )
-            raise
-    
+        
+        # Calculate total BPJS for tax purposes
+        total_bpjs_kesehatan = employee.ikut_bpjs_kesehatan and \
+            self.get_component_amount("BPJS Kesehatan Employee", "deductions") or 0
+            
+        total_bpjs_jht = employee.ikut_bpjs_ketenagakerjaan and \
+            self.get_component_amount("BPJS JHT Employee", "deductions") or 0
+            
+        total_bpjs_jp = employee.ikut_bpjs_ketenagakerjaan and \
+            self.get_component_amount("BPJS JP Employee", "deductions") or 0
+        
+        self.total_bpjs = total_bpjs_kesehatan + total_bpjs_jht + total_bpjs_jp
+        
+        # Update payroll note with BPJS details
+        self.payroll_note += f"\n\n=== Perhitungan BPJS ==="
+        
+        if employee.ikut_bpjs_kesehatan:
+            self.payroll_note += f"\nBPJS Kesehatan ({bpjs_settings.kesehatan_employee_percent}%): Rp {total_bpjs_kesehatan:,.0f}"
+        
+        if employee.ikut_bpjs_ketenagakerjaan:
+            self.payroll_note += f"\nBPJS JHT ({bpjs_settings.jht_employee_percent}%): Rp {total_bpjs_jht:,.0f}"
+            self.payroll_note += f"\nBPJS JP ({bpjs_settings.jp_employee_percent}%): Rp {total_bpjs_jp:,.0f}"
+        
+        self.payroll_note += f"\nTotal BPJS: Rp {self.total_bpjs:,.0f}"
+            
+    except Exception as e:
+        frappe.log_error(
+            "BPJS Calculation Error",
+            f"Employee: {employee.name}\nError: {str(e)}"
+        )
+        raise
+
     def calculate_tax_components(self, employee):
         """Calculate tax related components"""
         try:
@@ -143,40 +176,40 @@ class CustomSalarySlip(SalarySlip):
                 self.is_final_gabung_suami = 1
                 self.payroll_note = "Pajak final digabung dengan NPWP suami"
                 return
-            
+
             # Calculate Biaya Jabatan (5% of gross, max 500k)
             self.biaya_jabatan = min(self.gross_pay * 0.05, 500000)
-            
+
             # Calculate netto income
             self.netto = self.gross_pay - self.biaya_jabatan - self.total_bpjs
-            
+
             # Set basic payroll note
             self.set_basic_payroll_note(employee)
-            
+
             # Calculate PPh 21
             if self.is_december():
                 self.calculate_december_pph(employee)
             else:
                 self.calculate_monthly_pph(employee)
-                
+
         except Exception as e:
             frappe.log_error(
                 "Tax Calculation Error",
                 f"Employee: {employee.name}\nError: {str(e)}"
             )
             raise
-    
+
     def calculate_monthly_pph(self, employee):
         """Calculate PPh 21 for regular months"""
         # Get PPh 21 Settings
         pph_settings = frappe.get_single("PPh 21 Settings")
-        
+
         # Check if TER method is enabled
         if pph_settings.calculation_method == "TER" and pph_settings.use_ter:
             self.calculate_monthly_pph_with_ter(employee)
         else:
             self.calculate_monthly_pph_progressive(employee)
-            
+
     def calculate_monthly_pph_with_ter(self, employee):
         """Calculate PPh 21 using TER method"""
         try:
@@ -184,20 +217,20 @@ class CustomSalarySlip(SalarySlip):
             if not hasattr(employee, 'status_pajak') or not employee.status_pajak:
                 employee.status_pajak = "TK0"  # Default to TK0 if not set
                 frappe.msgprint(_("Warning: Employee tax status not set, using TK0 as default"))
-            
+
             # Get TER rate based on status and gross income
             ter_rate = self.get_ter_rate(employee.status_pajak, self.gross_pay)
-            
+
             # Calculate tax using TER
             monthly_tax = self.gross_pay * ter_rate
-            
+
             # Save TER info
             self.is_using_ter = 1
             self.ter_rate = ter_rate * 100  # Convert to percentage for display
-            
+
             # Update PPh 21 component
             self.update_component_amount("PPh 21", monthly_tax, "deductions")
-            
+
             # Update note with TER info
             self.payroll_note += "\n\n=== Perhitungan PPh 21 dengan TER ==="
             self.payroll_note += f"\nStatus Pajak: {employee.status_pajak}"
@@ -205,14 +238,14 @@ class CustomSalarySlip(SalarySlip):
             self.payroll_note += f"\nTarif Efektif Rata-rata: {ter_rate * 100:.2f}%"
             self.payroll_note += f"\nPPh 21 Sebulan: Rp {monthly_tax:,.0f}"
             self.payroll_note += "\n\nSesuai PMK 168/2023 tentang Tarif Efektif Rata-rata"
-            
+
         except Exception as e:
             frappe.log_error(
                 "TER Calculation Error",
                 f"Employee: {employee.name}\nError: {str(e)}"
             )
             frappe.throw(_("Error calculating PPh 21 with TER: {0}").format(str(e)))
-    
+
     def get_ter_rate(self, status_pajak, income):
         """Get TER rate based on status and income"""
         # Query the TER table for matching bracket
@@ -224,13 +257,13 @@ class CustomSalarySlip(SalarySlip):
               AND (%s <= income_to OR income_to = 0)
             LIMIT 1
         """, (status_pajak, income, income), as_dict=1)
-        
+
         if not ter:
             status_fallback = status_pajak[0:2] + "0"  # Fallback to TK0/K0/HB0
             frappe.msgprint(_(
                 "No TER rate found for status {0} and income {1}, falling back to {2}."
             ).format(status_pajak, frappe.format(income, {"fieldtype": "Currency"}), status_fallback))
-            
+
             ter = frappe.db.sql("""
                 SELECT rate
                 FROM `tabPPh 21 TER Table`
@@ -239,64 +272,64 @@ class CustomSalarySlip(SalarySlip):
                   AND (%s <= income_to OR income_to = 0)
                 LIMIT 1
             """, (status_fallback, income, income), as_dict=1)
-            
+
             if not ter:
                 frappe.throw(_(
                     "No TER rate found for status {0} or {1} and income {2}. "
                     "Please check PPh 21 TER Table settings."
-                ).format(status_pajak, status_fallback, 
+                ).format(status_pajak, status_fallback,
                         frappe.format(income, {"fieldtype": "Currency"})))
-        
+
         # Convert percent to decimal (e.g., 5% to 0.05)
         return float(ter[0].rate) / 100.0
-    
+
     def calculate_monthly_pph_progressive(self, employee):
         """Calculate PPh 21 using progressive method"""
         # Get PPh 21 Settings
         pph_settings = frappe.get_single("PPh 21 Settings")
-        
+
         # Get PTKP value
         if not hasattr(employee, 'status_pajak'):
             employee.status_pajak = "TK0"  # Default to TK0 if not set
-            
+
         ptkp = self.get_ptkp_amount(pph_settings, employee.status_pajak)
-        
+
         # Annualize monthly netto
         annual_netto = self.netto * 12
-        
+
         # Calculate PKP
         pkp = max(annual_netto - ptkp, 0)
-        
+
         # Calculate annual tax
         annual_tax, tax_details = self.calculate_progressive_tax(pkp, pph_settings)
-        
+
         # Get monthly tax (1/12 of annual)
         monthly_tax = annual_tax / 12
-        
+
         # Update PPh 21 component
         self.update_component_amount("PPh 21", monthly_tax, "deductions")
-        
+
         # Update note with tax info
         self.payroll_note += f"\n\n=== Perhitungan PPh 21 Progresif ==="
         self.payroll_note += f"\nPenghasilan Neto Setahun: Rp {annual_netto:,.0f}"
         self.payroll_note += f"\nPTKP ({employee.status_pajak}): Rp {ptkp:,.0f}"
         self.payroll_note += f"\nPKP: Rp {pkp:,.0f}"
-        
+
         # Add tax calculation details
         if tax_details:
             self.payroll_note += f"\n\nPerhitungan Pajak:"
             for detail in tax_details:
                 self.payroll_note += f"\n- {detail['rate']}% x Rp {detail['taxable']:,.0f} = Rp {detail['tax']:,.0f}"
-        
+
         self.payroll_note += f"\n\nPPh 21 Setahun: Rp {annual_tax:,.0f}"
         self.payroll_note += f"\nPPh 21 Sebulan: Rp {monthly_tax:,.0f}"
-    
+
     def get_ptkp_amount(self, pph_settings, status_pajak):
         """Get PTKP amount for a given tax status"""
         # Attempt to get from method if it exists
         if hasattr(pph_settings, 'get_ptkp_amount'):
             return pph_settings.get_ptkp_amount(status_pajak)
-            
+
         # Otherwise query directly from PTKP table
         ptkp = frappe.db.sql("""
             SELECT ptkp_amount
@@ -305,11 +338,11 @@ class CustomSalarySlip(SalarySlip):
             AND parent = 'PPh 21 Settings'
             LIMIT 1
         """, status_pajak, as_dict=1)
-        
+
         if not ptkp:
             # Default PTKP values if not found
             default_ptkp = {
-                "TK0": 54000000, "K0": 58500000, "K1": 63000000, 
+                "TK0": 54000000, "K0": 58500000, "K1": 63000000,
                 "K2": 67500000, "K3": 72000000, "TK1": 58500000,
                 "TK2": 63000000, "TK3": 67500000
             }
@@ -317,49 +350,49 @@ class CustomSalarySlip(SalarySlip):
                 "PTKP for status {0} not found in settings, using default value."
             ).format(status_pajak))
             return default_ptkp.get(status_pajak, 54000000)
-            
+
         return flt(ptkp[0].ptkp_amount)
-    
+
     def calculate_december_pph(self, employee):
         """Calculate year-end tax correction for December"""
         year = getdate(self.end_date).year
-        
+
         # Get PPh 21 Settings
         pph_settings = frappe.get_single("PPh 21 Settings")
-        
+
         # For December, always use progressive method even if TER is enabled
         # This is according to PMK 168/2023
-        
+
         # Get year-to-date totals
         ytd = self.get_ytd_totals(year)
-        
+
         # Calculate annual totals
         annual_gross = ytd.get("gross", 0) + self.gross_pay
         annual_bpjs = ytd.get("bpjs", 0) + self.total_bpjs
         annual_biaya_jabatan = min(annual_gross * 0.05, 500000)
         annual_netto = annual_gross - annual_bpjs - annual_biaya_jabatan
-        
+
         # Get PTKP value
         if not hasattr(employee, 'status_pajak'):
             employee.status_pajak = "TK0"  # Default to TK0 if not set
-            
+
         ptkp = self.get_ptkp_amount(pph_settings, employee.status_pajak)
         pkp = max(annual_netto - ptkp, 0)
-        
+
         # Calculate annual PPh
         annual_pph, tax_details = self.calculate_progressive_tax(pkp, pph_settings)
-        
+
         # Calculate correction
         correction = annual_pph - ytd.get("pph21", 0)
         self.koreksi_pph21 = correction
-        
+
         # Update December PPh 21
         self.update_component_amount(
             "PPh 21",
             correction,
             "deductions"
         )
-        
+
         # Set detailed December note
         self.set_december_note(
             annual_gross=annual_gross,
@@ -373,14 +406,14 @@ class CustomSalarySlip(SalarySlip):
             ytd_pph=ytd.get("pph21", 0),
             correction=correction
         )
-    
+
     def calculate_progressive_tax(self, pkp, pph_settings=None):
         """Calculate tax using progressive rates"""
         if not pph_settings:
             pph_settings = frappe.get_single("PPh 21 Settings")
-            
+
         bracket_table = pph_settings.bracket_table if hasattr(pph_settings, 'bracket_table') else []
-        
+
         if not bracket_table:
             bracket_table = frappe.db.sql("""
                 SELECT income_from, income_to, tax_rate
@@ -388,7 +421,7 @@ class CustomSalarySlip(SalarySlip):
                 WHERE parent = 'PPh 21 Settings'
                 ORDER BY income_from ASC
             """, as_dict=1)
-        
+
         if not bracket_table:
             # Default bracket values if not found
             bracket_table = [
@@ -399,37 +432,37 @@ class CustomSalarySlip(SalarySlip):
                 {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
             ]
             frappe.msgprint(_("Tax brackets not configured, using default progressive rates."))
-        
+
         total_tax = 0
         tax_details = []
         remaining_pkp = pkp
-        
+
         for bracket in sorted(bracket_table, key=lambda x: x.get("income_from", 0)):
             if remaining_pkp <= 0:
                 break
-                
+
             income_from = flt(bracket.get("income_from", 0))
             income_to = flt(bracket.get("income_to", 0))
             tax_rate = flt(bracket.get("tax_rate", 0))
-            
+
             upper_limit = income_to if income_to > 0 else float('inf')
             lower_limit = income_from
             taxable = min(remaining_pkp, upper_limit - lower_limit)
-            
+
             tax = taxable * (tax_rate / 100)
             total_tax += tax
-            
+
             if tax > 0:
                 tax_details.append({
                     'rate': tax_rate,
                     'taxable': taxable,
                     'tax': tax
                 })
-            
+
             remaining_pkp -= taxable
-        
+
         return total_tax, tax_details
-    
+
     def set_basic_payroll_note(self, employee):
         """Set basic payroll note with component details"""
         self.payroll_note = "\n".join([
@@ -439,7 +472,7 @@ class CustomSalarySlip(SalarySlip):
             f"BPJS (JHT+JP+Kesehatan): Rp {self.total_bpjs:,.0f}",
             f"Penghasilan Neto: Rp {self.netto:,.0f}"
         ])
-    
+
     def set_december_note(self, **kwargs):
         """Set detailed December correction note"""
         self.payroll_note = "\n".join([
@@ -464,18 +497,18 @@ class CustomSalarySlip(SalarySlip):
             f"Koreksi Desember: Rp {kwargs['correction']:,.0f}",
             f"({'Kurang Bayar' if kwargs['correction'] > 0 else 'Lebih Bayar'})"
         ])
-        
+
         # Tambahkan catatan tentang penggunaan metode progresif untuk koreksi tahunan
         self.payroll_note += "\n\nMetode perhitungan Desember menggunakan metode progresif sesuai PMK 168/2023"
-    
+
     def update_all_totals(self):
         """Update all total fields"""
         self.total_deduction = sum(flt(d.amount) for d in self.deductions)
         self.net_pay = self.gross_pay - self.total_deduction
         self.rounded_total = round(self.net_pay)
-        
+
         company_currency = frappe.get_cached_value(
-            'Company', 
+            'Company',
             self.company,
             'default_currency'
         )
@@ -483,11 +516,11 @@ class CustomSalarySlip(SalarySlip):
             self.rounded_total,
             company_currency
         )
-    
+
     def is_december(self):
         """Check if salary slip is for December"""
         return getdate(self.end_date).month == 12
-        
+
     def get_component_amount(self, component_name, component_type):
         """Get amount for a specific component"""
         components = self.earnings if component_type == "earnings" else self.deductions
@@ -495,17 +528,17 @@ class CustomSalarySlip(SalarySlip):
             if component.salary_component == component_name:
                 return flt(component.amount)
         return 0
-    
+
     def update_component_amount(self, component_name, amount, component_type):
         """Update amount for a specific component"""
         components = self.earnings if component_type == "earnings" else self.deductions
-        
+
         # Find if component exists
         for component in components:
             if component.salary_component == component_name:
                 component.amount = flt(amount)
                 return
-        
+
         # If not found, append new component
         component_doc = frappe.get_doc("Salary Component", component_name)
         row = frappe.new_doc("Salary Detail")
@@ -514,17 +547,17 @@ class CustomSalarySlip(SalarySlip):
         row.amount = flt(amount)
         row.parentfield = component_type
         row.parenttype = "Salary Slip"
-        
+
         components.append(row)
-    
+
     def get_ytd_totals(self, year):
         """Get year-to-date totals for the employee"""
         # This is a simplified implementation - in a real app you'd query
         # the database to get actual YTD totals from previous salary slips
-        
+
         # Create a default result with zeros
         result = {"gross": 0, "bpjs": 0, "pph21": 0}
-        
+
         # Get salary slips for the current employee in the current year
         # but before the current month
         salary_slips = frappe.get_all(
@@ -537,27 +570,28 @@ class CustomSalarySlip(SalarySlip):
             },
             fields=["name", "gross_pay", "total_deduction"]
         )
-        
+
         # Sum up the values
         for slip in salary_slips:
             slip_doc = frappe.get_doc("Salary Slip", slip.name)
-            
+
             # Add to gross
             result["gross"] += flt(slip_doc.gross_pay)
-            
+
             # Add BPJS components
             bpjs_components = ["BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee"]
             for component in bpjs_components:
                 result["bpjs"] += self.get_component_amount_from_doc(slip_doc, component)
-            
+
             # Add PPh 21
             result["pph21"] += self.get_component_amount_from_doc(slip_doc, "PPh 21")
-        
+
         return result
-    
+
     def get_component_amount_from_doc(self, doc, component_name):
         """Get component amount from a document"""
         for component in doc.deductions:
             if component.salary_component == component_name:
                 return flt(component.amount)
         return 0
+

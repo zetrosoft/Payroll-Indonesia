@@ -3,8 +3,9 @@
   "name": "Struktur Gaji Tetap G1",
   "is_active": "Yes",
   "payroll_frequency": "Monthly",
-  "company": "%",
-  "payment_account": "Cash - %",
+  "company": "",
+  "mode_of_payment": "",
+  "payment_account": "",
   "currency": "IDR",
   "earnings": [
     {
@@ -27,35 +28,36 @@
   "deductions": [
     {
       "salary_component": "BPJS JHT Employee",
-      "amount_based_on_formula": 1,
-      "formula": "base * 0.02",
-      "condition": "ikut_bpjs_ketenagakerjaan"
+      "amount_based_on_formula": 0,
+      "amount": 0,
+      "condition": "ikut_bpjs_ketenagakerjaan",
+      "do_not_include_in_total": 0
     },
     {
       "salary_component": "BPJS JP Employee",
-      "amount_based_on_formula": 1,
-      "formula": "base * 0.01",
-      "condition": "ikut_bpjs_ketenagakerjaan"
+      "amount_based_on_formula": 0,
+      "amount": 0,
+      "condition": "ikut_bpjs_ketenagakerjaan",
+      "do_not_include_in_total": 0
     },
     {
       "salary_component": "BPJS Kesehatan Employee",
-      "amount_based_on_formula": 1,
-      "formula": "base * 0.01",
-      "condition": "ikut_bpjs_kesehatan"
+      "amount_based_on_formula": 0,
+      "amount": 0,
+      "condition": "ikut_bpjs_kesehatan",
+      "do_not_include_in_total": 0
     },
     {
       "salary_component": "PPh 21",
       "amount_based_on_formula": 0,
-      "formula": "",
+      "amount": 0,
       "condition": "not penghasilan_final",
-      "do_not_include_in_total": 0,
-      "calculation_type": "custom",
-      "description": "Menggunakan metode TER atau Progressive sesuai pengaturan di PPh 21 Settings"
+      "do_not_include_in_total": 0
     }
   ],
-  "modified": "2025-04-23 23:41:15",
-  "modified_by": "Administrator",
+  "modified": "2025-04-26 06:32:45",
+  "modified_by": "dannyaudian",
   "owner": "Administrator",
   "tax_calculation_method": "auto",
-  "note": "TER PPh 21 akan digunakan jika diaktifkan di PPh 21 Settings"
+  "note": "Nilai komponen BPJS dan PPh 21 dihitung otomatis berdasarkan pengaturan di BPJS Settings dan PPh 21 Settings."
 }
