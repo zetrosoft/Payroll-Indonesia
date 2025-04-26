@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 09:10:00 by dannyaudian
+# Last modified: 2025-04-26 09:22:00 by dannyaudian
 
 from __future__ import unicode_literals
 from payroll_indonesia.fixtures.after_migrate import process_fixtures
 from payroll_indonesia.hooks.before_fixtures import before_fixtures
 
 app_name = "payroll_indonesia"
-app_title = "Payroll Indonesia"
+app_title = "Payroll Indonesia"  # Pastikan ada app_title
 app_publisher = "PT. Innovasi Terbaik Bangsa"
 app_description = "Payroll module for Indonesian companies with local regulatory features"
 app_email = "danny.a.pratama@cao-group.co.id"
