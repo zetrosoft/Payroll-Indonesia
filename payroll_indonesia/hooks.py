@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 10:00:00 by dannyaudian
+# Last modified: 2025-04-26 10:15:16 by dannyaudian
 
 from __future__ import unicode_literals
 from payroll_indonesia.fixtures.after_migrate import process_fixtures
@@ -16,9 +16,11 @@ app_license = "GPL-3"
 app_version = "0.0.1"
 required_apps = ["erpnext", "hrms"]
 
-before_app_init = "payroll_indonesia.utilities.change_log"
+# Ubah hook ini untuk menggunakan patch dari __init__.py
+before_app_init = "payroll_indonesia.__init__.patch_get_versions"
 
-after_app_load = "payroll_indonesia.utilities.boot_override.apply_patches"
+# Hapus hook ini karena fungsinya sudah ada di __init__.py
+# after_app_load = "payroll_indonesia.utilities.boot_override.apply_patches"
 
 # JS files for doctypes - Corrected paths
 doctype_js = {
