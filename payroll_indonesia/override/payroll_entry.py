@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 11:48:30 by dannyaudian
+# Last modified: 2025-04-26 12:01:45 by dannyaudian
 
 import frappe
 from frappe import _
@@ -76,7 +76,40 @@ class CustomPayrollEntry(PayrollEntry):
             frappe.msgprint(_("Tidak ada karyawan yang memenuhi kriteria untuk payroll ini"))
         
         return filtered_emp_list
+    
+    def get_existing_salary_slips(self, employees):
+        """
+        Implementasi metode yang hilang - mendapatkan daftar salary slip yang sudah ada
+        untuk karyawan dalam periode payroll yang sama
+        """
+        existing_slip_names = []
+        existing_slips = []
         
+        # Pastikan employees adalah list objek dengan key 'employee'
+        employees_list = [emp if isinstance(emp, dict) else {"employee": emp} for emp in employees]
+        
+        # Ambil list ID karyawan
+        employee_list = [d.get("employee") for d in employees_list if d.get("employee")]
+        
+        if not employee_list:
+            return existing_slip_names
+            
+        # Query untuk mendapatkan slip gaji yang sudah ada
+        existing_slips = frappe.db.sql("""
+            select distinct employee
+            from `tabSalary Slip`
+            where docstatus != 2
+            and company = %s
+            and start_date = %s
+            and end_date = %s
+            and employee in (%s)
+        """ % ('%s', '%s', '%s', ', '.join(['%s'] * len(employee_list))),
+               tuple([self.company, self.start_date, self.end_date] + employee_list),
+               as_dict=True)
+        
+        existing_slip_names = [d.employee for d in existing_slips if d.employee]
+        return existing_slip_names
+    
     def create_salary_slips(self):
         """Buat slip gaji untuk karyawan yang dipilih"""
         self.check_permission("write")
