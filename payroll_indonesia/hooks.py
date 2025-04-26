@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-24 09:47:00 by dannyaudian
+# Last modified: 2025-04-26 05:19:23 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -18,6 +18,7 @@ required_apps = ["erpnext", "hrms"]
 doctype_js = {
     "Employee": "payroll_indonesia/public/js/employee.js",
     "Salary Slip": "payroll_indonesia/public/js/salary_slip.js",
+    "Payroll Entry": "payroll_indonesia/public/js/payroll_entry.js",  # Menambahkan JS untuk Payroll Entry
     "PPh TER Table": "payroll_indonesia/payroll_indonesia/doctype/pph_ter_table/pph_ter_table.js",
     "BPJS Payment Summary": "payroll_indonesia/payroll_indonesia/doctype/bpjs_payment_summary/bpjs_payment_summary.js",
     "PPh 21 Settings": "payroll_indonesia/public/js/pph_21_settings.js",
@@ -36,7 +37,8 @@ after_install = "payroll_indonesia.fixtures.setup.after_install"
 
 # DocType Class Override
 override_doctype_class = {
-    "Salary Slip": "payroll_indonesia.override.salary_slip.CustomSalarySlip"
+    "Salary Slip": "payroll_indonesia.override.salary_slip.CustomSalarySlip",
+    "Payroll Entry": "payroll_indonesia.override.payroll_entry.CustomPayrollEntry"  # Menambahkan override untuk Payroll Entry
 }
 
 # Document Events
@@ -55,6 +57,10 @@ doc_events = {
     },
     "BPJS Settings": {
         "on_update": "payroll_indonesia.payroll_indonesia.bpjs.bpjs_settings.on_update"
+    },
+    "Payroll Entry": {  # Menambahkan event untuk Payroll Entry
+        "validate": "payroll_indonesia.override.payroll_entry_functions.validate_payroll_entry",
+        "on_submit": "payroll_indonesia.override.payroll_entry_functions.on_submit"
     }
 }
 
@@ -64,14 +70,14 @@ fixtures = [
     {
         "dt": "Custom Field",
         "filters": [
-            ["dt", "in", ["Employee", "Salary Slip"]]
+            ["dt", "in", ["Employee", "Salary Slip", "Payroll Entry"]]  # Menambahkan Payroll Entry
         ]
     },
     "Client Script",
     {
         "dt": "Property Setter",
         "filters": [
-            ["doc_type", "=", "Employee"]
+            ["doc_type", "in", ["Employee", "Payroll Entry"]]  # Menambahkan Payroll Entry
         ]
     },
     
@@ -205,7 +211,8 @@ jinja = {
 regional_overrides = {
     "Indonesia": {
         "controller_overrides": {
-            "Salary Slip": "payroll_indonesia.override.salary_slip"
+            "Salary Slip": "payroll_indonesia.override.salary_slip",
+            "Payroll Entry": "payroll_indonesia.override.payroll_entry"  # Tambahkan override untuk Payroll Entry
         }
     }
 }

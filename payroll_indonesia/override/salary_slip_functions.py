@@ -9,6 +9,10 @@ from frappe.utils import flt
 
 def validate_salary_slip(doc, method=None):
     """Additional validation for salary slip"""
+    # Validate employee is specified
+    if not doc.employee:
+        frappe.throw(_("Employee is mandatory for Salary Slip"))
+    
     # Initialize custom fields
     if not hasattr(doc, 'is_final_gabung_suami'):
         doc.is_final_gabung_suami = 0

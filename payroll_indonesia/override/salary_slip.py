@@ -10,6 +10,10 @@ from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
 class CustomSalarySlip(SalarySlip):
     def validate(self):
         """Validate salary slip data"""
+        # Check if employee exists before proceeding
+        if not self.employee:
+            frappe.throw(_("Employee is mandatory for Salary Slip"))
+            
         super().validate()
         self.validate_required_components()
         self.initialize_custom_fields()
