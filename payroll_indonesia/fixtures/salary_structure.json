@@ -3,10 +3,10 @@
   "name": "Struktur Gaji Tetap G1",
   "is_active": "Yes",
   "payroll_frequency": "Monthly",
-  "company": "%",
   "mode_of_payment": "Cash",
-  "payment_account": null,
   "currency": "IDR",
+  "income_tax_slab": "Indonesia Tax Slab - IDR",
+  "tax_calculation_method": "Manual",
   "earnings": [
     {
       "salary_component": "Gaji Pokok",
@@ -109,9 +109,5 @@
       "do_not_include_in_total": 1
     }
   ],
-  "modified": "2025-04-26 06:38:55",
-  "modified_by": "dannyaudian",
-  "owner": "Administrator",
-  "tax_calculation_method": "auto",
   "note": "Nilai komponen BPJS dan PPh 21 dihitung otomatis berdasarkan pengaturan di BPJS Settings dan PPh 21 Settings. Komponen employer ditandai sebagai statistical_component dan do_not_include_in_total."
 }

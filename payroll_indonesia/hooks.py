@@ -4,6 +4,7 @@
 # Last modified: 2025-04-26 08:17:16 by dannyaudian
 
 from __future__ import unicode_literals
+from payroll_indonesia.fixtures.after_migrate import process_fixtures
 
 app_name = "payroll_indonesia"
 app_title = "Payroll Indonesia"
@@ -273,4 +274,12 @@ scheduler_events = {
 # Web Routes
 website_route_rules = [
     {"from_route": "/payslip/<path:payslip_name>", "to_route": "payroll_indonesia/templates/pages/payslip"}
+]
+
+after_migrate = [
+    "payroll_indonesia.fixtures.after_migrate.process_fixtures"
+]
+
+before_fixtures = [
+    "payroll_indonesia.hooks.before_fixtures.before_fixtures"
 ]
