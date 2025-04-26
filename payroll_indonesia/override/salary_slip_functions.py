@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 17:50:27 by dannyaudian
+# Last modified: 2025-04-26 18:12:40 by dannyaudian
 
 import frappe
 from frappe import _
@@ -91,44 +91,38 @@ def update_employee_ytd_tax(doc):
                 pph21_amount = flt(deduction.amount)
                 break
         
-        if pph21_amount > 0 or getattr(doc, 'is_using_ter', 0):
+        # Proceed only if there is PPh 21 amount to record
+        if pph21_amount > 0:
             # Check if we already have a record for this employee/year combination
-            if frappe.db.exists({
-                "doctype": "Employee Tax Summary",
-                "employee": doc.employee,
-                "year": year
-            }):
-                # Update existing record
-                tax_record = frappe.get_doc("Employee Tax Summary", {
-                    "employee": doc.employee,
-                    "year": year
-                })
-                tax_record.ytd_tax = flt(tax_record.ytd_tax) + pph21_amount
+            existing_tax_summary = frappe.db.get_value("Employee Tax Summary", 
+                {"employee": doc.employee, "year": year}, "name")
+            
+            if existing_tax_summary:
+                # Get existing record and update it
+                tax_record = frappe.get_doc("Employee Tax Summary", existing_tax_summary)
+                current_ytd = flt(tax_record.ytd_tax)
+                tax_record.ytd_tax = current_ytd + pph21_amount
                 
-                # Update TER information if applicable
-                if getattr(doc, 'is_using_ter', 0) and getattr(doc, 'ter_rate', 0) > 0:
-                    tax_record.is_using_ter = 1
-                    tax_record.ter_rate = getattr(doc, 'ter_rate', 0)
-                
+                # Set title if empty
+                if not tax_record.title:
+                    tax_record.title = f"{doc.employee_name} - {year}"
+                    
                 tax_record.save(ignore_permissions=True)
+                frappe.db.commit()
             else:
-                # Create a new record
+                # Create a new Employee Tax Summary
                 tax_record = frappe.new_doc("Employee Tax Summary")
                 tax_record.employee = doc.employee
                 tax_record.employee_name = doc.employee_name
                 tax_record.year = year
                 tax_record.ytd_tax = pph21_amount
-                
-                # Set TER information if applicable
-                if getattr(doc, 'is_using_ter', 0) and getattr(doc, 'ter_rate', 0) > 0:
-                    tax_record.is_using_ter = 1
-                    tax_record.ter_rate = getattr(doc, 'ter_rate', 0)
-                
+                tax_record.title = f"{doc.employee_name} - {year}"
                 tax_record.insert(ignore_permissions=True)
+                frappe.db.commit()
                 
-            frappe.db.commit()
     except Exception as e:
-        frappe.log_error(f"Error updating YTD tax for {doc.employee}: {str(e)}")
+        frappe.log_error(f"Error updating YTD tax for {doc.employee}: {str(e)}", 
+                        "Employee Tax Summary Error")
 
 def log_payroll_event(doc):
     """Log payroll processing event"""
@@ -176,12 +170,7 @@ def update_bpjs_payment_summary(doc):
         bpjs_data = {
             "jht_employee": 0,
             "jp_employee": 0,
-            "kesehatan_employee": 0,
-            "jht_employer": 0,
-            "jp_employer": 0,
-            "jkk": 0,
-            "jkm": 0,
-            "kesehatan_employer": 0
+            "kesehatan_employee": 0
         }
         
         # Get employee components
@@ -192,48 +181,34 @@ def update_bpjs_payment_summary(doc):
                 bpjs_data["jp_employee"] = flt(deduction.amount)
             elif deduction.salary_component == "BPJS Kesehatan Employee":
                 bpjs_data["kesehatan_employee"] = flt(deduction.amount)
-            elif deduction.salary_component == "BPJS JHT Employer":
-                bpjs_data["jht_employer"] = flt(deduction.amount)
-            elif deduction.salary_component == "BPJS JP Employer":
-                bpjs_data["jp_employer"] = flt(deduction.amount)
-            elif deduction.salary_component == "BPJS JKK":
-                bpjs_data["jkk"] = flt(deduction.amount)
-            elif deduction.salary_component == "BPJS JKM":
-                bpjs_data["jkm"] = flt(deduction.amount)
-            elif deduction.salary_component == "BPJS Kesehatan Employer":
-                bpjs_data["kesehatan_employer"] = flt(deduction.amount)
         
-        # Calculate employer components if not available in deductions
-        if bpjs_data["jht_employer"] == 0:
-            # Get BPJS Settings
-            bpjs_settings = frappe.get_single("BPJS Settings")
-            
-            # JHT Employer (3.7%)
-            bpjs_data["jht_employer"] = doc.gross_pay * (bpjs_settings.jht_employer_percent / 100)
-            
-            # JP Employer (2%)
-            jp_salary = min(doc.gross_pay, bpjs_settings.jp_max_salary)
-            bpjs_data["jp_employer"] = jp_salary * (bpjs_settings.jp_employer_percent / 100)
-            
-            # JKK (0.24% - 1.74% depending on risk)
-            bpjs_data["jkk"] = doc.gross_pay * (bpjs_settings.jkk_percent / 100)
-            
-            # JKM (0.3%)
-            bpjs_data["jkm"] = doc.gross_pay * (bpjs_settings.jkm_percent / 100)
-            
-            # Kesehatan Employer (4%)
-            kesehatan_salary = min(doc.gross_pay, bpjs_settings.kesehatan_max_salary)
-            bpjs_data["kesehatan_employer"] = kesehatan_salary * (bpjs_settings.kesehatan_employer_percent / 100)
+        # Get BPJS Settings for employer calculations
+        bpjs_settings = frappe.get_single("BPJS Settings")
+        
+        # Calculate employer components
+        # JHT Employer (3.7%)
+        jht_employer = doc.gross_pay * (bpjs_settings.jht_employer_percent / 100)
+        
+        # JP Employer (2%)
+        jp_salary = min(doc.gross_pay, bpjs_settings.jp_max_salary)
+        jp_employer = jp_salary * (bpjs_settings.jp_employer_percent / 100)
+        
+        # JKK (0.24% - 1.74% depending on risk)
+        jkk = doc.gross_pay * (bpjs_settings.jkk_percent / 100)
+        
+        # JKM (0.3%)
+        jkm = doc.gross_pay * (bpjs_settings.jkm_percent / 100)
+        
+        # Kesehatan Employer (4%)
+        kesehatan_salary = min(doc.gross_pay, bpjs_settings.kesehatan_max_salary)
+        kesehatan_employer = kesehatan_salary * (bpjs_settings.kesehatan_employer_percent / 100)
         
         # Check if BPJS Payment Summary exists for this period
-        bpjs_summary_filters = {
-            "company": doc.company,
-            "year": year,
-            "month": month,
-            "docstatus": ["!=", 2]  # Not cancelled
-        }
-        
-        bpjs_summary = frappe.db.get_value("BPJS Payment Summary", bpjs_summary_filters, "name")
+        bpjs_summary = frappe.db.get_value(
+            "BPJS Payment Summary",
+            {"company": doc.company, "year": year, "month": month, "docstatus": ["!=", 2]},
+            "name"
+        )
         
         if not bpjs_summary:
             # Create new BPJS Payment Summary
@@ -251,11 +226,11 @@ def update_bpjs_payment_summary(doc):
                 "jht_employee": bpjs_data["jht_employee"],
                 "jp_employee": bpjs_data["jp_employee"],
                 "kesehatan_employee": bpjs_data["kesehatan_employee"],
-                "jht_employer": bpjs_data["jht_employer"],
-                "jp_employer": bpjs_data["jp_employer"],
-                "jkk": bpjs_data["jkk"],
-                "jkm": bpjs_data["jkm"],
-                "kesehatan_employer": bpjs_data["kesehatan_employer"]
+                "jht_employer": jht_employer,
+                "jp_employer": jp_employer,
+                "jkk": jkk,
+                "jkm": jkm,
+                "kesehatan_employer": kesehatan_employer
             })
             
             bpjs_summary_doc.insert(ignore_permissions=True)
@@ -274,11 +249,11 @@ def update_bpjs_payment_summary(doc):
                     detail.jht_employee = bpjs_data["jht_employee"]
                     detail.jp_employee = bpjs_data["jp_employee"] 
                     detail.kesehatan_employee = bpjs_data["kesehatan_employee"]
-                    detail.jht_employer = bpjs_data["jht_employer"]
-                    detail.jp_employer = bpjs_data["jp_employer"]
-                    detail.jkk = bpjs_data["jkk"]
-                    detail.jkm = bpjs_data["jkm"] 
-                    detail.kesehatan_employer = bpjs_data["kesehatan_employer"]
+                    detail.jht_employer = jht_employer
+                    detail.jp_employer = jp_employer
+                    detail.jkk = jkk
+                    detail.jkm = jkm
+                    detail.kesehatan_employer = kesehatan_employer
                     employee_exists = True
                     break
             
@@ -291,11 +266,11 @@ def update_bpjs_payment_summary(doc):
                     "jht_employee": bpjs_data["jht_employee"],
                     "jp_employee": bpjs_data["jp_employee"],
                     "kesehatan_employee": bpjs_data["kesehatan_employee"],
-                    "jht_employer": bpjs_data["jht_employer"],
-                    "jp_employer": bpjs_data["jp_employer"],
-                    "jkk": bpjs_data["jkk"],
-                    "jkm": bpjs_data["jkm"],
-                    "kesehatan_employer": bpjs_data["kesehatan_employer"]
+                    "jht_employer": jht_employer,
+                    "jp_employer": jp_employer,
+                    "jkk": jkk,
+                    "jkm": jkm,
+                    "kesehatan_employer": kesehatan_employer
                 })
             
             # Save changes
@@ -329,14 +304,11 @@ def update_pph_ter_table(doc):
         status_pajak = getattr(employee, 'status_pajak', 'TK0')
         
         # Check if PPh TER Table exists for this period
-        ter_table_filters = {
-            "company": doc.company,
-            "year": year,
-            "month": month,
-            "docstatus": ["!=", 2]  # Not cancelled
-        }
-        
-        ter_table = frappe.db.get_value("PPh TER Table", ter_table_filters, "name")
+        ter_table = frappe.db.get_value(
+            "PPh TER Table", 
+            {"company": doc.company, "year": year, "month": month, "docstatus": ["!=", 2]},
+            "name"
+        )
         
         if not ter_table:
             # Create new PPh TER Table
