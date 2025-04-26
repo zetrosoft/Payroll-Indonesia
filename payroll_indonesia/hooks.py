@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 11:33:37 by dannyaudian
+# Last modified: 2025-04-26 11:36:17 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -116,8 +116,11 @@ fixtures = [
     "Report"
 ]
 
-# Scheduler tasks
+# Scheduler tasks - tambahkan update_salary_structures untuk memastikan struktur terupdate
 scheduler_events = {
+    "daily": [
+        "payroll_indonesia.override.salary_structure.update_salary_structures"
+    ],
     "monthly": [
         "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries"
     ],
