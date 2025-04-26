@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 16:58:30 by dannyaudian
+# Last modified: 2025-04-26 18:29:18 by dannyaudian
 
 import frappe
 from frappe import _
@@ -441,8 +441,8 @@ class CustomSalarySlip(SalarySlip):
         # For December, always use progressive method even if TER is enabled
         # This is according to PMK 168/2023
 
-        # Get year-to-date totals
-        ytd = self.get_ytd_totals(year)
+        # Get year-to-date totals from tax summary instead of recalculating
+        ytd = self.get_ytd_totals_from_tax_summary(year)
 
         # Calculate annual totals
         annual_gross = ytd.get("gross", 0) + self.gross_pay
@@ -628,8 +628,52 @@ class CustomSalarySlip(SalarySlip):
 
         components.append(row)
 
+    def get_ytd_totals_from_tax_summary(self, year):
+        """
+        Get YTD data from Employee Tax Summary instead of recalculating from salary slips
+        
+        Args:
+            year: The tax year
+            
+        Returns:
+            dict: A dictionary with YTD values
+        """
+        result = {"gross": 0, "bpjs": 0, "pph21": 0}
+        
+        try:
+            # Get Employee Tax Summary
+            tax_summary = frappe.db.get_value(
+                "Employee Tax Summary",
+                {"employee": self.employee, "year": year},
+                ["name"]
+            )
+            
+            if tax_summary:
+                # Get the full document
+                tax_doc = frappe.get_doc("Employee Tax Summary", tax_summary)
+                
+                # Get current month
+                current_month = getdate(self.start_date).month
+                
+                # Calculate totals from monthly details
+                if tax_doc.monthly_details:
+                    for monthly in tax_doc.monthly_details:
+                        if monthly.month < current_month:
+                            result["gross"] += flt(monthly.gross_pay)
+                            result["bpjs"] += flt(monthly.bpjs_deductions)
+                            result["pph21"] += flt(monthly.tax_amount)
+                    
+                    return result
+        
+        except Exception as e:
+            frappe.log_error(f"Error getting YTD data from tax summary: {str(e)}", 
+                            "YTD Tax Calculation Error")
+            
+        # Fall back to traditional method if tax summary not found or error occurs
+        return self.get_ytd_totals(year)
+
     def get_ytd_totals(self, year):
-        """Get year-to-date totals for the employee"""
+        """Get year-to-date totals for the employee (legacy method)"""
         # Create a default result with zeros
         result = {"gross": 0, "bpjs": 0, "pph21": 0}
 

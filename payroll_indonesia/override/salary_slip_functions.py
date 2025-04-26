@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 18:12:40 by dannyaudian
+# Last modified: 2025-04-26 18:37:42 by dannyaudian
 
 import frappe
 from frappe import _
@@ -83,6 +83,7 @@ def update_employee_ytd_tax(doc):
     try:
         # Get the current year
         year = doc.end_date.year
+        month = doc.end_date.month
         
         # Get the PPh 21 amount
         pph21_amount = 0
@@ -91,34 +92,91 @@ def update_employee_ytd_tax(doc):
                 pph21_amount = flt(deduction.amount)
                 break
         
-        # Proceed only if there is PPh 21 amount to record
-        if pph21_amount > 0:
-            # Check if we already have a record for this employee/year combination
-            existing_tax_summary = frappe.db.get_value("Employee Tax Summary", 
-                {"employee": doc.employee, "year": year}, "name")
+        # Get BPJS components from salary slip
+        bpjs_deductions = 0
+        for deduction in doc.deductions:
+            if deduction.salary_component in ["BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee"]:
+                bpjs_deductions += flt(deduction.amount)
+        
+        # Check if we already have a record for this employee/year combination
+        existing_tax_summary = frappe.db.get_value("Employee Tax Summary", 
+            {"employee": doc.employee, "year": year}, "name")
+        
+        if existing_tax_summary:
+            # Get existing record and update it
+            tax_record = frappe.get_doc("Employee Tax Summary", existing_tax_summary)
             
-            if existing_tax_summary:
-                # Get existing record and update it
-                tax_record = frappe.get_doc("Employee Tax Summary", existing_tax_summary)
-                current_ytd = flt(tax_record.ytd_tax)
-                tax_record.ytd_tax = current_ytd + pph21_amount
-                
-                # Set title if empty
-                if not tax_record.title:
-                    tax_record.title = f"{doc.employee_name} - {year}"
-                    
-                tax_record.save(ignore_permissions=True)
-                frappe.db.commit()
-            else:
-                # Create a new Employee Tax Summary
-                tax_record = frappe.new_doc("Employee Tax Summary")
-                tax_record.employee = doc.employee
-                tax_record.employee_name = doc.employee_name
-                tax_record.year = year
-                tax_record.ytd_tax = pph21_amount
+            # Append monthly detail
+            has_month = False
+            for m in tax_record.monthly_details:
+                if m.month == month:
+                    m.gross_pay = doc.gross_pay
+                    m.bpjs_deductions = bpjs_deductions
+                    m.tax_amount = pph21_amount
+                    m.salary_slip = doc.name
+                    m.is_using_ter = 1 if getattr(doc, 'is_using_ter', 0) else 0
+                    m.ter_rate = getattr(doc, 'ter_rate', 0) if hasattr(doc, 'ter_rate') else 0
+                    has_month = True
+                    break
+            
+            if not has_month:
+                tax_record.append("monthly_details", {
+                    "month": month,
+                    "salary_slip": doc.name,
+                    "gross_pay": doc.gross_pay,
+                    "bpjs_deductions": bpjs_deductions,
+                    "tax_amount": pph21_amount,
+                    "is_using_ter": 1 if getattr(doc, 'is_using_ter', 0) else 0,
+                    "ter_rate": getattr(doc, 'ter_rate', 0) if hasattr(doc, 'ter_rate') else 0
+                })
+            
+            # Recalculate YTD tax
+            total_tax = 0
+            for m in tax_record.monthly_details:
+                total_tax += flt(m.tax_amount)
+            
+            tax_record.ytd_tax = total_tax
+            
+            # Set title if empty
+            if not tax_record.title:
                 tax_record.title = f"{doc.employee_name} - {year}"
-                tax_record.insert(ignore_permissions=True)
-                frappe.db.commit()
+                
+            # Set TER information at year level if applicable
+            if getattr(doc, 'is_using_ter', 0) and hasattr(tax_record, 'is_using_ter'):
+                tax_record.is_using_ter = 1
+                if hasattr(tax_record, 'ter_rate'):
+                    tax_record.ter_rate = getattr(doc, 'ter_rate', 0)
+                
+            tax_record.save(ignore_permissions=True)
+            frappe.db.commit()
+        else:
+            # Create a new Employee Tax Summary
+            tax_record = frappe.new_doc("Employee Tax Summary")
+            tax_record.employee = doc.employee
+            tax_record.employee_name = doc.employee_name
+            tax_record.year = year
+            tax_record.ytd_tax = pph21_amount
+            tax_record.title = f"{doc.employee_name} - {year}"
+            
+            # Set TER information at year level if applicable
+            if getattr(doc, 'is_using_ter', 0) and hasattr(tax_record, 'is_using_ter'):
+                tax_record.is_using_ter = 1
+                if hasattr(tax_record, 'ter_rate'):
+                    tax_record.ter_rate = getattr(doc, 'ter_rate', 0)
+            
+            # Add first monthly detail
+            tax_record.append("monthly_details", {
+                "month": month,
+                "salary_slip": doc.name,
+                "gross_pay": doc.gross_pay,
+                "bpjs_deductions": bpjs_deductions,
+                "tax_amount": pph21_amount,
+                "is_using_ter": 1 if getattr(doc, 'is_using_ter', 0) else 0,
+                "ter_rate": getattr(doc, 'ter_rate', 0) if hasattr(doc, 'ter_rate') else 0
+            })
+            
+            tax_record.insert(ignore_permissions=True)
+            frappe.db.commit()
                 
     except Exception as e:
         frappe.log_error(f"Error updating YTD tax for {doc.employee}: {str(e)}", 
