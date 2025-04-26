@@ -3,185 +3,162 @@
 # For license information, please see license.txt
 
 import frappe
-import os
 import json
-from frappe import _
-from frappe.utils import cstr
 
 def process_fixtures():
-    """
-    Function to process fixtures after migration
-    This should be called in after_migrate hook
-    """
-    # Perbaiki struktur company, tax_slab, dan status submit
-    fix_salary_structure()
-    # Perbaiki file hooks.py jika perlu
-    fix_hooks_file()
+    """Proses semua fixtures setelah migrate"""
+    create_salary_structures()
+    frappe.db.commit()
     
-def fix_salary_structure():
-    """
-    Fix Salary Structure company, tax_slab, dan submit status
-    Menggabungkan logika dari patches dan after_migrate
-    """
-    frappe.log_error("Fixing Salary Structure", "After Migrate")
-    print("Fixing Salary Structure...")
-    
-    try:
-        # First try to restore from saved state
-        restored = restore_from_saved_state()
-        
-        # Whether restored or not, fix using defaults too
-        fix_using_defaults()
-        
-        frappe.db.commit()
-        print("Completed fixing Salary Structure")
-        frappe.log_error("Completed fixing Salary Structure", "After Migrate")
-        
-    except Exception as e:
-        frappe.log_error(f"Error in fix_salary_structure: {cstr(e)}", "After Migrate Error")
-        print(f"Error: {str(e)}")
-
-def restore_from_saved_state():
-    """Restore Salary Structure from previously saved state"""
-    state_file_path = os.path.join(frappe.get_site_path("private", "fixtures"), "salary_structure_state.json")
-    
-    if os.path.exists(state_file_path):
-        try:
-            # Load saved state
-            with open(state_file_path, "r") as f:
-                state = json.load(f)
-            
-            print(f"Restoring from saved state: {state}")
-            
-            # Update document if it exists
-            if frappe.db.exists("Salary Structure", state["name"]):
-                # Get default Income Tax Slab
-                tax_slab = get_default_tax_slab()
-                
-                # Update fields
-                frappe.db.set_value("Salary Structure", state["name"], {
-                    "company": state.get("company", "%"),
-                    "income_tax_slab": tax_slab,
-                    "tax_calculation_method": "Manual",
-                    "docstatus": state.get("docstatus", 1)  # Default to submitted if not specified
-                })
-                
-                print(f"Restored {state['name']} from saved state")
-                return True
-        except Exception as e:
-            frappe.log_error(f"Error restoring from saved state: {cstr(e)}", "After Migrate Error")
-    
-    return False
-
-def fix_using_defaults():
-    """Fix Salary Structure using default values"""
-    # Get default Income Tax Slab
-    tax_slab = get_default_tax_slab()
-    
-    # Define structures that should be in submit status
-    structures_to_submit = [
+def create_salary_structures():
+    """Buat atau update salary structure dari fixture"""
+    # Define all salary structures here
+    structures = [
         {
+            "doctype": "Salary Structure",
             "name": "Struktur Gaji Tetap G1",
-            "company": "%",  # Keep as % for universal usage
-            "update_fields": {
-                "income_tax_slab": tax_slab,
-                "tax_calculation_method": "Manual"
-            }
+            "is_active": "Yes",
+            "payroll_frequency": "Monthly",
+            "company": "%",  # Wildcard untuk semua company
+            "mode_of_payment": "Cash",
+            "currency": "IDR",
+            "tax_calculation_method": "Manual",
+            "earnings": [
+                {
+                    "salary_component": "Gaji Pokok",
+                    "amount_based_on_formula": 1,
+                    "formula": "base",
+                    "condition": ""
+                },
+                {
+                    "salary_component": "Tunjangan Makan",
+                    "amount": 500000,
+                    "condition": ""
+                },
+                {
+                    "salary_component": "Tunjangan Transport",
+                    "amount": 300000,
+                    "condition": ""
+                },
+                {
+                    "salary_component": "Insentif",
+                    "amount": 0,
+                    "amount_based_on_formula": 0,
+                    "condition": "",
+                    "description": "Diisi manual sesuai kinerja karyawan"
+                },
+                {
+                    "salary_component": "Bonus",
+                    "amount": 0,
+                    "amount_based_on_formula": 0,
+                    "condition": "",
+                    "description": "Diisi manual sesuai kebijakan perusahaan"
+                }
+            ],
+            "deductions": [
+                {
+                    "salary_component": "BPJS JHT Employee",
+                    "amount_based_on_formula": 0,
+                    "amount": 0,
+                    "condition": "ikut_bpjs_ketenagakerjaan",
+                    "do_not_include_in_total": 0
+                },
+                {
+                    "salary_component": "BPJS JP Employee",
+                    "amount_based_on_formula": 0,
+                    "amount": 0,
+                    "condition": "ikut_bpjs_ketenagakerjaan",
+                    "do_not_include_in_total": 0
+                },
+                {
+                    "salary_component": "BPJS Kesehatan Employee",
+                    "amount_based_on_formula": 0,
+                    "amount": 0,
+                    "condition": "ikut_bpjs_kesehatan",
+                    "do_not_include_in_total": 0
+                },
+                {
+                    "salary_component": "PPh 21",
+                    "amount_based_on_formula": 0,
+                    "amount": 0,
+                    "condition": "not penghasilan_final",
+                    "do_not_include_in_total": 0
+                },
+                {
+                    "salary_component": "BPJS JHT Employer",
+                    "amount_based_on_formula": 0,
+                    "amount": 0,
+                    "condition": "ikut_bpjs_ketenagakerjaan",
+                    "statistical_component": 1,
+                    "do_not_include_in_total": 1
+                },
+                {
+                    "salary_component": "BPJS JP Employer",
+                    "amount_based_on_formula": 0,
+                    "amount": 0,
+                    "condition": "ikut_bpjs_ketenagakerjaan",
+                    "statistical_component": 1,
+                    "do_not_include_in_total": 1
+                },
+                {
+                    "salary_component": "BPJS JKK",
+                    "amount_based_on_formula": 0,
+                    "amount": 0,
+                    "condition": "ikut_bpjs_ketenagakerjaan", 
+                    "statistical_component": 1,
+                    "do_not_include_in_total": 1
+                },
+                {
+                    "salary_component": "BPJS JKM",
+                    "amount_based_on_formula": 0,
+                    "amount": 0,
+                    "condition": "ikut_bpjs_ketenagakerjaan",
+                    "statistical_component": 1,
+                    "do_not_include_in_total": 1
+                },
+                {
+                    "salary_component": "BPJS Kesehatan Employer",
+                    "amount_based_on_formula": 0,
+                    "amount": 0,
+                    "condition": "ikut_bpjs_kesehatan",
+                    "statistical_component": 1,
+                    "do_not_include_in_total": 1
+                }
+            ],
+            "note": "Nilai komponen BPJS dan PPh 21 dihitung otomatis berdasarkan pengaturan di BPJS Settings dan PPh 21 Settings."
         }
+        # Tambahkan struktur gaji lainnya disini
     ]
     
-    for structure in structures_to_submit:
+    # Create or update salary structures
+    for structure in structures:
+        # Check if salary structure already exists
         if frappe.db.exists("Salary Structure", structure["name"]):
-            ss = frappe.get_doc("Salary Structure", structure["name"])
+            # Update existing salary structure
+            doc = frappe.get_doc("Salary Structure", structure["name"])
             
-            needs_update = False
+            # Update basic fields
+            for key, value in structure.items():
+                if key not in ["name", "doctype", "earnings", "deductions"]:
+                    setattr(doc, key, value)
             
-            # Check if company needs to be updated
-            if ss.company != structure["company"]:
-                frappe.db.set_value("Salary Structure", structure["name"], "company", structure["company"])
-                needs_update = True
-                print(f"Updated company for {structure['name']} to {structure['company']}")
+            # Clear existing earnings and deductions
+            doc.earnings = []
+            doc.deductions = []
             
-            # Update additional fields if needed
-            if "update_fields" in structure:
-                for field, value in structure["update_fields"].items():
-                    if value and getattr(ss, field, None) != value:
-                        frappe.db.set_value("Salary Structure", structure["name"], field, value)
-                        needs_update = True
-                        print(f"Updated {field} for {structure['name']} to {value}")
-            
-            # Check docstatus and submit if needed
-            if ss.docstatus == 0:  # If in draft state
-                try:
-                    # Submit the document directly in database
-                    frappe.db.set_value("Salary Structure", structure["name"], "docstatus", 1)
-                    print(f"Submitted {structure['name']}")
-                    
-                    # If the document has any amended_from, clear it to avoid confusion
-                    if ss.amended_from:
-                        frappe.db.set_value("Salary Structure", structure["name"], "amended_from", None)
-                        
-                except Exception as e:
-                    frappe.log_error(f"Error submitting {structure['name']}: {cstr(e)}", "After Migrate Error")
-
-def get_default_tax_slab():
-    """Get default Income Tax Slab for IDR"""
-    try:
-        # Try to check if is_default column exists
-        has_is_default = check_column_exists("Income Tax Slab", "is_default")
-        
-        if has_is_default:
-            # If is_default column exists, use it to find default slab
-            tax_slab = frappe.db.get_value("Income Tax Slab", 
-                                          {"currency": "IDR", "is_default": 1}, 
-                                          "name")
-            if tax_slab:
-                return tax_slab
+            # Add new earnings
+            for earning in structure.get("earnings", []):
+                doc.append("earnings", earning)
                 
-        # Otherwise, find any IDR tax slab
-        tax_slabs = frappe.get_all("Income Tax Slab", 
-                                  filters={"currency": "IDR"}, 
-                                  fields=["name"])
-        if tax_slabs:
-            return tax_slabs[0].name
+            # Add new deductions
+            for deduction in structure.get("deductions", []):
+                doc.append("deductions", deduction)
             
-        # If no tax slab exists, return None but don't try to create one
-        # Let the system handle this case
-        return None
-        
-    except Exception as e:
-        frappe.log_error(f"Error getting default tax slab: {cstr(e)}", "After Migrate Error")
-        return None
-
-def check_column_exists(doctype, column):
-    """Check if column exists in DocType"""
-    try:
-        frappe.db.sql(f"SELECT `{column}` FROM `tab{doctype}` LIMIT 1")
-        return True
-    except Exception:
-        return False
-
-def fix_hooks_file():
-    """Fix app_title in hooks.py if needed"""
-    try:
-        hooks_file = frappe.get_app_path("payroll_indonesia", "hooks.py")
-        if os.path.exists(hooks_file):
-            # Read content
-            with open(hooks_file, "r") as f:
-                content = f.read()
-                
-            # Check if app_title needs fixing
-            if 'app_title = "Payroll Indonesia"' in content:
-                # Fix it
-                content = content.replace(
-                    'app_title = "Payroll Indonesia"', 
-                    'app_title = ["Payroll Indonesia"]'
-                )
-                
-                # Write back
-                with open(hooks_file, "w") as f:
-                    f.write(content)
-                    
-                print("Fixed app_title in hooks.py")
-    except Exception as e:
-        frappe.log_error(f"Error fixing hooks file: {cstr(e)}", "After Migrate Error")
+            # Save the document
+            doc.save()
+            print(f"Updated Salary Structure: {structure['name']}")
+        else:
+            # Create new salary structure
+            doc = frappe.get_doc(structure)
+            doc.insert(ignore_permissions=True)
+            print(f"Created Salary Structure: {structure['name']}")

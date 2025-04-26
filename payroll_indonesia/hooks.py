@@ -18,6 +18,8 @@ required_apps = ["erpnext", "hrms"]
 
 before_app_init = "payroll_indonesia.utilities.change_log"
 
+after_app_load = "payroll_indonesia.utilities.boot_override.apply_patches"
+
 # JS files for doctypes - Corrected paths
 doctype_js = {
     "Employee": "payroll_indonesia/public/js/employee.js",
