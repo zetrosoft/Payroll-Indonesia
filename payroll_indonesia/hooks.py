@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 06:31:01 by dannyaudian
+# Last modified: 2025-04-26 08:17:16 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -79,6 +79,14 @@ fixtures = [
         "dt": "Property Setter",
         "filters": [
             ["doc_type", "in", ["Employee", "Payroll Entry"]]  # Menambahkan Payroll Entry
+        ]
+    },
+    
+    # Tambahkan Income Tax Slab
+    {
+        "dt": "Income Tax Slab",
+        "filters": [
+            ["currency", "=", "IDR"]
         ]
     },
     
@@ -176,6 +184,7 @@ fixtures_import_order = [
     "Supplier Group",
     "Supplier",
     "Tax Category",
+    "Income Tax Slab", # Tambahkan di urutan awal
     "BPJS Settings",
     "PPh 21 Settings",
     "PPh 21 Tax Bracket",
