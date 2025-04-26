@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 10:15:16 by dannyaudian
+# Last modified: 2025-04-26 11:33:37 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -14,10 +14,6 @@ app_email = "danny.a.pratama@cao-group.co.id"
 app_license = "GPL-3"
 app_version = "0.0.1"
 required_apps = ["erpnext", "hrms"]
-
-# App patches dan hooks
-# Menggunakan fix_app_title_at_runtime untuk menghindari error saat startup
-on_app_init = "payroll_indonesia.fix_app_title_at_runtime"
 
 # JS files untuk doctypes
 doctype_js = {
@@ -71,7 +67,7 @@ doc_events = {
     }
 }
 
-# Fixtures - Disederhanakan untuk mengurangi kompleksitas
+# Fixtures - HAPUS "Salary Structure" dari fixtures karena sekarang dibuat melalui kode
 fixtures = [
     # Basic Setup
     "Custom Field",
@@ -105,9 +101,6 @@ fixtures = [
     # Salary Components
     "Salary Component",
     
-    # Salary Structure
-    "Salary Structure",
-    
     # Transaction DocTypes
     "BPJS Payment Summary",
     "BPJS Payment Summary Detail",
@@ -122,6 +115,16 @@ fixtures = [
     # Reports
     "Report"
 ]
+
+# Scheduler tasks
+scheduler_events = {
+    "monthly": [
+        "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries"
+    ],
+    "yearly": [
+        "payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"
+    ]
+}
 
 # Jinja template methods
 jinja = {
@@ -178,22 +181,10 @@ states_in_transaction = {
     "PPh TER Table": ["Draft", "Submitted", "Paid", "Cancelled"]
 }
 
-# Scheduled Tasks
-scheduler_events = {
-    "monthly": [
-        "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries"
-    ],
-    "yearly": [
-        "payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"
-    ]
-}
-
 # Web Routes
 website_route_rules = [
     {"from_route": "/payslip/<path:payslip_name>", "to_route": "payroll_indonesia/templates/pages/payslip"}
 ]
 
-# HAPUS SELURUH HOOK MIGRASI KOMPLEKS
-# before_fixtures = ["payroll_indonesia.hooks.before_fixtures.before_fixtures"]
-# after_migrate = ["payroll_indonesia.fixtures.after_migrate.process_fixtures"]
-# after_fixtures = ["payroll_indonesia.fixtures.after_migrate.process_fixtures"]
+# TAMBAHKAN after_migrate untuk membuat salary structure setelah migrasi
+after_migrate = "payroll_indonesia.override.salary_structure.create_default_salary_structure"
