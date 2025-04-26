@@ -16,6 +16,8 @@ app_license = "GPL-3"
 app_version = "0.0.1"
 required_apps = ["erpnext", "hrms"]
 
+before_app_init = "payroll_indonesia.utilities.change_log"
+
 # JS files for doctypes - Corrected paths
 doctype_js = {
     "Employee": "payroll_indonesia/public/js/employee.js",
