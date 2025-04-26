@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-23 12:30:15 by dannyaudian
+# Last modified: 2025-04-26 17:25:45 by dannyaudian
 
 import frappe
 from frappe import _
@@ -156,3 +156,86 @@ def log_payroll_event(doc):
         frappe.db.commit()
     except Exception as e:
         frappe.log_error(f"Error logging payroll event for {doc.employee}: {str(e)}")
+
+# Fungsi baru yang ditambahkan
+def after_insert_salary_slip(doc, method=None):
+    """
+    Hook yang dijalankan setelah Salary Slip dibuat
+    
+    Args:
+        doc: Object dari Salary Slip yang baru dibuat
+        method: Metode yang memanggil hook (tidak digunakan)
+    """
+    try:
+        # Pastikan field Payroll Indonesia diinisialisasi dengan benar
+        initialize_custom_fields(doc)
+        
+        # Log bahwa Salary Slip telah dibuat
+        frappe.logger().debug(f"Salary Slip {doc.name} created for employee {doc.employee}")
+        
+        # Tambahkan ke notifikasi jika aplikasi mendukung
+        add_to_payroll_notifications(doc)
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error in after_insert_salary_slip for {doc.name}: {str(e)}", 
+            "Salary Slip Hook Error"
+        )
+
+def initialize_custom_fields(doc):
+    """Inisialisasi field custom Payroll Indonesia"""
+    if not hasattr(doc, 'is_final_gabung_suami') or doc.is_final_gabung_suami is None:
+        doc.is_final_gabung_suami = 0
+        
+    if not hasattr(doc, 'koreksi_pph21') or doc.koreksi_pph21 is None:
+        doc.koreksi_pph21 = 0
+        
+    if not hasattr(doc, 'payroll_note') or doc.payroll_note is None:
+        doc.payroll_note = ""
+        
+    if not hasattr(doc, 'biaya_jabatan') or doc.biaya_jabatan is None:
+        doc.biaya_jabatan = 0
+        
+    if not hasattr(doc, 'netto') or doc.netto is None:
+        doc.netto = 0
+        
+    if not hasattr(doc, 'total_bpjs') or doc.total_bpjs is None:
+        doc.total_bpjs = 0
+        
+    if not hasattr(doc, 'is_using_ter') or doc.is_using_ter is None:
+        doc.is_using_ter = 0
+        
+    if not hasattr(doc, 'ter_rate') or doc.ter_rate is None:
+        doc.ter_rate = 0
+        
+    # Update database jika diperlukan
+    has_changed = False
+    for field in ['is_final_gabung_suami', 'koreksi_pph21', 'payroll_note', 
+                 'biaya_jabatan', 'netto', 'total_bpjs', 'is_using_ter', 'ter_rate']:
+        if doc.has_value_changed(field):
+            has_changed = True
+            
+    if has_changed:
+        doc.db_update()
+
+def add_to_payroll_notifications(doc):
+    """Menambahkan entri ke notifikasi payroll jika fitur tersedia"""
+    # Cek apakah doctype Payroll Notification ada
+    if not frappe.db.exists('DocType', 'Payroll Notification'):
+        return
+        
+    try:
+        notification = frappe.new_doc("Payroll Notification")
+        notification.employee = doc.employee
+        notification.employee_name = doc.employee_name
+        notification.salary_slip = doc.name
+        notification.posting_date = doc.posting_date or frappe.utils.today()
+        notification.amount = doc.net_pay or 0
+        notification.status = "Draft"
+        notification.insert(ignore_permissions=True)
+        frappe.db.commit()
+    except Exception as e:
+        frappe.log_error(
+            f"Failed to create payroll notification for {doc.name}: {str(e)}",
+            "Payroll Notification Error"
+        )
