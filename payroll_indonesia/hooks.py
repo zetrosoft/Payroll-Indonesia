@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 18:58:20 by dannyaudian
+# Last modified: 2025-04-27 02:50:38 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -34,7 +34,8 @@ doctype_list_js = {
 }
 
 # Installation
-after_install = "payroll_indonesia.setup.after_install"
+before_install = "payroll_indonesia.fixtures.setup.before_install"
+after_install = "payroll_indonesia.fixtures.setup.after_install"
 
 # DocType Class Override
 override_doctype_class = {
@@ -70,7 +71,7 @@ doc_events = {
     }
 }
 
-# Fixtures - HAPUS "Salary Structure" dan "Income Tax Slab" dari fixtures karena sekarang dibuat melalui kode
+# Fixtures
 fixtures = [
     # Basic Setup
     "Custom Field",
@@ -117,7 +118,7 @@ fixtures = [
     "Report"
 ]
 
-# Scheduler tasks - tambahkan create_default_tax_slab dan update untuk tax slab dan salary structure
+# Scheduler tasks
 scheduler_events = {
     "daily": [
         "payroll_indonesia.utilities.tax_slab.create_income_tax_slab", 
@@ -167,7 +168,7 @@ regional_overrides = {
 # Module Export Config
 export_python_type_annotations = True
 
-# Document title fields for better navigation
+# Document title fields untuk navigasi yang lebih baik
 get_title = {
     "BPJS Payment Summary": "month_year_title",
     "PPh TER Table": "month_year_title",
@@ -191,8 +192,9 @@ website_route_rules = [
     {"from_route": "/payslip/<path:payslip_name>", "to_route": "payroll_indonesia/templates/pages/payslip"}
 ]
 
-# TAMBAHKAN after_migrate untuk membuat tax slab dan salary structure setelah migrasi
+# Hook setelah migrasi
 after_migrate = [
+    "payroll_indonesia.fixtures.setup.check_system_readiness",
     "payroll_indonesia.utilities.tax_slab.create_income_tax_slab",
     "payroll_indonesia.override.salary_structure.create_default_salary_structure"
 ]
