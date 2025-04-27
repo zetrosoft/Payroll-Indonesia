@@ -1,7 +1,6 @@
 import frappe
 from frappe import _
 from frappe.utils import flt
-from erpnext.controllers.accounts_controller import get_default_account
 
 def override_salary_slip_gl_entries(doc, method=None):
     """
@@ -196,10 +195,14 @@ def get_component_account(salary_component, type_name, company):
     
     return account
 
-def get_default_payable_account(doc):
-    """Get default payable account"""
-    if hasattr(doc, 'payroll_payable_account') and doc.payroll_payable_account:
-        return doc.payroll_payable_account
-    
-    payable_account = get_default_account(doc.company, "payable_account", "Payroll Payable")
-    return payable_account
+def get_default_account(company, account_type=None):
+    """
+    Get default account for company based on account type
+    Fallback implementation untuk menggantikan fungsi yang tidak ada di ERPNext v15
+    """
+    if account_type:
+        return frappe.get_cached_value('Company', company, account_type)
+    return None
+
+# Atau gunakan fungsi yang masih tersedia dari journal_entry.py
+from erpnext.accounts.doctype.journal_entry.journal_entry import get_default_bank_cash_account
