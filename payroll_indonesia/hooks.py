@@ -65,7 +65,7 @@ doc_events = {
         "before_validate": "payroll_indonesia.override.payroll_entry_functions.before_validate",
         "validate": "payroll_indonesia.override.payroll_entry_functions.validate_payroll_entry",
         "on_submit": "payroll_indonesia.override.payroll_entry_functions.on_submit"
-}
+}}
 
 # Fixtures
 fixtures = [
