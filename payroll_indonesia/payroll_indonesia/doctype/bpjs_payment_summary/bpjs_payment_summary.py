@@ -430,171 +430,171 @@ class BPJSPaymentSummary(Document):
             frappe.msgprint(_("Error creating Payment Entry"))
             frappe.throw(str(e))
 
-@frappe.whitelist()
-def populate_employee_details(self):
-    """Populate employee details with active employees who have BPJS participation"""
-    if self.docstatus == 1:
-        frappe.throw(_("Cannot modify employee details after submission"))
+    @frappe.whitelist()
+    def populate_employee_details(self):
+        """Populate employee details with active employees who have BPJS participation"""
+        if self.docstatus == 1:
+            frappe.throw(_("Cannot modify employee details after submission"))
         
-    # Clear existing employee details
-    self.employee_details = []
+        # Clear existing employee details
+        self.employee_details = []
     
-    # Get BPJS Settings
-    bpjs_settings = frappe.get_single("BPJS Settings")
+        # Get BPJS Settings
+        bpjs_settings = frappe.get_single("BPJS Settings")
     
-    # Get active employees
-    employees = frappe.get_all(
-        "Employee",
-        filters={
-            "status": "Active", 
-            "company": self.company
-        },
-        fields=["name", "employee_name"]
-    )
-    
-    # Get the payroll period for the selected month and year
-    first_day = f"{self.year}-{self.month:02d}-01"
-    if self.month == 12:
-        last_day = f"{self.year + 1}-01-01"
-    else:
-        last_day = f"{self.year}-{self.month + 1:02d}-01"
-    
-    last_day = frappe.utils.add_days(last_day, -1)
-    
-    employee_count = 0
-    
-    for emp in employees:
-        # Get latest salary structure assignment
-        salary_structure_assignment = frappe.db.get_value(
-            "Salary Structure Assignment",
-            {
-                "employee": emp.name,
-                "docstatus": 1,
-                "from_date": ["<=", last_day]
-            },
-            ["name", "salary_structure", "base"],
-            order_by="from_date desc"
+        # Get active employees
+        employees = frappe.get_all(
+            "Employee",
+            filters={
+                "status": "Active", 
+                "company": self.company
+         },
+            fields=["name", "employee_name"]
         )
-        
-        if not salary_structure_assignment:
-            continue
-            
-        # Check if employee is registered for BPJS
-        is_bpjs_participant = frappe.db.get_value(
-            "Employee", emp.name, "bpjs_participant"
-        ) if frappe.db.has_column("Employee", "bpjs_participant") else 1
-        
-        if not is_bpjs_participant:
-            continue
-            
-        # Get base salary
-        base_salary = salary_structure_assignment[2] if salary_structure_assignment[2] else 0
-        
-        if base_salary <= 0:
-            continue
-            
-        # Calculate BPJS contributions
-        # JHT (2% employee, 3.7% employer)
-        jht_employee = base_salary * (bpjs_settings.jht_employee_percent / 100)
-        jht_employer = base_salary * (bpjs_settings.jht_employer_percent / 100)
-        
-        # JP (1% employee, 2% employer) with salary cap
-        jp_base = min(base_salary, bpjs_settings.jp_max_salary)
-        jp_employee = jp_base * (bpjs_settings.jp_employee_percent / 100)
-        jp_employer = jp_base * (bpjs_settings.jp_employer_percent / 100)
-        
-        # Kesehatan (1% employee, 4% employer) with salary cap
-        kesehatan_base = min(base_salary, bpjs_settings.kesehatan_max_salary)
-        kesehatan_employee = kesehatan_base * (bpjs_settings.kesehatan_employee_percent / 100)
-        kesehatan_employer = kesehatan_base * (bpjs_settings.kesehatan_employer_percent / 100)
-        
-        # JKK (0.24% - 1.74% of base salary)
-        jkk = base_salary * (bpjs_settings.jkk_percent / 100)
-        
-        # JKM (0.3% of base salary)
-        jkm = base_salary * (bpjs_settings.jkm_percent / 100)
-        
-        # Add employee to details
-        self.append("employee_details", {
-            "employee": emp.name,
-            "employee_name": emp.employee_name,
-            "jht_employee": jht_employee,
-            "jp_employee": jp_employee,
-            "kesehatan_employee": kesehatan_employee,
-            "jht_employer": jht_employer,
-            "jp_employer": jp_employer,
-            "kesehatan_employer": kesehatan_employer,
-            "jkk": jkk,
-            "jkm": jkm
-        })
-        
-        employee_count += 1
     
-    if employee_count == 0:
-        frappe.msgprint(_("No eligible employees found with BPJS participation."))
-    else:
-        # Update components based on employee details
-        self.update_components_from_employee_details()
-        frappe.msgprint(_("Added {0} employees to BPJS Payment Summary.").format(employee_count))
+        # Get the payroll period for the selected month and year
+        first_day = f"{self.year}-{self.month:02d}-01"
+        if self.month == 12:
+            last_day = f"{self.year + 1}-01-01"
+        else:
+            last_day = f"{self.year}-{self.month + 1:02d}-01"
+    
+        last_day = frappe.utils.add_days(last_day, -1)
+    
+        employee_count = 0
+    
+        for emp in employees:
+            # Get latest salary structure assignment
+            salary_structure_assignment = frappe.db.get_value(
+                "Salary Structure Assignment",
+                {
+                    "employee": emp.name,
+                    "docstatus": 1,
+                    "from_date": ["<=", last_day]
+                },
+                ["name", "salary_structure", "base"],
+                order_by="from_date desc"
+            )
+        
+            if not salary_structure_assignment:
+                continue
+            
+            # Check if employee is registered for BPJS
+            is_bpjs_participant = frappe.db.get_value(
+                "Employee", emp.name, "bpjs_participant"
+            ) if frappe.db.has_column("Employee", "bpjs_participant") else 1
+        
+            if not is_bpjs_participant:
+                continue
+            
+            # Get base salary
+            base_salary = salary_structure_assignment[2] if salary_structure_assignment[2] else 0
+        
+            if base_salary <= 0:
+                continue
+            
+            # Calculate BPJS contributions
+            # JHT (2% employee, 3.7% employer)
+            jht_employee = base_salary * (bpjs_settings.jht_employee_percent / 100)
+            jht_employer = base_salary * (bpjs_settings.jht_employer_percent / 100)
+        
+            # JP (1% employee, 2% employer) with salary cap
+            jp_base = min(base_salary, bpjs_settings.jp_max_salary)
+            jp_employee = jp_base * (bpjs_settings.jp_employee_percent / 100)
+            jp_employer = jp_base * (bpjs_settings.jp_employer_percent / 100)
+        
+            # Kesehatan (1% employee, 4% employer) with salary cap
+            kesehatan_base = min(base_salary, bpjs_settings.kesehatan_max_salary)
+            kesehatan_employee = kesehatan_base * (bpjs_settings.kesehatan_employee_percent / 100)
+            kesehatan_employer = kesehatan_base * (bpjs_settings.kesehatan_employer_percent / 100)
+        
+            # JKK (0.24% - 1.74% of base salary)
+            jkk = base_salary * (bpjs_settings.jkk_percent / 100)
+        
+            # JKM (0.3% of base salary)
+            jkm = base_salary * (bpjs_settings.jkm_percent / 100)
+        
+            # Add employee to details
+            self.append("employee_details", {
+                "employee": emp.name,
+                "employee_name": emp.employee_name,
+                "jht_employee": jht_employee,
+                "jp_employee": jp_employee,
+                "kesehatan_employee": kesehatan_employee,
+                "jht_employer": jht_employer,
+                "jp_employer": jp_employer,
+                "kesehatan_employer": kesehatan_employer,
+                "jkk": jkk,
+                "jkm": jkm
+            })
+        
+            employee_count += 1
+    
+        if employee_count == 0:
+            frappe.msgprint(_("No eligible employees found with BPJS participation."))
+        else:
+            # Update components based on employee details
+            self.update_components_from_employee_details()
+            frappe.msgprint(_("Added {0} employees to BPJS Payment Summary.").format(employee_count))
 
-def update_components_from_employee_details(self):
-    """Update component table based on employee details"""
-    if not self.employee_details:
-        return
+    def update_components_from_employee_details(self):
+        """Update component table based on employee details"""
+        if not self.employee_details:
+            return
         
-    # Calculate totals
-    jht_total = 0
-    jp_total = 0
-    kesehatan_total = 0
-    jkk_total = 0
-    jkm_total = 0
+        # Calculate totals
+        jht_total = 0
+        jp_total = 0
+        kesehatan_total = 0
+        jkk_total = 0
+        jkm_total = 0
     
-    for emp in self.employee_details:
-        jht_total += flt(emp.jht_employee) + flt(emp.jht_employer)
-        jp_total += flt(emp.jp_employee) + flt(emp.jp_employer)
-        kesehatan_total += flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer)
-        jkk_total += flt(emp.jkk)
-        jkm_total += flt(emp.jkm)
+        for emp in self.employee_details:
+            jht_total += flt(emp.jht_employee) + flt(emp.jht_employer)
+            jp_total += flt(emp.jp_employee) + flt(emp.jp_employer)
+            kesehatan_total += flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer)
+            jkk_total += flt(emp.jkk)
+            jkm_total += flt(emp.jkm)
     
-    # Clear existing components
-    self.komponen = []
+        # Clear existing components
+        self.komponen = []
     
-    # Add JHT component
-    if jht_total > 0:
-        self.append("komponen", {
-            "component": "BPJS JHT",
-            "description": "JHT Contribution (Employee + Employer)",
-            "amount": jht_total
-        })
+        # Add JHT component
+        if jht_total > 0:
+            self.append("komponen", {
+                "component": "BPJS JHT",
+                "description": "JHT Contribution (Employee + Employer)",
+                "amount": jht_total
+            })
     
-    # Add JP component
-    if jp_total > 0:
-        self.append("komponen", {
-            "component": "BPJS JP",
-            "description": "JP Contribution (Employee + Employer)",
-            "amount": jp_total
-        })
+        # Add JP component
+        if jp_total > 0:
+            self.append("komponen", {
+                "component": "BPJS JP",
+                "description": "JP Contribution (Employee + Employer)",
+                "amount": jp_total
+            })
     
-    # Add Kesehatan component
-    if kesehatan_total > 0:
-        self.append("komponen", {
-            "component": "BPJS Kesehatan",
-            "description": "Kesehatan Contribution (Employee + Employer)",
-            "amount": kesehatan_total
-        })
+        # Add Kesehatan component
+        if kesehatan_total > 0:
+            self.append("komponen", {
+                "component": "BPJS Kesehatan",
+                "description": "Kesehatan Contribution (Employee + Employer)",
+                "amount": kesehatan_total
+            })
     
-    # Add JKK component
-    if jkk_total > 0:
-        self.append("komponen", {
-            "component": "BPJS JKK",
-            "description": "JKK Contribution (Employer)",
-            "amount": jkk_total
-        })
+        # Add JKK component
+        if jkk_total > 0:
+            self.append("komponen", {
+                "component": "BPJS JKK",
+                "description": "JKK Contribution (Employer)",
+                "amount": jkk_total
+            })
     
-    # Add JKM component
-    if jkm_total > 0:
-        self.append("komponen", {
-            "component": "BPJS JKM",
-            "description": "JKM Contribution (Employer)",
-            "amount": jkm_total
-        })
+        # Add JKM component
+        if jkm_total > 0:
+            self.append("komponen", {
+                "component": "BPJS JKM",
+                "description": "JKM Contribution (Employer)",
+                "amount": jkm_total
+            })
