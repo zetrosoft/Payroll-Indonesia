@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 02:50:38 by dannyaudian
+# Last modified: 2025-04-27 09:52:03 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -23,7 +23,8 @@ doctype_js = {
     "PPh TER Table": "payroll_indonesia/payroll_indonesia/doctype/pph_ter_table/pph_ter_table.js",
     "BPJS Payment Summary": "payroll_indonesia/payroll_indonesia/doctype/bpjs_payment_summary/bpjs_payment_summary.js",
     "PPh 21 Settings": "payroll_indonesia/public/js/pph_21_settings.js",
-    "BPJS Settings": "payroll_indonesia/payroll_indonesia/doctype/bpjs_settings/bpjs_settings.js"
+    "BPJS Settings": "payroll_indonesia/payroll_indonesia/doctype/bpjs_settings/bpjs_settings.js",
+    "BPJS Account Mapping": "payroll_indonesia/payroll_indonesia/doctype/bpjs_account_mapping/bpjs_account_mapping.js"
 }
 
 # List view JS
@@ -63,6 +64,12 @@ doc_events = {
     },
     "Salary Slip": {
         "before_insert": "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries"
+    },
+    "BPJS Account Mapping": {
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.validate"
+    },
+    "BPJS Payment Component": {
+        "on_submit": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.create_journal_entries"
     }
 }
 
@@ -84,6 +91,7 @@ fixtures = [
     "PPh 21 Tax Bracket",
     "PPh 21 TER Table",
     "PPh 21 PTKP",
+    "BPJS Account Mapping",  # Tambahkan BPJS Account Mapping ke fixtures
     
     # Master Data - Payroll
     "Golongan",
@@ -133,6 +141,7 @@ jinja = {
         # BPJS Settings & Functions
         "payroll_indonesia.payroll_indonesia.utils.get_bpjs_settings",
         "payroll_indonesia.payroll_indonesia.utils.calculate_bpjs_contributions",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
         
         # PPh 21 Settings & Functions
         "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings",
@@ -173,7 +182,8 @@ get_title = {
     "BPJS Payment Summary": "month_year_title",
     "PPh TER Table": "month_year_title",
     "Employee Tax Summary": "title",
-    "Payroll Log": "title"
+    "Payroll Log": "title",
+    "BPJS Account Mapping": "mapping_name"
 }
 
 # Module Category - for Desk
@@ -229,5 +239,6 @@ module_info = {
     "payroll_indonesia.override.salary_slip.ter_calculator": "TER Method Calculator",
     "payroll_indonesia.override.salary_slip.tax_summary_creator": "Tax Summary Document Creator",
     "payroll_indonesia.override.salary_slip.bpjs_summary_creator": "BPJS Summary Document Creator",
-    "payroll_indonesia.override.salary_slip.ter_table_creator": "TER Table Document Creator"
+    "payroll_indonesia.override.salary_slip.ter_table_creator": "TER Table Document Creator",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping": "BPJS Account Mapping Controller"
 }
