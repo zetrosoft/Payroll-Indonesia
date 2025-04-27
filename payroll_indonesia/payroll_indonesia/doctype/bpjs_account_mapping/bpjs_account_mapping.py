@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 09:42:17 by dannyaudian
+# Last modified: 2025-04-27 11:52:36 by dannyaudian
 
 import frappe
 from frappe import _
@@ -101,28 +101,6 @@ class BPJSAccountMapping(Document):
             accounts["employer_credit"] = getattr(self, employer_credit_field)
             
         return accounts
-        
-    @staticmethod
-    def get_mapping_for_company(company):
-        """
-        Get the BPJS Account Mapping for a company
-        
-        Args:
-            company (str): Company name
-            
-        Returns:
-            BPJSAccountMapping: The mapping document for the company or None if not found
-        """
-        mapping_name = frappe.db.get_value(
-            "BPJS Account Mapping", 
-            {"company": company},
-            "name"
-        )
-        
-        if mapping_name:
-            return frappe.get_doc("BPJS Account Mapping", mapping_name)
-        
-        return None
     
     def create_journal_entry(self, bpjs_component, posting_date=None):
         """
@@ -312,3 +290,65 @@ class BPJSAccountMapping(Document):
             )
             frappe.msgprint(_("Error creating journal entry: {0}").format(str(e)))
             return None
+
+
+# Tambahkan fungsi level modul untuk digunakan oleh Jinja
+@frappe.whitelist()
+def get_mapping_for_company(company=None):
+    """
+    Get BPJS Account mapping for specified company
+    
+    Args:
+        company (str, optional): Company name to get mapping for, uses default if not specified
+        
+    Returns:
+        dict: Dictionary containing account mapping details or None if not found
+    """
+    if not company:
+        company = frappe.defaults.get_user_default("Company")
+        if not company:
+            # Try to get first company
+            companies = frappe.get_all("Company")
+            if companies:
+                company = companies[0].name
+    
+    if not company:
+        return None
+    
+    try:
+        # Find mapping for this company
+        mapping_name = frappe.db.get_value(
+            "BPJS Account Mapping", 
+            {"company": company, "enabled": 1},
+            "name"
+        )
+        
+        if not mapping_name:
+            return None
+        
+        # Get complete document data
+        mapping = frappe.get_doc("BPJS Account Mapping", mapping_name)
+        
+        # Return data as dictionary for Jinja template use
+        return {
+            "name": mapping.name,
+            "company": mapping.company,
+            "mapping_name": mapping.mapping_name,
+            "enabled": mapping.enabled,
+            "kesehatan_employee_account": mapping.kesehatan_employee_account,
+            "jht_employee_account": mapping.jht_employee_account,
+            "jp_employee_account": mapping.jp_employee_account,
+            "kesehatan_employer_debit_account": mapping.kesehatan_employer_debit_account,
+            "jht_employer_debit_account": mapping.jht_employer_debit_account,
+            "jp_employer_debit_account": mapping.jp_employer_debit_account,
+            "jkk_employer_debit_account": mapping.jkk_employer_debit_account,
+            "jkm_employer_debit_account": mapping.jkm_employer_debit_account,
+            "kesehatan_employer_credit_account": mapping.kesehatan_employer_credit_account,
+            "jht_employer_credit_account": mapping.jht_employer_credit_account,
+            "jp_employer_credit_account": mapping.jp_employer_credit_account,
+            "jkk_employer_credit_account": mapping.jkk_employer_credit_account,
+            "jkm_employer_credit_account": mapping.jkm_employer_credit_account
+        }
+    except Exception as e:
+        frappe.log_error(f"Error getting BPJS account mapping for company {company}: {str(e)}", "BPJS Mapping Error")
+        return None
