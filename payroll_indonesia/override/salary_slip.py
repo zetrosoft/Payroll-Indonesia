@@ -1367,4 +1367,234 @@ class CustomSalarySlip(SalarySlip):
             ]
             
             for field in required_fields:
-                if not
+                if not hasattr(bpjs_settings, field) or getattr(bpjs_settings, field) is None:
+                    frappe.throw(_("BPJS Settings missing required field: {0}").format(field))
+            
+            # Calculate employer components
+            # JHT Employer (3.7%)
+            jht_employer = self.gross_pay * (bpjs_settings.jht_employer_percent / 100)
+            
+            # JP Employer (2%)
+            jp_salary = min(self.gross_pay, bpjs_settings.jp_max_salary)
+            jp_employer = jp_salary * (bpjs_settings.jp_employer_percent / 100)
+            
+            # JKK (0.24% - 1.74% depending on risk)
+            jkk = self.gross_pay * (bpjs_settings.jkk_percent / 100)
+            
+            # JKM (0.3%)
+            jkm = self.gross_pay * (bpjs_settings.jkm_percent / 100)
+            
+            # Kesehatan Employer (4%)
+            kesehatan_salary = min(self.gross_pay, bpjs_settings.kesehatan_max_salary)
+            kesehatan_employer = kesehatan_salary * (bpjs_settings.kesehatan_employer_percent / 100)
+            
+            # Check if BPJS Payment Summary exists for this period
+            bpjs_summary = frappe.db.get_value(
+                "BPJS Payment Summary",
+                {"company": self.company, "year": year, "month": month, "docstatus": ["!=", 2]},
+                "name"
+            )
+            
+            if not bpjs_summary:
+                # Create new BPJS Payment Summary
+                try:
+                    bpjs_summary_doc = frappe.new_doc("BPJS Payment Summary")
+                    bpjs_summary_doc.company = self.company
+                    bpjs_summary_doc.year = year
+                    bpjs_summary_doc.month = month
+                    
+                    # Set title if field exists
+                    if hasattr(bpjs_summary_doc, 'month_year_title'):
+                        bpjs_summary_doc.month_year_title = f"{month:02d}-{year}"
+                        
+                    # Check if employee_details field exists
+                    if not hasattr(bpjs_summary_doc, 'employee_details'):
+                        frappe.throw(_("BPJS Payment Summary structure is invalid. missing employee_details child table."))
+                    
+                    # Create first employee detail
+                    bpjs_summary_doc.append("employee_details", {
+                        "employee": self.employee,
+                        "employee_name": self.employee_name,
+                        "salary_slip": self.name,
+                        "jht_employee": bpjs_data["jht_employee"],
+                        "jp_employee": bpjs_data["jp_employee"],
+                        "kesehatan_employee": bpjs_data["kesehatan_employee"],
+                        "jht_employer": jht_employer,
+                        "jp_employer": jp_employer,
+                        "jkk": jkk,
+                        "jkm": jkm,
+                        "kesehatan_employer": kesehatan_employer
+                    })
+                    
+                    bpjs_summary_doc.insert(ignore_permissions=True)
+                except Exception as e:
+                    frappe.throw(_("Error creating BPJS Payment Summary: {0}").format(str(e)))
+                
+            else:
+                # Update existing BPJS Payment Summary
+                try:
+                    bpjs_summary_doc = frappe.get_doc("BPJS Payment Summary", bpjs_summary)
+                    
+                    # Check if employee_details field exists
+                    if not hasattr(bpjs_summary_doc, 'employee_details'):
+                        frappe.throw(_("BPJS Payment Summary structure is invalid. missing employee_details child table."))
+                    
+                    # Check if employee already exists
+                    employee_exists = False
+                    for detail in bpjs_summary_doc.employee_details:
+                        if detail.employee == self.employee:
+                            # Update existing employee
+                            detail.salary_slip = self.name
+                            detail.jht_employee = bpjs_data["jht_employee"]
+                            detail.jp_employee = bpjs_data["jp_employee"] 
+                            detail.kesehatan_employee = bpjs_data["kesehatan_employee"]
+                            detail.jht_employer = jht_employer
+                            detail.jp_employer = jp_employer
+                            detail.jkk = jkk
+                            detail.jkm = jkm
+                            detail.kesehatan_employer = kesehatan_employer
+                            employee_exists = True
+                            break
+                    
+                    if not employee_exists:
+                        # Add new employee
+                        bpjs_summary_doc.append("employee_details", {
+                            "employee": self.employee,
+                            "employee_name": self.employee_name,
+                            "salary_slip": self.name,
+                            "jht_employee": bpjs_data["jht_employee"],
+                            "jp_employee": bpjs_data["jp_employee"],
+                            "kesehatan_employee": bpjs_data["kesehatan_employee"],
+                            "jht_employer": jht_employer,
+                            "jp_employer": jp_employer,
+                            "jkk": jkk,
+                            "jkm": jkm,
+                            "kesehatan_employer": kesehatan_employer
+                        })
+                    
+                    # Save changes
+                    bpjs_summary_doc.save(ignore_permissions=True)
+                except Exception as e:
+                    frappe.throw(_("Error updating BPJS Payment Summary: {0}").format(str(e)))
+            
+        except Exception as e:
+            frappe.log_error(
+                f"Error creating/updating BPJS Payment Summary for {self.name}: {str(e)}",
+                "BPJS Summary Error"
+            )
+            frappe.throw(_("Error creating/updating BPJS Payment Summary: {0}").format(str(e)))
+            
+    def create_pph_ter_table(self):
+        """Create or update PPh TER Table entry if using TER method"""
+        try:
+            # Only proceed if using TER
+            if not getattr(self, 'is_using_ter', 0):
+                return
+                
+            # Check if PPh TER Table DocType exists
+            if not frappe.db.exists("DocType", "PPh TER Table"):
+                frappe.msgprint(_("PPh TER Table DocType not found. Cannot create TER entry."))
+                return
+            
+            # Determine year and month from salary slip
+            end_date = getdate(self.end_date)
+            month = end_date.month
+            year = end_date.year
+            
+            # Get PPh 21 amount
+            pph21_amount = 0
+            for deduction in self.deductions:
+                if deduction.salary_component == "PPh 21":
+                    pph21_amount = flt(deduction.amount)
+                    break
+            
+            # Get employee status pajak
+            employee = frappe.get_doc("Employee", self.employee)
+            status_pajak = "TK0"  # Default
+            
+            if hasattr(employee, 'status_pajak') and employee.status_pajak:
+                status_pajak = employee.status_pajak
+            
+            # Check if PPh TER Table exists for this period
+            ter_table = frappe.db.get_value(
+                "PPh TER Table", 
+                {"company": self.company, "year": year, "month": month, "docstatus": ["!=", 2]},
+                "name"
+            )
+            
+            if not ter_table:
+                # Create new PPh TER Table
+                try:
+                    ter_table_doc = frappe.new_doc("PPh TER Table")
+                    ter_table_doc.company = self.company
+                    ter_table_doc.year = year
+                    ter_table_doc.month = month
+                    
+                    # Set title if field exists
+                    if hasattr(ter_table_doc, 'month_year_title'):
+                        ter_table_doc.month_year_title = f"{month:02d}-{year}"
+                    
+                    # Check if employee_details field exists
+                    if not hasattr(ter_table_doc, 'employee_details'):
+                        frappe.throw(_("PPh TER Table structure is invalid. missing employee_details child table."))
+                    
+                    # Create first employee detail
+                    ter_table_doc.append("employee_details", {
+                        "employee": self.employee,
+                        "employee_name": self.employee_name,
+                        "status_pajak": status_pajak,
+                        "salary_slip": self.name,
+                        "gross_income": self.gross_pay,
+                        "ter_rate": getattr(self, 'ter_rate', 0),
+                        "pph21_amount": pph21_amount
+                    })
+                    
+                    ter_table_doc.insert(ignore_permissions=True)
+                except Exception as e:
+                    frappe.throw(_("Error creating PPh TER Table: {0}").format(str(e)))
+                
+            else:
+                # Update existing PPh TER Table
+                try:
+                    ter_table_doc = frappe.get_doc("PPh TER Table", ter_table)
+                    
+                    # Check if employee_details field exists
+                    if not hasattr(ter_table_doc, 'employee_details'):
+                        frappe.throw(_("PPh TER Table structure is invalid. Missing employee_details child table."))
+                    
+                    # Check if employee already exists
+                    employee_exists = False
+                    for detail in ter_table_doc.employee_details:
+                        if detail.employee == self.employee:
+                            # Update existing employee
+                            detail.status_pajak = status_pajak
+                            detail.salary_slip = self.name
+                            detail.gross_income = self.gross_pay
+                            detail.ter_rate = getattr(self, 'ter_rate', 0)
+                            detail.pph21_amount = pph21_amount
+                            employee_exists = True
+                            break
+                    
+                    if not employee_exists:
+                        # Add new employee
+                        ter_table_doc.append("employee_details", {
+                            "employee": self.employee,
+                            "employee_name": self.employee_name,
+                            "status_pajak": status_pajak,
+                            "salary_slip": self.name,
+                            "gross_income": self.gross_pay,
+                            "ter_rate": getattr(self, 'ter_rate', 0),
+                            "pph21_amount": pph21_amount
+                        })
+                    
+                    # Save changes
+                    ter_table_doc.save(ignore_permissions=True)
+                except Exception as e:
+                    frappe.throw(_("Error updating PPh TER Table: {0}").format(str(e)))
+                    
+        except Exception as e:
+            frappe.log_error(
+                f"Error creating/updating PPh TER Table for {self.name}: {str(e)}",
+                "TER Table Error"
+            )
+            frappe.throw(_("Error creating/updating PPh TER Table: {0}").format(str(e)))
