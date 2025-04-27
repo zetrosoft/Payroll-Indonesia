@@ -1,44 +1,146 @@
+# -*- coding: utf-8 -*-
+# Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
+# For license information, please see license.txt
+# Last modified: 2025-04-27 03:15:12 by dannyaudian
+
 import frappe
 from frappe import _
-from frappe.utils import getdate
+from frappe.utils import getdate, flt
 
 def before_install():
     """Setup requirements before installing the app"""
-    pass
+    try:
+        # Check if system is ready for installation
+        check_system_readiness()
+    except Exception as e:
+        frappe.log_error(f"Error in before_install: {str(e)}", "Payroll Indonesia Installation Error")
 
 def after_install():
-    """Setup requirements after installing the app"""
-    # Create Accounts first (required for salary components)
+    """Setup requirements after installing the app with improved error handling"""
+    frappe.logger().info("Starting Payroll Indonesia after_install process")
+    
+    # Create accounts first (required for salary components)
+    account_success = False
     try:
         create_accounts()
+        account_success = True
+        frappe.logger().info("Successfully created accounts for Payroll Indonesia")
     except Exception as e:
-        frappe.log_error(f"Error creating accounts: {str(e)}")
-        frappe.msgprint(f"Warning: Some accounts could not be created: {str(e)}")
+        frappe.log_error(f"Error creating accounts: {str(e)}", "Account Creation Error")
+        frappe.msgprint(_("Warning: Some accounts could not be created: {0}").format(str(e)))
     
     # Setup additional requirements
+    supplier_success = False
     try:
         create_supplier_group()
+        supplier_success = True
+        frappe.logger().info("Successfully created supplier groups for Payroll Indonesia")
     except Exception as e:
-        frappe.log_error(f"Error creating supplier group: {str(e)}")
-        frappe.msgprint(f"Warning: Supplier group could not be created: {str(e)}")
+        frappe.log_error(f"Error creating supplier group: {str(e)}", "Supplier Group Creation Error")
+        frappe.msgprint(_("Warning: Supplier group could not be created: {0}").format(str(e)))
     
     # Setup Settings immediately (synchronously)
-    setup_pph21_defaults()
-    setup_pph21_ter()
+    pph21_settings = None
+    try:
+        pph21_settings = setup_pph21_defaults()
+        frappe.logger().info("Successfully set up PPh 21 defaults")
+    except Exception as e:
+        frappe.log_error(f"Error setting up PPh 21 defaults: {str(e)}", "PPh 21 Setup Error")
+        frappe.msgprint(_("Warning: PPh 21 Settings could not be configured: {0}").format(str(e)))
+        
+    ter_success = False
+    try:
+        setup_pph21_ter()
+        ter_success = True
+        frappe.logger().info("Successfully set up PPh 21 TER rates")
+    except Exception as e:
+        frappe.log_error(f"Error setting up PPh 21 TER: {str(e)}", "PPh 21 TER Setup Error")
+        frappe.msgprint(_("Warning: PPh 21 TER rates could not be configured: {0}").format(str(e)))
+        
+    tax_slab_success = False
+    try:
+        setup_income_tax_slab()
+        tax_slab_success = True
+        frappe.logger().info("Successfully set up income tax slab")
+    except Exception as e:
+        frappe.log_error(f"Error setting up income tax slab: {str(e)}", "Tax Slab Setup Error")
+        frappe.msgprint(_("Warning: Income tax slab could not be configured: {0}").format(str(e)))
     
-    frappe.msgprint(_(
-        "Payroll Indonesia berhasil diinstal. PPh 21 Settings telah dikonfigurasi dengan metode TER."
-    ), indicator="green", title=_("Installation Complete"))
+    # Summary of installation
+    success_items = []
+    if account_success:
+        success_items.append(_("accounts"))
+    if supplier_success:
+        success_items.append(_("supplier groups"))
+    if pph21_settings:
+        success_items.append(_("PPh 21 Settings"))
+    if ter_success:
+        success_items.append(_("TER rates"))
+    if tax_slab_success:
+        success_items.append(_("income tax slab"))
+        
+    # Display success message with details
+    if success_items:
+        success_msg = _(
+            "Payroll Indonesia has been installed. Successfully configured: {0}"
+        ).format(", ".join(success_items))
+        
+        indicator = "green" if len(success_items) >= 3 else "yellow"
+        frappe.msgprint(success_msg, indicator=indicator, title=_("Installation Complete"))
+    else:
+        frappe.msgprint(
+            _("Payroll Indonesia has been installed, but with configuration errors. Check error logs."),
+            indicator="red", 
+            title=_("Installation With Errors")
+        )
 
-    # Setup income tax slab
-    setup_income_tax_slab()
-
+def check_system_readiness():
+    """Check if system is ready for Payroll Indonesia installation"""
+    # Check if required DocTypes exist
+    required_core_doctypes = [
+        "Salary Component", "Salary Structure", "Salary Slip", 
+        "Employee", "Company", "Account"
+    ]
+    
+    missing_doctypes = []
+    for doctype in required_core_doctypes:
+        if not frappe.db.exists("DocType", doctype):
+            missing_doctypes.append(doctype)
+            
+    if missing_doctypes:
+        frappe.log_error(
+            f"Required DocTypes missing for Payroll Indonesia: {', '.join(missing_doctypes)}",
+            "Installation Prerequisites Error"
+        )
+        # Continue but log warning
+        frappe.logger().warning(f"Some required DocTypes missing: {', '.join(missing_doctypes)}")
+        
+    # Check if company exists
+    if not frappe.get_all("Company"):
+        frappe.log_error(
+            "No company found. Please create a company before installing Payroll Indonesia.",
+            "Installation Prerequisites Error"
+        )
+        frappe.logger().warning("No company found. Some setup steps may fail.")
+        
+    # Check if fiscal year is set
+    # fy = frappe.db.get_single_value('Global Defaults', 'current_fiscal_year')
+    # if not fy:
+    #     frappe.log_error(
+    #         "Current fiscal year not set. Please set up a fiscal year before installing Payroll Indonesia.",
+    #         "Installation Prerequisites Error" 
+    #     )
+    #     frappe.logger().warning("Current fiscal year not set. Some setup steps may fail.")
+        
 def create_accounts():
-    """Create required Accounts for Indonesian payroll management
-
+    """
+    Create required Accounts for Indonesian payroll management
+    with improved validation and error handling
+    
     This creates all necessary expense accounts for salary components
     and liability accounts for taxes and social insurance
     """
+    # Define accounts to create
     accounts = [
         # Expense Accounts
         {"account_name": "Beban Gaji Pokok", "parent_account": "Direct Expenses", "account_type": "Expense Account"},
@@ -61,78 +163,182 @@ def create_accounts():
     # Get default company
     company = frappe.defaults.get_defaults().get("company")
     if not company:
-        frappe.log_error("No default company found. Skipping account creation.")
-        return
+        companies = frappe.get_all("Company", fields=["name"])
+        if companies:
+            company = companies[0].name
+        else:
+            frappe.log_error("No company found. Cannot create accounts.", "Account Creation Error")
+            raise ValueError(_("No company found. Please create a company first."))
+        
+    # Get company abbreviation
+    company_abbr = frappe.db.get_value("Company", company, "abbr")
+    if not company_abbr:
+        frappe.log_error(f"Company {company} has no abbreviation", "Account Creation Error")
+        raise ValueError(_("Company {0} has no abbreviation defined.").format(company))
+    
+    # Track created accounts
+    created_accounts = []
+    failed_accounts = []
         
     # Loop through accounts list and create each account
     for account in accounts:
         try:
             # Get the full parent account name including company abbreviation
-            parent_account = frappe.db.get_value("Account", {
+            parent_account_filter = {
                 "account_name": account["parent_account"],
                 "company": company
-            }, "name")
+            }
             
+            # Try exact match first
+            parent_account = frappe.db.get_value("Account", parent_account_filter, "name")
+            
+            # If not found, try with company abbreviation
             if not parent_account:
-                frappe.log_error(f"Parent account {account['parent_account']} not found for company {company}")
+                parent_account = frappe.db.get_value(
+                    "Account", 
+                    {"name": f"{account['parent_account']} - {company_abbr}"}, 
+                    "name"
+                )
+                
+            # If still not found, try a broader search
+            if not parent_account:
+                possible_parents = frappe.get_all(
+                    "Account", 
+                    filters={"company": company, "is_group": 1, "account_type": account["account_type"]},
+                    fields=["name"]
+                )
+                
+                if possible_parents:
+                    parent_account = possible_parents[0].name
+                    frappe.logger().warning(
+                        f"Parent account {account['parent_account']} not found, using {parent_account} instead"
+                    )
+                
+            if not parent_account:
+                frappe.log_error(
+                    f"Parent account {account['parent_account']} not found for company {company}", 
+                    "Account Creation Error"
+                )
+                failed_accounts.append(account["account_name"])
                 continue
                 
             # Create the account name with company abbreviation
-            account_name = account["account_name"] + " - " + frappe.db.get_value("Company", company, "abbr")
+            account_name = f"{account['account_name']} - {company_abbr}"
             
-            # Create account if it doesn't exist
-            if not frappe.db.exists("Account", account_name):
-                doc = frappe.new_doc("Account")
-                doc.account_name = account["account_name"]
-                doc.parent_account = parent_account
-                doc.account_type = account["account_type"]
-                doc.company = company
-                doc.is_group = 0
-                doc.insert(ignore_permissions=True)
-                frappe.db.commit()
+            # Skip if account already exists
+            if frappe.db.exists("Account", account_name):
+                frappe.logger().info(f"Account {account_name} already exists, skipping creation")
+                continue
+                
+            # Create the account
+            doc = frappe.new_doc("Account")
+            doc.account_name = account["account_name"]
+            doc.parent_account = parent_account
+            doc.account_type = account["account_type"]
+            doc.company = company
+            doc.is_group = 0
+            doc.insert(ignore_permissions=True)
+            
+            created_accounts.append(account["account_name"])
+            
         except Exception as e:
-            frappe.log_error(f"Error creating account {account['account_name']}: {str(e)}")
+            frappe.log_error(f"Error creating account {account['account_name']}: {str(e)}", "Account Creation Error")
+            failed_accounts.append(account["account_name"])
+    
+    # Log summary
+    if created_accounts:
+        frappe.logger().info(f"Created {len(created_accounts)} accounts: {', '.join(created_accounts)}")
+        
+    if failed_accounts:
+        frappe.log_error(
+            f"Failed to create {len(failed_accounts)} accounts: {', '.join(failed_accounts)}",
+            "Account Creation Summary"
+        )
+        
+    if not created_accounts and not failed_accounts:
+        frappe.logger().info("No new accounts were created, all accounts already exist")
+        
+    return created_accounts
 
 def create_supplier_group():
-    """Create Government supplier group if not exists
-
+    """
+    Create Government supplier group if not exists
+    with improved error handling
+    
     This group is needed for government-related suppliers like tax office and BPJS
     """
-    if not frappe.db.exists("Supplier Group", "Government"):
-        try:
-            group = frappe.new_doc("Supplier Group")
-            group.supplier_group_name = "Government"
-            group.parent_supplier_group = "All Supplier Groups"
-            group.is_group = 0
-            group.insert()
-            frappe.db.commit()
-        except Exception as e:
-            frappe.log_error(f"Failed to create Government supplier group: {str(e)}")
+    try:
+        # Check if DocType exists
+        if not frappe.db.exists("DocType", "Supplier Group"):
+            frappe.log_error("Supplier Group DocType not found", "Supplier Group Creation Error")
+            return False
+            
+        # Check if group already exists
+        if frappe.db.exists("Supplier Group", "Government"):
+            frappe.logger().info("Government supplier group already exists")
+            return True
+            
+        # Check if parent group exists
+        if not frappe.db.exists("Supplier Group", "All Supplier Groups"):
+            frappe.log_error(
+                "Parent group 'All Supplier Groups' not found",
+                "Supplier Group Creation Error"
+            )
+            return False
+            
+        # Create the group
+        group = frappe.new_doc("Supplier Group")
+        group.supplier_group_name = "Government"
+        group.parent_supplier_group = "All Supplier Groups"
+        group.is_group = 0
+        group.insert()
+        
+        frappe.logger().info("Successfully created Government supplier group")
+        return True
+        
+    except Exception as e:
+        frappe.log_error(f"Failed to create Government supplier group: {str(e)}", "Supplier Group Creation Error")
+        return False
 
 def setup_pph21_defaults():
-    """Setup default PPh 21 configuration with TER method as default
+    """
+    Setup default PPh 21 configuration with TER method as default
+    with improved validation and error handling
 
     Sets up the income tax settings with complete PTKP values and tax brackets
-    according to Indonesian tax regulations (PMK terbaru)
+    according to Indonesian tax regulations
+    
+    Returns:
+        object: PPh 21 Settings document or None on error
     """
     try:
         # Check if PPh 21 Settings DocType exists
         if not frappe.db.exists("DocType", "PPh 21 Settings"):
-            frappe.log_error("DocType 'PPh 21 Settings' tidak ditemukan. Pastikan DocType sudah diinstall dengan benar.")
-            return
+            frappe.log_error("DocType 'PPh 21 Settings' tidak ditemukan. Pastikan DocType sudah diinstall dengan benar.", "PPh 21 Setup Error")
+            return None
         
         # Check if settings already exist
         settings = None
-        if frappe.db.exists("PPh 21 Settings", "PPh 21 Settings"):
+        settings_exist = frappe.db.exists("PPh 21 Settings", "PPh 21 Settings")
+        
+        if settings_exist:
             # Get existing settings
             settings = frappe.get_doc("PPh 21 Settings", "PPh 21 Settings")
-            frappe.msgprint("PPh 21 Settings already exists, updating configuration...")
+            frappe.logger().info("PPh 21 Settings already exists, updating configuration...")
             
-            # Clear existing PTKP and bracket tables to avoid duplicates
+            # Verify required child tables exist
+            if not hasattr(settings, 'ptkp_table') or not hasattr(settings, 'bracket_table'):
+                frappe.log_error(
+                    "PPh 21 Settings missing required child tables (ptkp_table or bracket_table)",
+                    "PPh 21 Setup Error"
+                )
+                return None
+                
+            # Clear existing tables to avoid duplicates
             settings.ptkp_table = []
             settings.bracket_table = []
         else:
-            # Create new settings
+            # Create new settings document
             settings = frappe.new_doc("PPh 21 Settings")
         
         # Set TER as default calculation method
@@ -158,20 +364,25 @@ def setup_pph21_defaults():
         
         # Add each PTKP value to the settings
         for status, amount in ptkp_values.items():
-            ptkp_row = {}
-            ptkp_row["status_pajak"] = status
-            ptkp_row["ptkp_amount"] = amount
+            description = ""
             
             # Add description for better readability
             if status.startswith("TK"):
                 tanggungan = status[2:]
-                ptkp_row["description"] = f"Tidak Kawin, {tanggungan} Tanggungan"
+                description = f"Tidak Kawin, {tanggungan} Tanggungan"
             elif status.startswith("K"):
                 tanggungan = status[1:]
-                ptkp_row["description"] = f"Kawin, {tanggungan} Tanggungan" 
+                description = f"Kawin, {tanggungan} Tanggungan" 
             elif status.startswith("HB"):
                 tanggungan = status[2:]
-                ptkp_row["description"] = f"Kawin (Penghasilan Istri Digabung), {tanggungan} Tanggungan"
+                description = f"Kawin (Penghasilan Istri Digabung), {tanggungan} Tanggungan"
+                
+            # Add to ptkp_table
+            ptkp_row = {
+                "status_pajak": status,
+                "ptkp_amount": flt(amount),
+                "description": description
+            }
                 
             settings.append("ptkp_table", ptkp_row)
         
@@ -186,43 +397,55 @@ def setup_pph21_defaults():
         
         # Add each tax bracket to the settings
         for bracket in brackets:
-            settings.append("bracket_table", bracket)
+            settings.append("bracket_table", {
+                "income_from": flt(bracket["income_from"]),
+                "income_to": flt(bracket["income_to"]),
+                "tax_rate": flt(bracket["tax_rate"])
+            })
         
         # Save settings
-        if settings.name == "PPh 21 Settings":
+        if settings_exist:
             settings.save(ignore_permissions=True)
+            frappe.logger().info("Updated existing PPh 21 Settings")
         else:
             settings.insert(ignore_permissions=True)
+            frappe.logger().info("Created new PPh 21 Settings")
             
-        frappe.db.commit()
-        frappe.msgprint("PPh 21 Settings configured successfully with TER method")
-        
+        frappe.msgprint(_("PPh 21 Settings configured successfully with TER method"))
         return settings
+        
     except Exception as e:
-        frappe.log_error(f"Error in setup_pph21_defaults: {str(e)}")
-        frappe.msgprint(f"Error setting up PPh 21: {str(e)}", indicator="red")
+        frappe.log_error(f"Error in setup_pph21_defaults: {str(e)}", "PPh 21 Setup Error")
+        frappe.msgprint(_("Error setting up PPh 21: {0}").format(str(e)), indicator="red")
+        return None
 
 def setup_pph21_ter():
-    """Setup default TER rates based on PMK-168/PMK.010/2023
+    """
+    Setup default TER rates based on PMK-168/PMK.010/2023
+    with improved validation and error handling
 
     TER (Tarif Efektif Rata-rata) adalah metode perhitungan alternatif 
     untuk PPh 21 yang menggunakan tarif yang sudah ditetapkan berdasarkan 
     rentang penghasilan dan status PTKP
+    
+    Returns:
+        bool: True if setup is successful, False otherwise
     """
     try:
         # Check if the doctype exists
         if not frappe.db.exists("DocType", "PPh 21 TER Table"):
-            frappe.log_error("PPh 21 TER Table DocType not found. Skipping TER setup.")
-            return
+            frappe.log_error("PPh 21 TER Table DocType not found. Skipping TER setup.", "TER Setup Error")
+            return False
         
         # Clear existing TER rates to avoid duplicates
-        frappe.db.sql("DELETE FROM `tabPPh 21 TER Table`")
-        frappe.db.commit()
+        try:
+            frappe.db.sql("DELETE FROM `tabPPh 21 TER Table`")
+            frappe.db.commit()
+        except Exception as e:
+            frappe.log_error(f"Error clearing existing TER rates: {str(e)}", "TER Setup Error")
+            # Continue anyway, we'll just have duplicates
         
-        # Create TER rates based on PMK-168/PMK.010/2023
-        # Data sesuai dengan Lampiran PMK-168/PMK.010/2023
-        
-        # Daftar semua status pajak
+        # Define status lists and TER rate structure
         status_list = ["TK0", "TK1", "TK2", "TK3", "K0", "K1", "K2", "K3", "HB0", "HB1", "HB2", "HB3"]
         
         # Dictionary berisi semua rate TER berdasarkan PMK-168/PMK.010/2023
@@ -408,198 +631,117 @@ def setup_pph21_ter():
             ]
         }
         
-        # Counter untuk jumlah record yang diinsert
+        # Counter for record count
         count = 0
+        error_count = 0
         
-        # Loop semua status pajak
+        # Loop through all tax statuses and create TER rates
         for status in status_list:
             if status in ter_rates:
-                # Loop semua rate bracket untuk status pajak ini
+                # Loop through all rate brackets for this tax status
                 for rate_data in ter_rates[status]:
-                    # Buat deskripsi yang informatif
-                    description = f"{status} "
-                    
-                    if rate_data["income_to"] == 0:
-                        description += f"di atas Rp{rate_data['income_from']:,.0f}"
-                    elif rate_data["income_from"] == 0:
-                        description += f"s.d Rp{rate_data['income_to']:,.0f}"
-                    else:
-                        description += f"Rp{rate_data['income_from']:,.0f} s.d Rp{rate_data['income_to']:,.0f}"
-                    
-                    # Buat record TER baru
-                    doc = frappe.get_doc({
-                        "doctype": "PPh 21 TER Table",
-                        "status_pajak": status,
-                        "income_from": rate_data["income_from"],
-                        "income_to": rate_data["income_to"],
-                        "rate": rate_data["rate"],
-                        "description": description
-                    })
-                    doc.insert(ignore_permissions=True)
-                    count += 1
+                    try:
+                        # Create an informative description
+                        description = f"{status} "
+                        
+                        if rate_data["income_to"] == 0:
+                            description += f"di atas Rp{rate_data['income_from']:,.0f}"
+                        elif rate_data["income_from"] == 0:
+                            description += f"s.d Rp{rate_data['income_to']:,.0f}"
+                        else:
+                            description += f"Rp{rate_data['income_from']:,.0f} s.d Rp{rate_data['income_to']:,.0f}"
+                        
+                        # Create a new TER record
+                        doc = frappe.get_doc({
+                            "doctype": "PPh 21 TER Table",
+                            "status_pajak": status,
+                            "income_from": flt(rate_data["income_from"]),
+                            "income_to": flt(rate_data["income_to"]),
+                            "rate": flt(rate_data["rate"]),
+                            "description": description
+                        })
+                        
+                        doc.insert(ignore_permissions=True)
+                        count += 1
+                    except Exception as e:
+                        error_count += 1
+                        frappe.log_error(
+                            f"Error creating TER rate for {status} ({description}): {str(e)}",
+                            "TER Rate Creation Error"
+                        )
+                        continue
+            else:
+                frappe.log_error(f"No TER rates defined for status {status}", "TER Setup Error")
         
+        # Commit changes
         frappe.db.commit()
-        frappe.msgprint(_(f"Berhasil membuat {count} rate TER untuk {len(status_list)} status pajak sesuai PMK-168/PMK.010/2023"))
+        
+        # Log results
+        if count > 0:
+            frappe.logger().info(f"Created {count} TER rates for {len(status_list)} tax statuses")
+            
+            if error_count > 0:
+                frappe.msgprint(
+                    _("Created {0} TER rates with {1} errors. See error log for details.").format(count, error_count),
+                    indicator="yellow"
+                )
+            else:
+                frappe.msgprint(
+                    _("Successfully created {0} TER rates for {1} tax statuses according to PMK-168/PMK.010/2023").format(
+                        count, len(status_list)
+                    ),
+                    indicator="green"
+                )
+            return True
+        else:
+            frappe.log_error("Failed to create any TER rates", "TER Setup Error")
+            frappe.msgprint(_("Failed to create TER rates. See error log for details."), indicator="red")
+            return False
             
     except Exception as e:
-        frappe.log_error(f"Error setting up PPh 21 TER rates: {str(e)}")
-        frappe.msgprint(f"Error saat mengatur rate TER: {str(e)}", indicator="red")
-    try:
-        # Check if the doctype exists
-        if not frappe.db.exists("DocType", "PPh 21 TER Table"):
-            frappe.log_error("PPh 21 TER Table DocType not found. Skipping TER setup.")
-            return
-        
-        # Clear existing TER rates to avoid duplicates
-        frappe.db.sql("DELETE FROM `tabPPh 21 TER Table`")
-        frappe.db.commit()
-        
-        # Create TER rates based on PMK-168/PMK.010/2023
-        # Data sesuai dengan PMK-168/PMK.010/2023
-        default_rates = [
-            # STATUS TK0 (Tidak Kawin 0 Tanggungan)
-            {"status_pajak": "TK0", "income_from": 0, "income_to": 4500000, "rate": 0, "description": "TK0 sampai Rp4.500.000"},
-            {"status_pajak": "TK0", "income_from": 4500000, "income_to": 5000000, "rate": 0.5, "description": "TK0 Rp4.500.000 s.d Rp5.000.000"},
-            {"status_pajak": "TK0", "income_from": 5000000, "income_to": 6000000, "rate": 1.0, "description": "TK0 Rp5.000.000 s.d Rp6.000.000"},
-            {"status_pajak": "TK0", "income_from": 6000000, "income_to": 7000000, "rate": 1.75, "description": "TK0 Rp6.000.000 s.d Rp7.000.000"},
-            {"status_pajak": "TK0", "income_from": 7000000, "income_to": 8000000, "rate": 2.5, "description": "TK0 Rp7.000.000 s.d Rp8.000.000"},
-            {"status_pajak": "TK0", "income_from": 8000000, "income_to": 9000000, "rate": 3.0, "description": "TK0 Rp8.000.000 s.d Rp9.000.000"},
-            {"status_pajak": "TK0", "income_from": 9000000, "income_to": 10000000, "rate": 3.5, "description": "TK0 Rp9.000.000 s.d Rp10.000.000"},
-            {"status_pajak": "TK0", "income_from": 10000000, "income_to": 15000000, "rate": 4.5, "description": "TK0 Rp10.000.000 s.d Rp15.000.000"},
-            {"status_pajak": "TK0", "income_from": 15000000, "income_to": 20000000, "rate": 5.5, "description": "TK0 Rp15.000.000 s.d Rp20.000.000"},
-            {"status_pajak": "TK0", "income_from": 20000000, "income_to": 500000000, "rate": 7.5, "description": "TK0 Rp20.000.000 s.d Rp500.000.000"},
-            {"status_pajak": "TK0", "income_from": 500000000, "income_to": 0, "rate": 10.0, "description": "TK0 di atas Rp500.000.000"},
-            
-            # STATUS K0 (Kawin 0 Tanggungan)
-            {"status_pajak": "K0", "income_from": 0, "income_to": 4875000, "rate": 0, "description": "K0 sampai Rp4.875.000"},
-            {"status_pajak": "K0", "income_from": 4875000, "income_to": 5500000, "rate": 0.5, "description": "K0 Rp4.875.000 s.d Rp5.500.000"},
-            {"status_pajak": "K0", "income_from": 5500000, "income_to": 6500000, "rate": 1.0, "description": "K0 Rp5.500.000 s.d Rp6.500.000"},
-            {"status_pajak": "K0", "income_from": 6500000, "income_to": 7500000, "rate": 1.75, "description": "K0 Rp6.500.000 s.d Rp7.500.000"},
-            {"status_pajak": "K0", "income_from": 7500000, "income_to": 8500000, "rate": 2.25, "description": "K0 Rp7.500.000 s.d Rp8.500.000"},
-            {"status_pajak": "K0", "income_from": 8500000, "income_to": 9500000, "rate": 2.75, "description": "K0 Rp8.500.000 s.d Rp9.500.000"},
-            {"status_pajak": "K0", "income_from": 9500000, "income_to": 11000000, "rate": 3.25, "description": "K0 Rp9.500.000 s.d Rp11.000.000"},
-            {"status_pajak": "K0", "income_from": 11000000, "income_to": 15500000, "rate": 4.0, "description": "K0 Rp11.000.000 s.d Rp15.500.000"},
-            {"status_pajak": "K0", "income_from": 15500000, "income_to": 21500000, "rate": 5.0, "description": "K0 Rp15.500.000 s.d Rp21.500.000"},
-            {"status_pajak": "K0", "income_from": 21500000, "income_to": 500000000, "rate": 7.0, "description": "K0 Rp21.500.000 s.d Rp500.000.000"},
-            {"status_pajak": "K0", "income_from": 500000000, "income_to": 0, "rate": 9.5, "description": "K0 di atas Rp500.000.000"},
-            
-            # STATUS K1 (Kawin 1 Tanggungan)
-            {"status_pajak": "K1", "income_from": 0, "income_to": 5250000, "rate": 0, "description": "K1 sampai Rp5.250.000"},
-            {"status_pajak": "K1", "income_from": 5250000, "income_to": 6000000, "rate": 0.5, "description": "K1 Rp5.250.000 s.d Rp6.000.000"},
-            {"status_pajak": "K1", "income_from": 6000000, "income_to": 7000000, "rate": 1.0, "description": "K1 Rp6.000.000 s.d Rp7.000.000"},
-            {"status_pajak": "K1", "income_from": 7000000, "income_to": 8000000, "rate": 1.5, "description": "K1 Rp7.000.000 s.d Rp8.000.000"},
-            {"status_pajak": "K1", "income_from": 8000000, "income_to": 9000000, "rate": 2.0, "description": "K1 Rp8.000.000 s.d Rp9.000.000"},
-            {"status_pajak": "K1", "income_from": 9000000, "income_to": 10000000, "rate": 2.5, "description": "K1 Rp9.000.000 s.d Rp10.000.000"},
-            {"status_pajak": "K1", "income_from": 10000000, "income_to": 12000000, "rate": 3.0, "description": "K1 Rp10.000.000 s.d Rp12.000.000"},
-            {"status_pajak": "K1", "income_from": 12000000, "income_to": 16000000, "rate": 3.75, "description": "K1 Rp12.000.000 s.d Rp16.000.000"},
-            {"status_pajak": "K1", "income_from": 16000000, "income_to": 23000000, "rate": 4.75, "description": "K1 Rp16.000.000 s.d Rp23.000.000"},
-            {"status_pajak": "K1", "income_from": 23000000, "income_to": 500000000, "rate": 6.75, "description": "K1 Rp23.000.000 s.d Rp500.000.000"},
-            {"status_pajak": "K1", "income_from": 500000000, "income_to": 0, "rate": 9.25, "description": "K1 di atas Rp500.000.000"},
-            
-            # STATUS K2 (Kawin 2 Tanggungan)
-            {"status_pajak": "K2", "income_from": 0, "income_to": 5625000, "rate": 0, "description": "K2 sampai Rp5.625.000"},
-            {"status_pajak": "K2", "income_from": 5625000, "income_to": 6500000, "rate": 0.5, "description": "K2 Rp5.625.000 s.d Rp6.500.000"},
-            {"status_pajak": "K2", "income_from": 6500000, "income_to": 7500000, "rate": 1.0, "description": "K2 Rp6.500.000 s.d Rp7.500.000"},
-            {"status_pajak": "K2", "income_from": 7500000, "income_to": 8500000, "rate": 1.5, "description": "K2 Rp7.500.000 s.d Rp8.500.000"},
-            {"status_pajak": "K2", "income_from": 8500000, "income_to": 9500000, "rate": 1.75, "description": "K2 Rp8.500.000 s.d Rp9.500.000"},
-            {"status_pajak": "K2", "income_from": 9500000, "income_to": 10500000, "rate": 2.25, "description": "K2 Rp9.500.000 s.d Rp10.500.000"},
-            {"status_pajak": "K2", "income_from": 10500000, "income_to": 13000000, "rate": 2.75, "description": "K2 Rp10.500.000 s.d Rp13.000.000"},
-            {"status_pajak": "K2", "income_from": 13000000, "income_to": 16500000, "rate": 3.5, "description": "K2 Rp13.000.000 s.d Rp16.500.000"},
-            {"status_pajak": "K2", "income_from": 16500000, "income_to": 24500000, "rate": 4.5, "description": "K2 Rp16.500.000 s.d Rp24.500.000"},
-            {"status_pajak": "K2", "income_from": 24500000, "income_to": 500000000, "rate": 6.5, "description": "K2 Rp24.500.000 s.d Rp500.000.000"},
-            {"status_pajak": "K2", "income_from": 500000000, "income_to": 0, "rate": 9.0, "description": "K2 di atas Rp500.000.000"},
-            
-            # STATUS K3 (Kawin 3 Tanggungan)
-            {"status_pajak": "K3", "income_from": 0, "income_to": 6000000, "rate": 0, "description": "K3 sampai Rp6.000.000"},
-            {"status_pajak": "K3", "income_from": 6000000, "income_to": 7000000, "rate": 0.5, "description": "K3 Rp6.000.000 s.d Rp7.000.000"},
-            {"status_pajak": "K3", "income_from": 7000000, "income_to": 8000000, "rate": 1.0, "description": "K3 Rp7.000.000 s.d Rp8.000.000"},
-            {"status_pajak": "K3", "income_from": 8000000, "income_to": 9000000, "rate": 1.25, "description": "K3 Rp8.000.000 s.d Rp9.000.000"},
-            {"status_pajak": "K3", "income_from": 9000000, "income_to": 10000000, "rate": 1.75, "description": "K3 Rp9.000.000 s.d Rp10.000.000"},
-            {"status_pajak": "K3", "income_from": 10000000, "income_to": 11000000, "rate": 2.0, "description": "K3 Rp10.000.000 s.d Rp11.000.000"},
-            {"status_pajak": "K3", "income_from": 11000000, "income_to": 14000000, "rate": 2.5, "description": "K3 Rp11.000.000 s.d Rp14.000.000"},
-            {"status_pajak": "K3", "income_from": 14000000, "income_to": 17000000, "rate": 3.25, "description": "K3 Rp14.000.000 s.d Rp17.000.000"},
-            {"status_pajak": "K3", "income_from": 17000000, "income_to": 26000000, "rate": 4.25, "description": "K3 Rp17.000.000 s.d Rp26.000.000"},
-            {"status_pajak": "K3", "income_from": 26000000, "income_to": 500000000, "rate": 6.25, "description": "K3 Rp26.000.000 s.d Rp500.000.000"},
-            {"status_pajak": "K3", "income_from": 500000000, "income_to": 0, "rate": 8.75, "description": "K3 di atas Rp500.000.000"},
-            
-            # STATUS TK1 (Tidak Kawin 1 Tanggungan)
-            {"status_pajak": "TK1", "income_from": 0, "income_to": 4875000, "rate": 0, "description": "TK1 sampai Rp4.875.000"},
-            {"status_pajak": "TK1", "income_from": 4875000, "income_to": 5500000, "rate": 0.5, "description": "TK1 Rp4.875.000 s.d Rp5.500.000"},
-            {"status_pajak": "TK1", "income_from": 5500000, "income_to": 6500000, "rate": 1.0, "description": "TK1 Rp5.500.000 s.d Rp6.500.000"},
-            {"status_pajak": "TK1", "income_from": 6500000, "income_to": 7500000, "rate": 1.75, "description": "TK1 Rp6.500.000 s.d Rp7.500.000"},
-            {"status_pajak": "TK1", "income_from": 7500000, "income_to": 8500000, "rate": 2.25, "description": "TK1 Rp7.500.000 s.d Rp8.500.000"},
-            {"status_pajak": "TK1", "income_from": 8500000, "income_to": 9500000, "rate": 2.75, "description": "TK1 Rp8.500.000 s.d Rp9.500.000"},
-            {"status_pajak": "TK1", "income_from": 9500000, "income_to": 11000000, "rate": 3.25, "description": "TK1 Rp9.500.000 s.d Rp11.000.000"},
-            {"status_pajak": "TK1", "income_from": 11000000, "income_to": 15500000, "rate": 4.0, "description": "TK1 Rp11.000.000 s.d Rp15.500.000"},
-            {"status_pajak": "TK1", "income_from": 15500000, "income_to": 21500000, "rate": 5.0, "description": "TK1 Rp15.500.000 s.d Rp21.500.000"},
-            {"status_pajak": "TK1", "income_from": 21500000, "income_to": 500000000, "rate": 7.0, "description": "TK1 Rp21.500.000 s.d Rp500.000.000"},
-            {"status_pajak": "TK1", "income_from": 500000000, "income_to": 0, "rate": 9.5, "description": "TK1 di atas Rp500.000.000"},
-            
-            # STATUS TK2 (Tidak Kawin 2 Tanggungan) - Tarif disamakan dengan K0 karena gabungan nilai PTKP sama
-            {"status_pajak": "TK2", "income_from": 0, "income_to": 5250000, "rate": 0, "description": "TK2 sampai Rp5.250.000"},
-            {"status_pajak": "TK2", "income_from": 5250000, "income_to": 6000000, "rate": 0.5, "description": "TK2 Rp5.250.000 s.d Rp6.000.000"},
-            {"status_pajak": "TK2", "income_from": 6000000, "income_to": 7000000, "rate": 1.0, "description": "TK2 Rp6.000.000 s.d Rp7.000.000"},
-            {"status_pajak": "TK2", "income_from": 7000000, "income_to": 8000000, "rate": 1.5, "description": "TK2 Rp7.000.000 s.d Rp8.000.000"},
-            {"status_pajak": "TK2", "income_from": 8000000, "income_to": 9000000, "rate": 2.0, "description": "TK2 Rp8.000.000 s.d Rp9.000.000"},
-            {"status_pajak": "TK2", "income_from": 9000000, "income_to": 10000000, "rate": 2.5, "description": "TK2 Rp9.000.000 s.d Rp10.000.000"},
-            {"status_pajak": "TK2", "income_from": 10000000, "income_to": 12000000, "rate": 3.0, "description": "TK2 Rp10.000.000 s.d Rp12.000.000"},
-            {"status_pajak": "TK2", "income_from": 12000000, "income_to": 16000000, "rate": 3.75, "description": "TK2 Rp12.000.000 s.d Rp16.000.000"},
-            {"status_pajak": "TK2", "income_from": 16000000, "income_to": 23000000, "rate": 4.75, "description": "TK2 Rp16.000.000 s.d Rp23.000.000"},
-            {"status_pajak": "TK2", "income_from": 23000000, "income_to": 500000000, "rate": 6.75, "description": "TK2 Rp23.000.000 s.d Rp500.000.000"},
-            {"status_pajak": "TK2", "income_from": 500000000, "income_to": 0, "rate": 9.25, "description": "TK2 di atas Rp500.000.000"},
-            
-            # STATUS TK3 (Tidak Kawin 3 Tanggungan) - Tarif disamakan dengan K1 karena gabungan nilai PTKP sama
-            {"status_pajak": "TK3", "income_from": 0, "income_to": 5625000, "rate": 0, "description": "TK3 sampai Rp5.625.000"},
-            {"status_pajak": "TK3", "income_from": 5625000, "income_to": 6500000, "rate": 0.5, "description": "TK3 Rp5.625.000 s.d Rp6.500.000"},
-            {"status_pajak": "TK3", "income_from": 6500000, "income_to": 7500000, "rate": 1.0, "description": "TK3 Rp6.500.000 s.d Rp7.500.000"},
-            {"status_pajak": "TK3", "income_from": 7500000, "income_to": 8500000, "rate": 1.5, "description": "TK3 Rp7.500.000 s.d Rp8.500.000"},
-            {"status_pajak": "TK3", "income_from": 8500000, "income_to": 9500000, "rate": 1.75, "description": "TK3 Rp8.500.000 s.d Rp9.500.000"},
-            {"status_pajak": "TK3", "income_from": 9500000, "income_to": 10500000, "rate": 2.25, "description": "TK3 Rp9.500.000 s.d Rp10.500.000"},
-            {"status_pajak": "TK3", "income_from": 10500000, "income_to": 13000000, "rate": 2.75, "description": "TK3 Rp10.500.000 s.d Rp13.000.000"},
-            {"status_pajak": "TK3", "income_from": 13000000, "income_to": 16500000, "rate": 3.5, "description": "TK3 Rp13.000.000 s.d Rp16.500.000"},
-            {"status_pajak": "TK3", "income_from": 16500000, "income_to": 24500000, "rate": 4.5, "description": "TK3 Rp16.500.000 s.d Rp24.500.000"},
-            {"status_pajak": "TK3", "income_from": 24500000, "income_to": 500000000, "rate": 6.5, "description": "TK3 Rp24.500.000 s.d Rp500.000.000"},
-            {"status_pajak": "TK3", "income_from": 500000000, "income_to": 0, "rate": 9.0, "description": "TK3 di atas Rp500.000.000"}
-        ]
-        
-        # Create TER rate records
-        for rate_data in default_rates:
-            doc = frappe.get_doc({
-                "doctype": "PPh 21 TER Table",
-                "status_pajak": rate_data["status_pajak"],
-                "income_from": rate_data["income_from"],
-                "income_to": rate_data["income_to"],
-                "rate": rate_data["rate"],
-                "description": rate_data["description"]
-            })
-            doc.insert(ignore_permissions=True)
-        
-        frappe.db.commit()
-        frappe.msgprint(_(f"Berhasil mengatur {len(default_rates)} rate TER sesuai PMK-168/PMK.010/2023"))
-            
-    except Exception as e:
-        frappe.log_error(f"Error setting up PPh 21 TER rates: {str(e)}")
-        frappe.msgprint(f"Error saat mengatur rate TER: {str(e)}", indicator="red")
+        frappe.log_error(f"Error setting up PPh 21 TER rates: {str(e)}", "TER Setup Error")
+        frappe.msgprint(_("Error setting up TER rates: {0}").format(str(e)), indicator="red")
+        return False
 
 def setup_income_tax_slab():
-    """Create default Income Tax Slab for Indonesia"""
+    """
+    Create default Income Tax Slab for Indonesia
+    with improved validation and error handling
     
-    # Check if already exists
-    if frappe.db.exists("Income Tax Slab", {"currency": "IDR", "is_default": 1}):
-        frappe.msgprint(_("Default Income Tax Slab for Indonesia already exists"))
-        return
-        
-    # Create tax slab
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
+        # Validate Income Tax Slab DocType exists
+        if not frappe.db.exists("DocType", "Income Tax Slab"):
+            frappe.log_error("Income Tax Slab DocType not found", "Tax Slab Setup Error")
+            return False
+        
+        # Check if default slab already exists
+        if frappe.db.exists("Income Tax Slab", {"currency": "IDR", "is_default": 1}):
+            frappe.logger().info("Default Income Tax Slab for Indonesia already exists")
+            return True
+        
+        # Get company for the tax slab
+        company = frappe.db.get_default("company")
+        if not company:
+            companies = frappe.get_all("Company")
+            if companies:
+                company = companies[0].name
+            else:
+                frappe.log_error("No company found for Income Tax Slab", "Tax Slab Setup Error")
+                return False
+        
+        # Create the tax slab
         tax_slab = frappe.new_doc("Income Tax Slab")
         tax_slab.name = "Indonesia Tax Slab - IDR"
         tax_slab.effective_from = getdate("2023-01-01")
-        tax_slab.company = frappe.db.get_default("company")
+        tax_slab.company = company
         tax_slab.currency = "IDR"
         tax_slab.is_default = 1
         tax_slab.disabled = 0
         
-        # Add slabs
+        # Add tax slabs based on current regulations
         tax_slabs = [
             {"from_amount": 0, "to_amount": 60000000, "percent_deduction": 5},
             {"from_amount": 60000000, "to_amount": 250000000, "percent_deduction": 15},
@@ -608,13 +750,23 @@ def setup_income_tax_slab():
             {"from_amount": 5000000000, "to_amount": 0, "percent_deduction": 35}
         ]
         
+        # Add each slab to the tax slab document
         for slab in tax_slabs:
-            tax_slab.append("slabs", slab)
+            tax_slab.append("slabs", {
+                "from_amount": flt(slab["from_amount"]),
+                "to_amount": flt(slab["to_amount"]),
+                "percent_deduction": flt(slab["percent_deduction"])
+            })
             
+        # Insert the document
         tax_slab.insert(ignore_permissions=True)
         frappe.db.commit()
+        
+        frappe.logger().info("Created default Income Tax Slab for Indonesia")
         frappe.msgprint(_("Created default Income Tax Slab for Indonesia"))
+        return True
         
     except Exception as e:
-        frappe.log_error(f"Error creating Income Tax Slab: {str(e)}")
-        frappe.msgprint(f"Error creating Income Tax Slab: {str(e)}", indicator="red")
+        frappe.log_error(f"Error creating Income Tax Slab: {str(e)}", "Tax Slab Setup Error")
+        frappe.msgprint(_("Error creating Income Tax Slab: {0}").format(str(e)), indicator="red")
+        return False
