@@ -6,8 +6,8 @@
 import frappe
 from frappe import _
 from frappe.utils import flt, cint, getdate
-from erpnext.payroll.doctype.salary_slip.salary_slip import SalarySlip
-from erpnext.payroll.doctype.salary_slip.salary_slip import make_salary_slip_from_timesheet as original_make_slip
+from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
+from hrms.payroll.doctype.salary_slip.salary_slip import make_salary_slip_from_timesheet as original_make_slip
 
 # Import fungsi dari file modul pendukung dengan penanganan error yang lebih baik
 try:
@@ -42,7 +42,7 @@ except ImportError:
 class IndonesiaPayrollSalarySlip(SalarySlip):
     """
     Enhanced Salary Slip for Indonesian Payroll
-    Extends erpnext.payroll.doctype.salary_slip.salary_slip.SalarySlip
+    Extends hrms.payroll.doctype.salary_slip.salary_slip.SalarySlip
     
     Implementasi ini menambahkan fitur-fitur khusus untuk payroll Indonesia:
     - Perhitungan BPJS (Kesehatan, JHT, JP, JKK, JKM)

@@ -227,7 +227,7 @@ after_migrate = [
 ]
 
 override_whitelisted_methods = {
-    "erpnext.payroll.doctype.salary_slip.salary_slip.make_salary_slip_from_timesheet": 
+    "hrms.payroll.doctype.salary_slip.salary_slip.make_salary_slip_from_timesheet": 
     "payroll_indonesia.override.salary_slip.make_salary_slip_from_timesheet"
 }
 

@@ -6,7 +6,7 @@
 import frappe
 from frappe import _
 from frappe.utils import flt, cint, getdate
-from erpnext.payroll.doctype.salary_slip.salary_slip import SalarySlip
+from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
 
 class IndonesiaPayrollSalarySlip(SalarySlip):
     # Pindahkan definisi kelas dari salary_slip.py ke sini
