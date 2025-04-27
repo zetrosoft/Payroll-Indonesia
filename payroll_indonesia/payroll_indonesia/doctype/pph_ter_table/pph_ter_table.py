@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-23 11:57:10 by dannyaudian
+# Last modified: 2025-04-27 07:16:40 by dannyaudian
 
 from __future__ import unicode_literals
 import frappe
@@ -23,6 +23,7 @@ class PPhTERTable(Document):
         self.validate_details()
         self.calculate_total()
         self.validate_total()
+        self.sync_month_period()
     
     def validate_company(self):
         """Validate company and its default accounts"""
@@ -53,6 +54,26 @@ class PPhTERTable(Document):
         """Validate total amount is greater than 0"""
         if not self.total or self.total <= 0:
             frappe.throw(_("Total amount must be greater than 0"))
+    
+    def sync_month_period(self):
+        """Sync month and period fields, update month_year_title"""
+        period_to_month = {
+            "January": 1, "February": 2, "March": 3, "April": 4,
+            "May": 5, "June": 6, "July": 7, "August": 8,
+            "September": 9, "October": 10, "November": 11, "December": 12
+        }
+        
+        month_to_period = {v: k for k, v in period_to_month.items()}
+        
+        # Sync fields
+        if self.period and (not self.month or self.month <= 0 or self.month > 12):
+            self.month = period_to_month.get(self.period, 0)
+        elif self.month and not self.period and 1 <= self.month <= 12:
+            self.period = month_to_period.get(self.month, "")
+        
+        # Update title
+        if self.period and self.year:
+            self.month_year_title = f"{self.period} {self.year}"
     
     def on_submit(self):
         """Set status to Submitted"""

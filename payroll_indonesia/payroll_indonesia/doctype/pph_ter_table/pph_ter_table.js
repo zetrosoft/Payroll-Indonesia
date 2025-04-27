@@ -142,6 +142,7 @@ frappe.ui.form.on('PPh TER Table', {
             
             frm.set_value('period', month_names[current_month_index]);
             frm.set_value('year', current_year);
+            frm.set_value('month', current_month_index + 1); // Add month as number (1-12)
         }
         
         // Set month year title
@@ -151,6 +152,16 @@ frappe.ui.form.on('PPh TER Table', {
     },
     
     period: function(frm) {
+        // Set month based on period
+        if(frm.doc.period) {
+            let month_names = ['January', 'February', 'March', 'April', 'May', 'June', 
+                             'July', 'August', 'September', 'October', 'November', 'December'];
+            let month_index = month_names.indexOf(frm.doc.period);
+            if(month_index !== -1) {
+                frm.set_value('month', month_index + 1);
+            }
+        }
+        
         if(frm.doc.period && frm.doc.year) {
             frm.set_value('month_year_title', frm.doc.period + ' ' + frm.doc.year);
             
@@ -173,6 +184,15 @@ frappe.ui.form.on('PPh TER Table', {
                     }
                 });
             }
+        }
+    },
+    
+    month: function(frm) {
+        // Set period based on month
+        if(frm.doc.month && frm.doc.month >= 1 && frm.doc.month <= 12) {
+            let month_names = ['January', 'February', 'March', 'April', 'May', 'June', 
+                             'July', 'August', 'September', 'October', 'November', 'December'];
+            frm.set_value('period', month_names[frm.doc.month - 1]);
         }
     },
     
