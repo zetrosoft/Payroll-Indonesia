@@ -110,6 +110,28 @@
             "label": "Payment Entry",
             "options": "Payment Entry",
             "read_only": 1
+        },
+        {
+            "fieldname": "month",
+            "fieldtype": "Int",
+            "label": "Month",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "reqd": 1
+        },
+        {
+            "fieldname": "year",
+            "fieldtype": "Int",
+            "label": "Year",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "reqd": 1
+        },
+        {
+            "fieldname": "month_year_title",
+            "fieldtype": "Data",
+            "label": "Title",
+            "read_only": 1
         }
     ],
     "is_submittable": 1,

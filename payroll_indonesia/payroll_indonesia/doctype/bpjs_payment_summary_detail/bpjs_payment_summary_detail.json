@@ -55,6 +55,42 @@
             "label": "BPJS JP"
         },
         {
+            "fieldname": "salary_slip",
+            "fieldtype": "Link", 
+            "label": "Salary Slip", 
+            "options": "Salary Slip"
+        },
+        {
+            "fieldname": "jht_employee",
+            "fieldtype": "Currency",
+            "label": "JHT Employee"
+        },
+        {
+            "fieldname": "jp_employee",
+            "fieldtype": "Currency",
+            "label": "JP Employee"
+        },
+        {
+            "fieldname": "kesehatan_employee",
+            "fieldtype": "Currency",
+            "label": "Kesehatan Employee"
+        },
+        {
+            "fieldname": "jht_employer",
+            "fieldtype": "Currency",
+            "label": "JHT Employer" 
+        },
+        {
+            "fieldname": "jp_employer",
+            "fieldtype": "Currency",
+            "label": "JP Employer"
+        },
+        {
+            "fieldname": "kesehatan_employer",
+            "fieldtype": "Currency",
+            "label": "Kesehatan Employer"
+        },
+        {
             "fieldname": "section_break_addtl",
             "fieldtype": "Section Break",
             "label": "Employer Contributions"
