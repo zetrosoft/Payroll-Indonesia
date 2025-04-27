@@ -208,19 +208,12 @@ on_session_creation = [
 
 rest_export = {
     "Employee": {
-        "get": "payroll_indonesia.api.get_employee",
-        "post": "payroll_indonesia.api.create_employee"
+        "get": "payroll_indonesia.api.get_employee"
     },
     "Salary Slip": {
         "get": "payroll_indonesia.api.get_salary_slip",
-        "post": "payroll_indonesia.api.create_salary_slip"
-    },
-    "BPJS Payment Summary": {
-        "get": "payroll_indonesia.api.get_bpjs_summary",
-        "post": "payroll_indonesia.api.create_bpjs_summary"
-    },
-    "Employee Tax Summary": {
-        "get": "payroll_indonesia.api.get_tax_summary"
+        "list": "payroll_indonesia.api.get_recent_salary_slips",
+        "employee": "payroll_indonesia.api.get_salary_slips_by_employee"
     }
 }
 
