@@ -66,6 +66,10 @@ frappe.ui.form.on('BPJS Payment Summary', {
     },
     
     validate: function(frm) {
+        if (!frm.doc.month || !frm.doc.year) {
+            frappe.msgprint(__('Month and Year are mandatory fields.'));
+            frappe.validated = false;
+        }
         calculate_total(frm);
     }
 });
@@ -134,8 +138,7 @@ function calculate_total(frm) {
     
     // Add employee details total if applicable
     if(frm.doc.employee_details && frm.meta.fields.find(field => field.fieldname === "employee_details")) {
-        // Can be commented out if not needed
-        calculate_employee_totals(frm);
+        total += calculate_employee_totals(frm);
     }
     
     frm.set_value('total', total);
@@ -147,55 +150,13 @@ function calculate_total(frm) {
  * @param {Object} frm - The form object
  */
 function calculate_employee_totals(frm) {
+    let total = 0;
+    
     if(frm.doc.employee_details && frm.meta.fields.find(field => field.fieldname === "employee_details")) {
-        // Calculate component subtotals
-        let total_kesehatan = 0;
-        let total_jht = 0;
-        let total_jp = 0;
-        let total_jkk = 0;
-        let total_jkm = 0;
-        
         frm.doc.employee_details.forEach(function(d) {
-            total_kesehatan += flt(d.bpjs_kesehatan);
-            total_jht += flt(d.bpjs_jht);
-            total_jp += flt(d.bpjs_jp);
-            total_jkk += flt(d.bpjs_jkk);
-            total_jkm += flt(d.bpjs_jkm);
+            total += flt(d.amount);
         });
-        
-        // Optional: Update component rows if they exist
-        if(frm.doc.komponen) {
-            // Helper function to find or create component row
-            function update_component_row(component_name, amount) {
-                let found = false;
-                for(let i=0; i<frm.doc.komponen.length; i++) {
-                    if(frm.doc.komponen[i].component === component_name) {
-                        frappe.model.set_value(
-                            'BPJS Payment Component', 
-                            frm.doc.komponen[i].name, 
-                            'amount', 
-                            amount
-                        );
-                        found = true;
-                        break;
-                    }
-                }
-                
-                if(!found && amount > 0) {
-                    let d = frm.add_child('komponen');
-                    d.component = component_name;
-                    d.description = component_name + " Monthly Payment";
-                    d.amount = amount;
-                    frm.refresh_field('komponen');
-                }
-            }
-            
-            // Update component rows
-            update_component_row("BPJS Kesehatan", total_kesehatan);
-            update_component_row("BPJS JHT", total_jht);
-            update_component_row("BPJS JP", total_jp);
-            update_component_row("BPJS JKK", total_jkk);
-            update_component_row("BPJS JKM", total_jkm);
-        }
     }
+    
+    return total;
 }

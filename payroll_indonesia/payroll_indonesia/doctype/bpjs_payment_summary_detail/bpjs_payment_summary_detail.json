@@ -7,13 +7,17 @@
     "field_order": [
         "employee",
         "employee_name",
+        "salary_slip",
         "section_break_emplv",
-        "bpjs_kesehatan",
-        "bpjs_jht",
-        "bpjs_jp",
+        "kesehatan_employee",
+        "jht_employee",
+        "jp_employee",
         "section_break_addtl",
-        "bpjs_jkk",
-        "bpjs_jkm",
+        "kesehatan_employer",
+        "jht_employer",
+        "jp_employer",
+        "jkk",
+        "jkm",
         "section_break_total",
         "amount"
     ],
@@ -35,60 +39,32 @@
             "read_only": 1
         },
         {
-            "fieldname": "section_break_emplv",
-            "fieldtype": "Section Break",
-            "label": "Employee Contributions"
-        },
-        {
-            "fieldname": "bpjs_kesehatan",
-            "fieldtype": "Currency",
-            "label": "BPJS Kesehatan"
-        },
-        {
-            "fieldname": "bpjs_jht",
-            "fieldtype": "Currency",
-            "label": "BPJS JHT"
-        },
-        {
-            "fieldname": "bpjs_jp",
-            "fieldtype": "Currency",
-            "label": "BPJS JP"
-        },
-        {
             "fieldname": "salary_slip",
             "fieldtype": "Link", 
             "label": "Salary Slip", 
             "options": "Salary Slip"
         },
         {
-            "fieldname": "jht_employee",
-            "fieldtype": "Currency",
-            "label": "JHT Employee"
-        },
-        {
-            "fieldname": "jp_employee",
-            "fieldtype": "Currency",
-            "label": "JP Employee"
+            "fieldname": "section_break_emplv",
+            "fieldtype": "Section Break",
+            "label": "Employee Contributions"
         },
         {
             "fieldname": "kesehatan_employee",
             "fieldtype": "Currency",
-            "label": "Kesehatan Employee"
+            "label": "BPJS Kesehatan Employee",
+            "in_list_view": 1
         },
         {
-            "fieldname": "jht_employer",
+            "fieldname": "jht_employee",
             "fieldtype": "Currency",
-            "label": "JHT Employer" 
+            "label": "BPJS JHT Employee",
+            "in_list_view": 1
         },
         {
-            "fieldname": "jp_employer",
+            "fieldname": "jp_employee",
             "fieldtype": "Currency",
-            "label": "JP Employer"
-        },
-        {
-            "fieldname": "kesehatan_employer",
-            "fieldtype": "Currency",
-            "label": "Kesehatan Employer"
+            "label": "BPJS JP Employee"
         },
         {
             "fieldname": "section_break_addtl",
@@ -96,12 +72,27 @@
             "label": "Employer Contributions"
         },
         {
-            "fieldname": "bpjs_jkk",
+            "fieldname": "kesehatan_employer",
+            "fieldtype": "Currency",
+            "label": "BPJS Kesehatan Employer"
+        },
+        {
+            "fieldname": "jht_employer",
+            "fieldtype": "Currency",
+            "label": "BPJS JHT Employer" 
+        },
+        {
+            "fieldname": "jp_employer",
+            "fieldtype": "Currency",
+            "label": "BPJS JP Employer"
+        },
+        {
+            "fieldname": "jkk",
             "fieldtype": "Currency",
             "label": "BPJS JKK"
         },
         {
-            "fieldname": "bpjs_jkm",
+            "fieldname": "jkm",
             "fieldtype": "Currency",
             "label": "BPJS JKM"
         },
@@ -119,8 +110,8 @@
         }
     ],
     "istable": 1,
-    "modified": "2025-04-23 11:46:47",
-    "modified_by": "Administrator",
+    "modified": "2025-04-27 06:42:22",
+    "modified_by": "dannyaudian",
     "module": "Payroll Indonesia",
     "name": "BPJS Payment Summary Detail",
     "owner": "Administrator",

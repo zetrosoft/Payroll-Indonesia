@@ -39,12 +39,14 @@
         {
             "fieldname": "reference_number",
             "fieldtype": "Data",
-            "label": "Reference Number"
+            "label": "Reference Number",
+            "description": "Optional reference number for reconciliation"
         },
         {
             "fieldname": "description",
             "fieldtype": "Small Text",
-            "label": "Description"
+            "label": "Description",
+            "description": "Additional notes or context for the payment"
         },
         {
             "fieldname": "amount",
@@ -52,10 +54,17 @@
             "in_list_view": 1,
             "label": "Amount",
             "reqd": 1
+        },
+        {
+            "fieldname": "payment_date",
+            "fieldtype": "Date",
+            "label": "Payment Date",
+            "description": "The date when the payment was made",
+            "reqd": 0
         }
     ],
     "istable": 1,
-    "modified": "2025-04-23 11:46:47",
+    "modified": "2025-04-27 06:48:00",
     "modified_by": "Administrator",
     "module": "Payroll Indonesia",
     "name": "BPJS Payment Account Detail",

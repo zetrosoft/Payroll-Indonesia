@@ -19,6 +19,7 @@ def get_formatted_currency(value, company=None):
 class BPJSPaymentSummary(Document):
     def validate(self):
         self.validate_company()
+        self.validate_month_year()
         self.validate_components()
         self.calculate_total()
         self.validate_total()
@@ -35,6 +36,15 @@ class BPJSPaymentSummary(Document):
             frappe.throw(_("Default Bank Account not set for Company {0}").format(self.company))
         if not company_doc.default_payable_account:
             frappe.throw(_("Default Payable Account not set for Company {0}").format(self.company))
+    
+    def validate_month_year(self):
+        """Ensure month and year are valid"""
+        if not self.month or not self.year:
+            frappe.throw(_("Both Month and Year are mandatory"))
+        if self.month < 1 or self.month > 12:
+            frappe.throw(_("Month must be between 1 and 12"))
+        if self.year < 2000:
+            frappe.throw(_("Year must be greater than or equal to 2000"))
     
     def validate_components(self):
         """Validate BPJS components"""
@@ -123,47 +133,3 @@ class BPJSPaymentSummary(Document):
         except Exception as e:
             frappe.msgprint(_("Error creating Payment Entry"))
             frappe.throw(str(e))
-
-    def populate_employee_details(self): 
-        if not self.employee_details:
-            # Get employees that participate in BPJS
-            employees = frappe.get_all(
-                "Employee",
-                filters={"status": "Active", "ikut_bpjs_ketenagakerjaan": 1},
-                fields=["name", "employee_name"]
-            )
-        
-        # Calculate BPJS components for each employee
-        for emp in employees:
-            employee_doc = frappe.get_doc("Employee", emp.name)
-            gaji_pokok = frappe.db.get_value(
-                "Salary Structure Assignment",
-                {"employee": emp.name, "docstatus": 1},
-                "base"
-            ) or 0
-            
-            # Skip if no salary
-            if not gaji_pokok:
-                continue
-                
-            # Calculate BPJS components
-            from payroll_indonesia.payroll_indonesia.utils import calculate_bpjs_contributions
-            bpjs_data = calculate_bpjs_contributions(gaji_pokok)
-            
-            # Add row to child table
-            self.append("employee_details", {
-                "employee": emp.name,
-                "employee_name": emp.employee_name,
-                "bpjs_kesehatan": bpjs_data["kesehatan"]["karyawan"] + bpjs_data["kesehatan"]["perusahaan"],
-                "bpjs_jht": bpjs_data["ketenagakerjaan"]["jht"]["karyawan"] + bpjs_data["ketenagakerjaan"]["jht"]["perusahaan"],
-                "bpjs_jp": bpjs_data["ketenagakerjaan"]["jp"]["karyawan"] + bpjs_data["ketenagakerjaan"]["jp"]["perusahaan"],
-                "bpjs_jkk": bpjs_data["ketenagakerjaan"]["jkk"]["perusahaan"],
-                "bpjs_jkm": bpjs_data["ketenagakerjaan"]["jkm"]["perusahaan"],
-                "amount": (
-                    bpjs_data["kesehatan"]["karyawan"] + bpjs_data["kesehatan"]["perusahaan"] +
-                    bpjs_data["ketenagakerjaan"]["jht"]["karyawan"] + bpjs_data["ketenagakerjaan"]["jht"]["perusahaan"] +
-                    bpjs_data["ketenagakerjaan"]["jp"]["karyawan"] + bpjs_data["ketenagakerjaan"]["jp"]["perusahaan"] +
-                    bpjs_data["ketenagakerjaan"]["jkk"]["perusahaan"] + 
-                    bpjs_data["ketenagakerjaan"]["jkm"]["perusahaan"]
-                )
-            })
