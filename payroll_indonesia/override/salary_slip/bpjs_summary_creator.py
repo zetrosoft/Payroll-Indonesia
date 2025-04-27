@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 08:43:59 by dannyaudianlanjut
+# Last modified: 2025-04-27 09:05:21 by dannyaudian
 
 import frappe
 from frappe import _
@@ -134,6 +134,7 @@ def create_new_bpjs_summary(doc, year, month, employee_components, employer_comp
         bpjs_summary_doc.company = doc.company
         bpjs_summary_doc.year = year
         bpjs_summary_doc.month = month
+        bpjs_summary_doc.posting_date = getdate()
         
         # Set month name if field exists
         if hasattr(bpjs_summary_doc, 'month_name'):
@@ -153,7 +154,16 @@ def create_new_bpjs_summary(doc, year, month, employee_components, employer_comp
         # Create first employee detail
         add_employee_to_bpjs_summary(bpjs_summary_doc, doc, employee_components, employer_components)
     
+        # Add BPJS Payment Components for detailed tracking
+        create_bpjs_payment_summary_components(bpjs_summary_doc, employee_components, employer_components)
+    
         bpjs_summary_doc.insert(ignore_permissions=True)
+        
+        # Trigger the set_account_details method manually
+        # This will populate account_details from BPJS Settings
+        bpjs_summary_doc.set_account_details()
+        bpjs_summary_doc.save(ignore_permissions=True)
+        
     except Exception as e:
         frappe.throw(_("Error creating BPJS Payment Summary: {0}").format(str(e)))
 
@@ -179,8 +189,17 @@ def update_existing_bpjs_summary(doc, bpjs_summary_name, employee_components, em
             # Add new employee
             add_employee_to_bpjs_summary(bpjs_summary_doc, doc, employee_components, employer_components)
     
+        # Update komponen table
+        update_bpjs_payment_summary_components(bpjs_summary_doc)
+    
         # Save changes
         bpjs_summary_doc.save(ignore_permissions=True)
+        
+        # Trigger the set_account_details method manually
+        # This will update account_details from BPJS Settings
+        bpjs_summary_doc.set_account_details()
+        bpjs_summary_doc.save(ignore_permissions=True)
+        
     except Exception as e:
         frappe.throw(_("Error updating BPJS Payment Summary: {0}").format(str(e)))
 
@@ -211,6 +230,110 @@ def update_bpjs_summary_detail(detail, salary_slip, employee_components, employe
     detail.jkk = employer_components["jkk"]
     detail.jkm = employer_components["jkm"]
     detail.kesehatan_employer = employer_components["kesehatan_employer"]
+
+def create_bpjs_payment_summary_components(bpjs_summary_doc, employee_components, employer_components):
+    """Create BPJS Payment Components for the payment summary"""
+    # Clear existing components if any
+    bpjs_summary_doc.komponen = []
+    
+    # Add JHT component (employee + employer)
+    jht_total = employee_components["jht_employee"] + employer_components["jht_employer"]
+    if jht_total > 0:
+        bpjs_summary_doc.append("komponen", {
+            "component": "BPJS JHT",
+            "description": "JHT Contribution (Employee + Employer)",
+            "amount": jht_total
+        })
+    
+    # Add JP component (employee + employer)
+    jp_total = employee_components["jp_employee"] + employer_components["jp_employer"]
+    if jp_total > 0:
+        bpjs_summary_doc.append("komponen", {
+            "component": "BPJS JP",
+            "description": "JP Contribution (Employee + Employer)",
+            "amount": jp_total
+        })
+    
+    # Add JKK component
+    if employer_components["jkk"] > 0:
+        bpjs_summary_doc.append("komponen", {
+            "component": "BPJS JKK",
+            "description": "JKK Contribution (Employer)",
+            "amount": employer_components["jkk"]
+        })
+    
+    # Add JKM component
+    if employer_components["jkm"] > 0:
+        bpjs_summary_doc.append("komponen", {
+            "component": "BPJS JKM",
+            "description": "JKM Contribution (Employer)",
+            "amount": employer_components["jkm"]
+        })
+    
+    # Add Kesehatan component (employee + employer)
+    kesehatan_total = employee_components["kesehatan_employee"] + employer_components["kesehatan_employer"]
+    if kesehatan_total > 0:
+        bpjs_summary_doc.append("komponen", {
+            "component": "BPJS Kesehatan",
+            "description": "Kesehatan Contribution (Employee + Employer)",
+            "amount": kesehatan_total
+        })
+
+def update_bpjs_payment_summary_components(bpjs_summary_doc):
+    """Update BPJS Payment Components based on employee details"""
+    # Aggregates for each component
+    jht_total = 0
+    jp_total = 0
+    jkk_total = 0
+    jkm_total = 0
+    kesehatan_total = 0
+    
+    # Calculate totals from employee_details
+    for detail in bpjs_summary_doc.employee_details:
+        jht_total += flt(detail.jht_employee) + flt(detail.jht_employer)
+        jp_total += flt(detail.jp_employee) + flt(detail.jp_employer)
+        jkk_total += flt(detail.jkk)
+        jkm_total += flt(detail.jkm)
+        kesehatan_total += flt(detail.kesehatan_employee) + flt(detail.kesehatan_employer)
+    
+    # Clear existing components
+    bpjs_summary_doc.komponen = []
+    
+    # Create new components with updated totals
+    if jht_total > 0:
+        bpjs_summary_doc.append("komponen", {
+            "component": "BPJS JHT",
+            "description": "JHT Contribution (Employee + Employer)",
+            "amount": jht_total
+        })
+    
+    if jp_total > 0:
+        bpjs_summary_doc.append("komponen", {
+            "component": "BPJS JP",
+            "description": "JP Contribution (Employee + Employer)",
+            "amount": jp_total
+        })
+    
+    if jkk_total > 0:
+        bpjs_summary_doc.append("komponen", {
+            "component": "BPJS JKK",
+            "description": "JKK Contribution (Employer)",
+            "amount": jkk_total
+        })
+    
+    if jkm_total > 0:
+        bpjs_summary_doc.append("komponen", {
+            "component": "BPJS JKM",
+            "description": "JKM Contribution (Employer)",
+            "amount": jkm_total
+        })
+    
+    if kesehatan_total > 0:
+        bpjs_summary_doc.append("komponen", {
+            "component": "BPJS Kesehatan",
+            "description": "Kesehatan Contribution (Employee + Employer)",
+            "amount": kesehatan_total
+        })
 
 def create_bpjs_payment_component(doc, bpjs_summary_doc=None):
     """

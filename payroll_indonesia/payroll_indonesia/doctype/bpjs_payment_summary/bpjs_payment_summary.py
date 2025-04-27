@@ -24,6 +24,7 @@ class BPJSPaymentSummary(Document):
         self.calculate_total()
         self.validate_total()
         self.validate_supplier()
+        self.set_account_details()  # Tambahkan method baru ini
     
     def validate_company(self):
         """Validate company and its default accounts"""
@@ -69,6 +70,46 @@ class BPJSPaymentSummary(Document):
         if not frappe.db.exists("Supplier", "BPJS"):
             from .bpjs_payment_validation import create_bpjs_supplier
             create_bpjs_supplier()
+            
+    def set_account_details(self):
+        """Set account details dari BPJS Settings"""
+        # Ambil BPJS Settings
+        try:
+            bpjs_settings = frappe.get_single("BPJS Settings")
+        except:
+            frappe.msgprint(_("BPJS Settings belum dikonfigurasi, GL account tidak akan diisi otomatis"))
+            return
+        
+        # Hapus account_details yang sudah ada
+        self.account_details = []
+        
+        # Mapping antara komponen dengan tipe komponen dan field GL account di settings
+        component_mapping = {
+            "BPJS Kesehatan": {"type": "Kesehatan", "account_field": "kesehatan_account"},
+            "BPJS JHT": {"type": "JHT", "account_field": "jht_account"},
+            "BPJS JP": {"type": "JP", "account_field": "jp_account"},
+            "BPJS JKK": {"type": "JKK", "account_field": "jkk_account"},
+            "BPJS JKM": {"type": "JKM", "account_field": "jkm_account"}
+        }
+        
+        # Loop komponen BPJS dan tambahkan account details
+        for comp in self.komponen:
+            if comp.component in component_mapping:
+                mapping = component_mapping[comp.component]
+                account_type = mapping["type"]
+                account_field = mapping["account_field"]
+                
+                # Skip jika tidak ada GL account yang sesuai di BPJS Settings
+                if not getattr(bpjs_settings, account_field, None):
+                    continue
+                    
+                # Tambahkan ke account_details table
+                self.append("account_details", {
+                    "account_type": account_type,
+                    "account": getattr(bpjs_settings, account_field),
+                    "amount": comp.amount,
+                    "description": f"BPJS {account_type} payment - {self.month}/{self.year}"
+                })
     
     def on_submit(self):
         """Set status to Submitted"""
