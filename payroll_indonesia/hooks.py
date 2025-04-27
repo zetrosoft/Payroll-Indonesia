@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 09:52:03 by dannyaudian
+# Last modified: 2025-04-27 10:43:43 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -70,6 +70,10 @@ doc_events = {
     },
     "BPJS Payment Component": {
         "on_submit": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.create_journal_entries"
+    },
+    "Payment Entry": {
+        "on_submit": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks.payment_entry_on_submit",
+        "on_cancel": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks.payment_entry_on_cancel"
     }
 }
 
@@ -118,7 +122,19 @@ fixtures = [
     "Workspace",
     
     # Reports
-    "Report"
+    "Report",
+    
+    # Print Format
+    {
+        "doctype": "Print Format",
+        "filters": [
+            [
+                "name",
+                "in",
+                ["BPJS Payment Summary Report"]
+            ]
+        ]
+    }
 ]
 
 # Scheduler tasks

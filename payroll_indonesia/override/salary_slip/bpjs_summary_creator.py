@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 09:05:21 by dannyaudian
+# Last modified: 2025-04-27 10:22:12 by dannyaudian
 
 import frappe
 from frappe import _
@@ -135,6 +135,7 @@ def create_new_bpjs_summary(doc, year, month, employee_components, employer_comp
         bpjs_summary_doc.year = year
         bpjs_summary_doc.month = month
         bpjs_summary_doc.posting_date = getdate()
+        bpjs_summary_doc.status = "Draft"
         
         # Set month name if field exists
         if hasattr(bpjs_summary_doc, 'month_name'):
@@ -145,7 +146,8 @@ def create_new_bpjs_summary(doc, year, month, employee_components, employer_comp
     
         # Set title if field exists
         if hasattr(bpjs_summary_doc, 'month_year_title'):
-            bpjs_summary_doc.month_year_title = f"{month_names[month-1]} {year}" if month >= 1 and month <= 12 else f"{month}-{year}"
+            month_name = month_names[month-1] if month >= 1 and month <= 12 else str(month)
+            bpjs_summary_doc.month_year_title = f"{month_name} {year}"
     
         # Check if employee_details field exists
         if not hasattr(bpjs_summary_doc, 'employee_details'):
@@ -161,8 +163,9 @@ def create_new_bpjs_summary(doc, year, month, employee_components, employer_comp
         
         # Trigger the set_account_details method manually
         # This will populate account_details from BPJS Settings
-        bpjs_summary_doc.set_account_details()
-        bpjs_summary_doc.save(ignore_permissions=True)
+        if hasattr(bpjs_summary_doc, 'set_account_details'):
+            bpjs_summary_doc.set_account_details()
+            bpjs_summary_doc.save(ignore_permissions=True)
         
     except Exception as e:
         frappe.throw(_("Error creating BPJS Payment Summary: {0}").format(str(e)))
@@ -171,6 +174,11 @@ def update_existing_bpjs_summary(doc, bpjs_summary_name, employee_components, em
     """Update existing BPJS Payment Summary"""
     try:
         bpjs_summary_doc = frappe.get_doc("BPJS Payment Summary", bpjs_summary_name)
+        
+        # Skip if document is already submitted
+        if bpjs_summary_doc.docstatus == 1:
+            frappe.msgprint(_("BPJS Payment Summary {0} is already submitted. Cannot update.").format(bpjs_summary_name))
+            return
     
         # Check if employee_details field exists
         if not hasattr(bpjs_summary_doc, 'employee_details'):
@@ -197,8 +205,9 @@ def update_existing_bpjs_summary(doc, bpjs_summary_name, employee_components, em
         
         # Trigger the set_account_details method manually
         # This will update account_details from BPJS Settings
-        bpjs_summary_doc.set_account_details()
-        bpjs_summary_doc.save(ignore_permissions=True)
+        if hasattr(bpjs_summary_doc, 'set_account_details'):
+            bpjs_summary_doc.set_account_details()
+            bpjs_summary_doc.save(ignore_permissions=True)
         
     except Exception as e:
         frappe.throw(_("Error updating BPJS Payment Summary: {0}").format(str(e)))
