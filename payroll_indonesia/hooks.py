@@ -39,7 +39,7 @@ after_install = "payroll_indonesia.fixtures.setup.after_install"
 
 # DocType Class Override
 override_doctype_class = {
-    "Salary Slip": "payroll_indonesia.override.salary_slip.CustomSalarySlip",
+    "Salary Slip": "payroll_indonesia.override.salary_slip.IndonesiaPayrollSalarySlip",
     "Payroll Entry": "payroll_indonesia.override.payroll_entry.CustomPayrollEntry",
     "Salary Structure": "payroll_indonesia.override.salary_structure.CustomSalaryStructure"
 }
@@ -49,11 +49,6 @@ doc_events = {
     "Employee": {
         "validate": "payroll_indonesia.override.employee.validate",
         "on_update": "payroll_indonesia.override.employee.on_update"
-    },
-    "Salary Slip": {
-        "validate": "payroll_indonesia.override.salary_slip_functions.validate_salary_slip",
-        "on_submit": "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
-        "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
     "PPh 21 Settings": {
         "on_update": "payroll_indonesia.payroll_indonesia.tax.pph21_settings.on_update"
@@ -65,7 +60,8 @@ doc_events = {
         "before_validate": "payroll_indonesia.override.payroll_entry_functions.before_validate",
         "validate": "payroll_indonesia.override.payroll_entry_functions.validate_payroll_entry",
         "on_submit": "payroll_indonesia.override.payroll_entry_functions.on_submit"
-}}
+    }
+}
 
 # Fixtures
 fixtures = [
@@ -147,7 +143,12 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.utils.create_tax_summary_doc",
         
         # Dynamic Salary Calculation Functions
-        "payroll_indonesia.payroll_indonesia.utils.get_spt_month"
+        "payroll_indonesia.payroll_indonesia.utils.get_spt_month",
+        
+        # Modular Calculator Functions
+        "payroll_indonesia.override.salary_slip.base.get_formatted_currency",
+        "payroll_indonesia.override.salary_slip.ter_calculator.get_ter_rate",
+        "payroll_indonesia.override.salary_slip.ter_calculator.should_use_ter_method"
     ]
 }
 
@@ -195,3 +196,42 @@ after_migrate = [
     "payroll_indonesia.override.salary_structure.create_default_salary_structure",
     "payroll_indonesia.utilities.fix_doctype_structure.fix_all_doctypes"  # Tambahkan baris ini
 ]
+
+override_whitelisted_methods = {
+    "erpnext.payroll.doctype.salary_slip.salary_slip.make_salary_slip_from_timesheet": 
+    "payroll_indonesia.override.salary_slip.make_salary_slip_from_timesheet"
+}
+
+on_session_creation = [
+    "payroll_indonesia.override.auth_hooks.on_session_creation"
+]
+
+rest_export = {
+    "Employee": {
+        "get": "payroll_indonesia.api.get_employee",
+        "post": "payroll_indonesia.api.create_employee"
+    },
+    "Salary Slip": {
+        "get": "payroll_indonesia.api.get_salary_slip",
+        "post": "payroll_indonesia.api.create_salary_slip"
+    },
+    "BPJS Payment Summary": {
+        "get": "payroll_indonesia.api.get_bpjs_summary",
+        "post": "payroll_indonesia.api.create_bpjs_summary"
+    },
+    "Employee Tax Summary": {
+        "get": "payroll_indonesia.api.get_tax_summary"
+    }
+}
+
+# Daftar modul yang baru dibuat untuk memudahkan debugging
+module_info = {
+    "payroll_indonesia.override.salary_slip": "Main Salary Slip Override",
+    "payroll_indonesia.override.salary_slip.base": "Salary Slip Base Utilities",
+    "payroll_indonesia.override.salary_slip.tax_calculator": "PPh 21 Calculator",
+    "payroll_indonesia.override.salary_slip.bpjs_calculator": "BPJS Calculator",
+    "payroll_indonesia.override.salary_slip.ter_calculator": "TER Method Calculator",
+    "payroll_indonesia.override.salary_slip.tax_summary_creator": "Tax Summary Document Creator",
+    "payroll_indonesia.override.salary_slip.bpjs_summary_creator": "BPJS Summary Document Creator",
+    "payroll_indonesia.override.salary_slip.ter_table_creator": "TER Table Document Creator"
+}

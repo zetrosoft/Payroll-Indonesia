@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt, cint, getdate
 from erpnext.payroll.doctype.salary_slip.salary_slip import SalarySlip
+from erpnext.payroll.doctype.salary_slip.salary_slip import make_salary_slip_from_timesheet as original_make_slip
 
 # Import functions from modular files
 from payroll_indonesia.override.salary_slip.base import get_formatted_currency, get_component_amount, update_component_amount
@@ -388,3 +389,46 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
 
 # Override the standard SalarySlip class with our enhanced version
 frappe.model.document.get_controller("Salary Slip")._controller = IndonesiaPayrollSalarySlip
+
+@frappe.whitelist()
+def make_salary_slip_from_timesheet(timesheet):
+    """
+    Override function untuk make_salary_slip_from_timesheet
+    Memanggil versi asli tetapi dengan penyesuaian untuk Indonesia
+    """
+    try:
+        # Get salary slip from original function
+        salary_slip = original_make_slip(timesheet)
+        
+        # Check if company is in Indonesia
+        if not salary_slip:
+            return None
+            
+        company = frappe.db.get_value("Timesheet", timesheet, "company")
+        if not company:
+            return salary_slip
+            
+        country = frappe.db.get_value("Company", company, "country")
+        if country != "Indonesia":
+            return salary_slip
+        
+        # If company is in Indonesia, do additional customizations
+        
+        # Get employee
+        employee = salary_slip.employee
+        employee_doc = frappe.get_doc("Employee", employee)
+        
+        # Set additional fields if configured
+        if hasattr(salary_slip, 'npwp') and hasattr(employee_doc, 'npwp'):
+            salary_slip.npwp = employee_doc.npwp
+            
+        if hasattr(salary_slip, 'ktp') and hasattr(employee_doc, 'ktp'):
+            salary_slip.ktp = employee_doc.ktp
+        
+        return salary_slip
+    except Exception as e:
+        frappe.log_error(
+            f"Error in make_salary_slip_from_timesheet: {str(e)}\nTimesheet: {timesheet}",
+            "Timesheet Override Error"
+        )
+        return original_make_slip(timesheet)
