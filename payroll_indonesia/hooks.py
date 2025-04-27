@@ -192,5 +192,6 @@ website_route_rules = [
 after_migrate = [
     "payroll_indonesia.fixtures.setup.check_system_readiness",
     "payroll_indonesia.utilities.tax_slab.create_income_tax_slab",
-    "payroll_indonesia.override.salary_structure.create_default_salary_structure"
+    "payroll_indonesia.override.salary_structure.create_default_salary_structure",
+    "payroll_indonesia.utilities.fix_doctype_structure.fix_all_doctypes"  # Tambahkan baris ini
 ]
