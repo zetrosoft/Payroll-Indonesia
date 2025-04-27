@@ -60,6 +60,9 @@ doc_events = {
         "before_validate": "payroll_indonesia.override.payroll_entry_functions.before_validate",
         "validate": "payroll_indonesia.override.payroll_entry_functions.validate_payroll_entry",
         "on_submit": "payroll_indonesia.override.payroll_entry_functions.on_submit"
+    },
+    "Salary Slip": {
+        "before_insert": "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries"
     }
 }
 
