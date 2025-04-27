@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 07:54:38 by dannyaudian
+# Last modified: 2025-04-27 08:43:59 by dannyaudianlanjut
 
 import frappe
 from frappe import _
@@ -212,12 +212,12 @@ def update_bpjs_summary_detail(detail, salary_slip, employee_components, employe
     detail.jkm = employer_components["jkm"]
     detail.kesehatan_employer = employer_components["kesehatan_employer"]
 
-def create_bpjs_payment_component(salary_slip, bpjs_summary_doc=None):
+def create_bpjs_payment_component(doc, bpjs_summary_doc=None):
     """
     Create BPJS Payment Component based on salary slip
     
     Args:
-        salary_slip: The salary slip document
+        doc: The salary slip document
         bpjs_summary_doc: Optional BPJS Payment Summary document
                           If not provided, will try to find it
     """
@@ -226,67 +226,109 @@ def create_bpjs_payment_component(salary_slip, bpjs_summary_doc=None):
         if not frappe.db.exists("DocType", "BPJS Payment Component"):
             frappe.msgprint(_("BPJS Payment Component DocType not found. Cannot create component."))
             return
-
-        # Get BPJS components from salary slip
-        bpjs_data = {
-            "jht_employee": 0,
-            "jp_employee": 0,
-            "kesehatan_employee": 0
-        }
         
-        # Get employee components
-        for deduction in salary_slip.deductions:
-            if deduction.salary_component == "BPJS JHT Employee":
-                bpjs_data["jht_employee"] = flt(deduction.amount)
-            elif deduction.salary_component == "BPJS JP Employee":
-                bpjs_data["jp_employee"] = flt(deduction.amount)
-            elif deduction.salary_component == "BPJS Kesehatan Employee":
-                bpjs_data["kesehatan_employee"] = flt(deduction.amount)
-                
-        # Skip if no BPJS components
-        if sum(bpjs_data.values()) <= 0:
+        # Get the employee BPJS component data
+        bpjs_employee_components = get_bpjs_employee_components(doc)
+        
+        # Skip if no BPJS components found in salary slip
+        if sum(bpjs_employee_components.values()) <= 0:
             return
+        
+        # Get employer components from BPJS settings
+        bpjs_employer_components = calculate_bpjs_employer_components(doc)
             
-        # Find or get BPJS Payment Summary
+        # Find or get BPJS Payment Summary if not provided
         if not bpjs_summary_doc:
-            month = getdate(salary_slip.end_date).month
-            year = getdate(salary_slip.end_date).year
+            month = getdate(doc.end_date).month
+            year = getdate(doc.end_date).year
             
-            bpjs_summary = frappe.db.get_value(
-                "BPJS Payment Summary",
-                {"company": salary_slip.company, "year": year, "month": month, "docstatus": ["!=", 2]},
-                "name"
-            )
+            bpjs_summary = find_existing_bpjs_summary(doc, year, month)
             
             if not bpjs_summary:
-                frappe.msgprint(_("No BPJS Payment Summary found for {0}-{1}").format(month, year))
+                frappe.msgprint(_("No BPJS Payment Summary found for {0}-{1}. Creating new summary.").format(month, year))
+                # Create new BPJS Payment Summary
+                create_new_bpjs_summary(doc, year, month, bpjs_employee_components, bpjs_employer_components)
+                bpjs_summary = find_existing_bpjs_summary(doc, year, month)
+                
+            if not bpjs_summary:
+                frappe.msgprint(_("Failed to create BPJS Payment Summary for {0}-{1}").format(month, year))
                 return
                 
             bpjs_summary_doc = frappe.get_doc("BPJS Payment Summary", bpjs_summary)
         
+        # Check if BPJS Payment Component already exists for this employee and salary slip
+        existing_component = find_existing_bpjs_payment_component(doc, bpjs_summary_doc.name)
+        
+        if existing_component:
+            # Update existing BPJS Payment Component
+            return update_bpjs_payment_component(existing_component, doc, bpjs_summary_doc, 
+                                             bpjs_employee_components, bpjs_employer_components)
+        else:
+            # Create new BPJS Payment Component
+            return create_new_bpjs_payment_component(doc, bpjs_summary_doc, 
+                                                  bpjs_employee_components, bpjs_employer_components)
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error creating BPJS Payment Component for {doc.name}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "BPJS Component Creation Error"
+        )
+        frappe.msgprint(_("Error creating BPJS Payment Component: {0}").format(str(e)))
+        return None
+
+def find_existing_bpjs_payment_component(salary_slip, bpjs_summary_name):
+    """Find existing BPJS Payment Component for this employee and salary slip"""
+    try:
+        return frappe.db.get_value(
+            "BPJS Payment Component", 
+            {
+                "employee": salary_slip.employee, 
+                "salary_slip": salary_slip.name,
+                "bpjs_payment_summary": bpjs_summary_name,
+                "docstatus": ["!=", 2]
+            },
+            "name"
+        )
+    except Exception as e:
+        if "Unknown column" in str(e):
+            frappe.log_error(
+                f"Database structure issue: {str(e)}\nPlease run 'bench migrate' "
+                f"or fix the BPJS Payment Component DocType structure.",
+                "BPJS Component Query Error"
+            )
+        else:
+            frappe.log_error(
+                f"Error querying BPJS Payment Component: {str(e)}",
+                "BPJS Component Query Error"
+            )
+        return None
+
+def create_new_bpjs_payment_component(salary_slip, bpjs_summary_doc, employee_components, employer_components):
+    """Create a new BPJS Payment Component"""
+    try:
         # Create BPJS Payment Component
         bpjs_component = frappe.new_doc("BPJS Payment Component")
+        
+        # Set document fields
         bpjs_component.employee = salary_slip.employee
         bpjs_component.employee_name = salary_slip.employee_name
         bpjs_component.salary_slip = salary_slip.name
         bpjs_component.bpjs_payment_summary = bpjs_summary_doc.name
         bpjs_component.posting_date = getdate()
         
-        # Calculate totals
-        bpjs_component.jht_employee = bpjs_data["jht_employee"]
-        bpjs_component.jp_employee = bpjs_data["jp_employee"]
-        bpjs_component.kesehatan_employee = bpjs_data["kesehatan_employee"]
+        # Add employee components
+        bpjs_component.jht_employee = employee_components["jht_employee"]
+        bpjs_component.jp_employee = employee_components["jp_employee"]
+        bpjs_component.kesehatan_employee = employee_components["kesehatan_employee"]
         
-        # Add employer components from summary if available
-        for detail in bpjs_summary_doc.employee_details:
-            if detail.employee == salary_slip.employee:
-                bpjs_component.jht_employer = flt(detail.jht_employer)
-                bpjs_component.jp_employer = flt(detail.jp_employer)
-                bpjs_component.jkk = flt(detail.jkk)
-                bpjs_component.jkm = flt(detail.jkm)
-                bpjs_component.kesehatan_employer = flt(detail.kesehatan_employer)
-                break
-                
+        # Add employer components
+        bpjs_component.jht_employer = employer_components["jht_employer"]
+        bpjs_component.jp_employer = employer_components["jp_employer"]
+        bpjs_component.jkk = employer_components["jkk"]
+        bpjs_component.jkm = employer_components["jkm"]
+        bpjs_component.kesehatan_employer = employer_components["kesehatan_employer"]
+        
         # Calculate totals
         bpjs_component.total_employee = (
             bpjs_component.jht_employee + 
@@ -304,12 +346,78 @@ def create_bpjs_payment_component(salary_slip, bpjs_summary_doc=None):
         
         bpjs_component.grand_total = bpjs_component.total_employee + bpjs_component.total_employer
         
-        # Save document
+        # Add BPJS components for detailed tracking (if the field exists)
+        if hasattr(bpjs_component, 'bpjs_components'):
+            # Add JHT Employee component
+            if employee_components["jht_employee"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JHT", 
+                    "description": "JHT Employee Contribution",
+                    "amount": employee_components["jht_employee"]
+                })
+                
+            # Add JP Employee component
+            if employee_components["jp_employee"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JP",
+                    "description": "JP Employee Contribution",
+                    "amount": employee_components["jp_employee"]
+                })
+                
+            # Add Kesehatan Employee component
+            if employee_components["kesehatan_employee"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS Kesehatan",
+                    "description": "Kesehatan Employee Contribution",
+                    "amount": employee_components["kesehatan_employee"]
+                })
+                
+            # Add JHT Employer component
+            if employer_components["jht_employer"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JHT",
+                    "description": "JHT Employer Contribution",
+                    "amount": employer_components["jht_employer"]
+                })
+                
+            # Add JP Employer component
+            if employer_components["jp_employer"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JP",
+                    "description": "JP Employer Contribution",
+                    "amount": employer_components["jp_employer"]
+                })
+                
+            # Add JKK component
+            if employer_components["jkk"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JKK",
+                    "description": "JKK Employer Contribution",
+                    "amount": employer_components["jkk"]
+                })
+                
+            # Add JKM component
+            if employer_components["jkm"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JKM",
+                    "description": "JKM Employer Contribution",
+                    "amount": employer_components["jkm"]
+                })
+                
+            # Add Kesehatan Employer component
+            if employer_components["kesehatan_employer"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS Kesehatan",
+                    "description": "Kesehatan Employer Contribution",
+                    "amount": employer_components["kesehatan_employer"]
+                })
+        
+        # Save the document
         bpjs_component.insert(ignore_permissions=True)
         frappe.msgprint(_("Created BPJS Payment Component {0}").format(bpjs_component.name))
         
         return bpjs_component.name
-    
+        
     except Exception as e:
         frappe.log_error(
             f"Error creating BPJS Payment Component for {salary_slip.name}: {str(e)}\n\n"
@@ -317,4 +425,127 @@ def create_bpjs_payment_component(salary_slip, bpjs_summary_doc=None):
             "BPJS Component Creation Error"
         )
         frappe.msgprint(_("Error creating BPJS Payment Component: {0}").format(str(e)))
+        return None
+
+def update_bpjs_payment_component(component_name, salary_slip, bpjs_summary_doc, employee_components, employer_components):
+    """Update an existing BPJS Payment Component"""
+    try:
+        # Get the BPJS Payment Component document
+        bpjs_component = frappe.get_doc("BPJS Payment Component", component_name)
+        
+        # Update the fields
+        bpjs_component.employee_name = salary_slip.employee_name  # In case employee name changed
+        bpjs_component.posting_date = getdate()
+        
+        # Update employee components
+        bpjs_component.jht_employee = employee_components["jht_employee"]
+        bpjs_component.jp_employee = employee_components["jp_employee"]
+        bpjs_component.kesehatan_employee = employee_components["kesehatan_employee"]
+        
+        # Update employer components
+        bpjs_component.jht_employer = employer_components["jht_employer"]
+        bpjs_component.jp_employer = employer_components["jp_employer"]
+        bpjs_component.jkk = employer_components["jkk"]
+        bpjs_component.jkm = employer_components["jkm"]
+        bpjs_component.kesehatan_employer = employer_components["kesehatan_employer"]
+        
+        # Recalculate totals
+        bpjs_component.total_employee = (
+            bpjs_component.jht_employee + 
+            bpjs_component.jp_employee + 
+            bpjs_component.kesehatan_employee
+        )
+        
+        bpjs_component.total_employer = (
+            bpjs_component.jht_employer + 
+            bpjs_component.jp_employer + 
+            bpjs_component.kesehatan_employer +
+            bpjs_component.jkk +
+            bpjs_component.jkm
+        )
+        
+        bpjs_component.grand_total = bpjs_component.total_employee + bpjs_component.total_employer
+        
+        # Update BPJS components for detailed tracking (if the field exists)
+        if hasattr(bpjs_component, 'bpjs_components'):
+            # Clear existing components if any
+            bpjs_component.set('bpjs_components', [])
+            
+            # Add JHT Employee component
+            if employee_components["jht_employee"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JHT", 
+                    "description": "JHT Employee Contribution",
+                    "amount": employee_components["jht_employee"]
+                })
+                
+            # Add JP Employee component
+            if employee_components["jp_employee"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JP",
+                    "description": "JP Employee Contribution",
+                    "amount": employee_components["jp_employee"]
+                })
+                
+            # Add Kesehatan Employee component
+            if employee_components["kesehatan_employee"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS Kesehatan",
+                    "description": "Kesehatan Employee Contribution",
+                    "amount": employee_components["kesehatan_employee"]
+                })
+                
+            # Add JHT Employer component
+            if employer_components["jht_employer"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JHT",
+                    "description": "JHT Employer Contribution",
+                    "amount": employer_components["jht_employer"]
+                })
+                
+            # Add JP Employer component
+            if employer_components["jp_employer"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JP",
+                    "description": "JP Employer Contribution",
+                    "amount": employer_components["jp_employer"]
+                })
+                
+            # Add JKK component
+            if employer_components["jkk"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JKK",
+                    "description": "JKK Employer Contribution",
+                    "amount": employer_components["jkk"]
+                })
+                
+            # Add JKM component
+            if employer_components["jkm"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS JKM",
+                    "description": "JKM Employer Contribution",
+                    "amount": employer_components["jkm"]
+                })
+                
+            # Add Kesehatan Employer component
+            if employer_components["kesehatan_employer"] > 0:
+                bpjs_component.append("bpjs_components", {
+                    "component": "BPJS Kesehatan",
+                    "description": "Kesehatan Employer Contribution",
+                    "amount": employer_components["kesehatan_employer"]
+                })
+        
+        # Save the document
+        bpjs_component.save(ignore_permissions=True)
+        frappe.msgprint(_("Updated BPJS Payment Component {0}").format(bpjs_component.name))
+        
+        return bpjs_component.name
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error updating BPJS Payment Component {component_name} for {salary_slip.name}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "BPJS Component Update Error"
+        )
+        frappe.msgprint(_("Error updating BPJS Payment Component: {0}").format(str(e)))
         return None
