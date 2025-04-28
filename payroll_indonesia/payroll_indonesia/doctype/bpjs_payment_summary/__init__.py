@@ -4,7 +4,6 @@
 
 # Import fungsi-fungsi dari bpjs_payment_api.py untuk memudahkan akses
 from .bpjs_payment_api import (
-    get_bpjs_suppliers,
     get_summary_for_period,
     get_employee_bpjs_details,
     create_payment_entry

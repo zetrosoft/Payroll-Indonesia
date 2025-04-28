@@ -292,33 +292,3 @@ def create_payment_entry(bpjs_summary):
         # Re-throw the error to show to the user
         frappe.msgprint(_("Error creating payment entry: {0}").format(str(e)), indicator="red")
         return None
-@frappe.whitelist()
-def get_bpjs_suppliers():
-    """
-    Get list of BPJS suppliers
-    Returns a list of BPJS suppliers or creates default one if not exists
-    """
-    try:
-        # Check if BPJS supplier exists
-        if not frappe.db.exists("Supplier", "BPJS"):
-            # Create default BPJS supplier if not exists
-            from .bpjs_payment_validation import create_bpjs_supplier
-            create_bpjs_supplier()
-            
-        # Query for suppliers with "BPJS" in their name or a custom field
-        suppliers = frappe.get_all(
-            "Supplier", 
-            filters=[
-                ["name", "like", "%BPJS%"]
-            ],
-            fields=["name", "supplier_name", "supplier_type"]
-        )
-        
-        return suppliers
-    except Exception as e:
-        frappe.log_error(
-            f"Error in get_bpjs_suppliers: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "BPJS Suppliers Error"
-        )
-        return []
