@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-28 02:45:00 by dannyaudian
+# Last modified: 2025-04-28 03:01:00 by dannyaudian
 
 import frappe
 from frappe import _
@@ -27,28 +27,22 @@ def calculate_bpjs_components(doc, employee, gaji_pokok):
     if not hasattr(doc, 'payroll_note') or doc.payroll_note is None:
         doc.payroll_note = ""
     
-    # Check BPJS participation directly from employee fields
-    ikut_bpjs_kesehatan = employee.get('ikut_bpjs_kesehatan', 1)
-    ikut_bpjs_ketenagakerjaan = employee.get('ikut_bpjs_ketenagakerjaan', 1)
-    
-    debug_log(f"BPJS participation for {employee.name}: Kesehatan={ikut_bpjs_kesehatan}, Ketenagakerjaan={ikut_bpjs_ketenagakerjaan}")
-    
-    # Skip if employee doesn't participate in any BPJS programs
-    if not ikut_bpjs_kesehatan and not ikut_bpjs_ketenagakerjaan:
-        debug_log(f"Employee {employee.name} does not participate in any BPJS programs, skipping")
-        return
-    
     try:
-        # Use hitung_bpjs function for calculation - all BPJS settings validation is handled there
+        # Use hitung_bpjs function for calculation
         debug_log(f"Calling hitung_bpjs for employee {employee.name}, gaji_pokok: {gaji_pokok}")
         bpjs_result = hitung_bpjs(employee.name, gaji_pokok)
         debug_log(f"BPJS calculation result: {bpjs_result}")
         
-        # Update components in salary slip based on participation and calculation results
+        # If no contributions calculated, skip the rest
+        if bpjs_result["total_employee"] <= 0:
+            debug_log(f"No BPJS contributions for {employee.name}, skipping component update")
+            return
+        
+        # Update components in salary slip
         debug_log(f"Updating BPJS components in salary slip {doc.name}")
         
-        # Kesehatan - only if employee participates
-        if ikut_bpjs_kesehatan and bpjs_result["kesehatan_employee"] > 0:
+        # Kesehatan
+        if bpjs_result["kesehatan_employee"] > 0:
             update_component_amount(
                 doc,
                 "BPJS Kesehatan Employee", 
@@ -56,25 +50,23 @@ def calculate_bpjs_components(doc, employee, gaji_pokok):
                 "deductions"
             )
         
-        # JHT and JP - only if employee participates in Ketenagakerjaan
-        if ikut_bpjs_ketenagakerjaan:
-            # JHT
-            if bpjs_result["jht_employee"] > 0:
-                update_component_amount(
-                    doc,
-                    "BPJS JHT Employee", 
-                    bpjs_result["jht_employee"],
-                    "deductions"
-                )
-            
-            # JP
-            if bpjs_result["jp_employee"] > 0:
-                update_component_amount(
-                    doc,
-                    "BPJS JP Employee",
-                    bpjs_result["jp_employee"],
-                    "deductions"
-                )
+        # JHT
+        if bpjs_result["jht_employee"] > 0:
+            update_component_amount(
+                doc,
+                "BPJS JHT Employee", 
+                bpjs_result["jht_employee"],
+                "deductions"
+            )
+        
+        # JP
+        if bpjs_result["jp_employee"] > 0:
+            update_component_amount(
+                doc,
+                "BPJS JP Employee",
+                bpjs_result["jp_employee"],
+                "deductions"
+            )
         
         # Calculate total BPJS for tax purposes (use actual values from salary slip)
         total_bpjs_kesehatan = 0
@@ -94,24 +86,25 @@ def calculate_bpjs_components(doc, employee, gaji_pokok):
         
         # Update payroll note with BPJS details
         try:
+            # Get BPJS settings
             from payroll_indonesia.payroll_indonesia.utils import get_bpjs_settings
             settings = get_bpjs_settings()
             
             doc.payroll_note += "\n\n=== Perhitungan BPJS ==="
             
-            if ikut_bpjs_kesehatan and total_bpjs_kesehatan > 0:
-                kesehatan_percent = flt(settings.get("kesehatan_employee", 1.0))
+            # Show Kesehatan if applicable
+            if total_bpjs_kesehatan > 0:
+                kesehatan_percent = settings.get("kesehatan", {}).get("employee_percent", 1.0)
                 doc.payroll_note += f"\nBPJS Kesehatan ({kesehatan_percent}%): Rp {total_bpjs_kesehatan:,.0f}"
             
-            if ikut_bpjs_ketenagakerjaan:
-                jht_percent = flt(settings.get("jht_employee", 2.0))
-                jp_percent = flt(settings.get("jp_employee", 1.0))
-                
-                if total_bpjs_jht > 0:
-                    doc.payroll_note += f"\nBPJS JHT ({jht_percent}%): Rp {total_bpjs_jht:,.0f}"
-                
-                if total_bpjs_jp > 0:
-                    doc.payroll_note += f"\nBPJS JP ({jp_percent}%): Rp {total_bpjs_jp:,.0f}"
+            # Show JHT and JP if applicable
+            if total_bpjs_jht > 0:
+                jht_percent = settings.get("jht", {}).get("employee_percent", 2.0)
+                doc.payroll_note += f"\nBPJS JHT ({jht_percent}%): Rp {total_bpjs_jht:,.0f}"
+            
+            if total_bpjs_jp > 0:
+                jp_percent = settings.get("jp", {}).get("employee_percent", 1.0)
+                doc.payroll_note += f"\nBPJS JP ({jp_percent}%): Rp {total_bpjs_jp:,.0f}"
             
             doc.payroll_note += f"\nTotal BPJS: Rp {doc.total_bpjs:,.0f}"
             
