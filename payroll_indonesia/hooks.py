@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-28 03:02:05 by dannyaudian
+# Last modified: 2025-04-28 03:07:24 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -68,12 +68,14 @@ doc_events = {
         "on_submit": [
             "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
             "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
-            "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip"
+            "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
+            "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.process_salary_slip_submission"
         ],
         "on_cancel": [
             "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
             "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.update_on_salary_slip_cancel",
-            "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel"
+            "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
+            "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.process_salary_slip_cancellation"
         ],
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
@@ -86,6 +88,11 @@ doc_events = {
     "Payment Entry": {
         "on_submit": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks.payment_entry_on_submit",
         "on_cancel": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks.payment_entry_on_cancel"
+    },
+    "BPJS Payment Summary": {
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.validate",
+        "on_submit": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.on_submit",
+        "on_cancel": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.on_cancel"
     }
 }
 
@@ -156,7 +163,8 @@ scheduler_events = {
         "payroll_indonesia.override.salary_structure.update_salary_structures"
     ],
     "monthly": [
-        "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries"
+        "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.generate_monthly_summaries"
     ],
     "yearly": [
         "payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"
@@ -196,7 +204,13 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
         "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.update_on_salary_slip_cancel",
         "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
-        "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel"
+        "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
+        
+        # BPJS Payment Summary Functions
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.get_summary_for_period",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.get_employee_bpjs_details",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.create_payment_entry",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.get_bpjs_suppliers"
     ]
 }
 
@@ -263,13 +277,19 @@ rest_export = {
         "get": "payroll_indonesia.api.get_salary_slip",
         "list": "payroll_indonesia.api.get_recent_salary_slips",
         "employee": "payroll_indonesia.api.get_salary_slips_by_employee"
+    },
+    "BPJS Payment Summary": {
+        "get": "payroll_indonesia.api.get_bpjs_summary",
+        "list": "payroll_indonesia.api.get_bpjs_summaries"
     }
 }
 
 # Add diagnostic tools
 debug_tools = [
     "payroll_indonesia.override.salary_slip.diagnose_salary_slip_submission",
-    "payroll_indonesia.override.salary_slip.manually_create_related_documents"
+    "payroll_indonesia.override.salary_slip.manually_create_related_documents",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.diagnose_bpjs_payment",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.rebuild_payment_summary"
 ]
 
 # Daftar modul yang baru dibuat untuk memudahkan debugging
@@ -285,5 +305,15 @@ module_info = {
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping": "BPJS Account Mapping Controller",
     "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation": "BPJS Calculation Module",
     "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table": "PPh TER Table Controller",
-    "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary": "Employee Tax Summary Controller"
+    "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary": "Employee Tax Summary Controller",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary": "BPJS Payment Summary Controller",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks": "BPJS Payment Hooks"
 }
+
+# Whitelist for Client-side API Calls
+whitelist_methods = [
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.create_payment_entry",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.get_payment_details",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.get_employee_bpjs_details",
+    "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.get_ytd_data_until_month"
+]
