@@ -1,12 +1,18 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 10:32:35 by dannyaudian
+# Last modified: 2025-04-28 02:15:00 by dannyaudian
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import today, flt, fmt_money, getdate
+from frappe.utils import today, flt, fmt_money, getdate, now_datetime
+
+# Debug function for error tracking
+def debug_log(message, module_name="BPJS Payment Summary"):
+    """Log debug message with timestamp and additional info"""
+    timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
+    frappe.log_error(f"[{timestamp}] {message}", module_name)
 
 # Define custom formatter to replace missing get_formatted_currency
 def get_formatted_currency(value, company=None):
@@ -430,171 +436,335 @@ class BPJSPaymentSummary(Document):
             frappe.msgprint(_("Error creating Payment Entry"))
             frappe.throw(str(e))
 
-    @frappe.whitelist()
-    def populate_employee_details(self):
-        """Populate employee details with active employees who have BPJS participation"""
-        if self.docstatus == 1:
-            frappe.throw(_("Cannot modify employee details after submission"))
-        
-        # Clear existing employee details
-        self.employee_details = []
-    
-        # Get BPJS Settings
-        bpjs_settings = frappe.get_single("BPJS Settings")
-    
-        # Get active employees
-        employees = frappe.get_all(
-            "Employee",
-            filters={
-                "status": "Active", 
-                "company": self.company
-         },
-            fields=["name", "employee_name"]
-        )
-    
-        # Get the payroll period for the selected month and year
-        first_day = f"{self.year}-{self.month:02d}-01"
-        if self.month == 12:
-            last_day = f"{self.year + 1}-01-01"
-        else:
-            last_day = f"{self.year}-{self.month + 1:02d}-01"
-    
-        last_day = frappe.utils.add_days(last_day, -1)
-    
-        employee_count = 0
-    
-        for emp in employees:
-            # Get latest salary structure assignment
-            salary_structure_assignment = frappe.db.get_value(
-                "Salary Structure Assignment",
-                {
-                    "employee": emp.name,
-                    "docstatus": 1,
-                    "from_date": ["<=", last_day]
-                },
-                ["name", "salary_structure", "base"],
-                order_by="from_date desc"
-            )
-        
-            if not salary_structure_assignment:
-                continue
-            
-            # Check if employee is registered for BPJS
-            is_bpjs_participant = frappe.db.get_value(
-                "Employee", emp.name, "bpjs_participant"
-            ) if frappe.db.has_column("Employee", "bpjs_participant") else 1
-        
-            if not is_bpjs_participant:
-                continue
-            
-            # Get base salary
-            base_salary = salary_structure_assignment[2] if salary_structure_assignment[2] else 0
-        
-            if base_salary <= 0:
-                continue
-            
-            # Calculate BPJS contributions
-            # JHT (2% employee, 3.7% employer)
-            jht_employee = base_salary * (bpjs_settings.jht_employee_percent / 100)
-            jht_employer = base_salary * (bpjs_settings.jht_employer_percent / 100)
-        
-            # JP (1% employee, 2% employer) with salary cap
-            jp_base = min(base_salary, bpjs_settings.jp_max_salary)
-            jp_employee = jp_base * (bpjs_settings.jp_employee_percent / 100)
-            jp_employer = jp_base * (bpjs_settings.jp_employer_percent / 100)
-        
-            # Kesehatan (1% employee, 4% employer) with salary cap
-            kesehatan_base = min(base_salary, bpjs_settings.kesehatan_max_salary)
-            kesehatan_employee = kesehatan_base * (bpjs_settings.kesehatan_employee_percent / 100)
-            kesehatan_employer = kesehatan_base * (bpjs_settings.kesehatan_employer_percent / 100)
-        
-            # JKK (0.24% - 1.74% of base salary)
-            jkk = base_salary * (bpjs_settings.jkk_percent / 100)
-        
-            # JKM (0.3% of base salary)
-            jkm = base_salary * (bpjs_settings.jkm_percent / 100)
-        
-            # Add employee to details
-            self.append("employee_details", {
-                "employee": emp.name,
-                "employee_name": emp.employee_name,
-                "jht_employee": jht_employee,
-                "jp_employee": jp_employee,
-                "kesehatan_employee": kesehatan_employee,
-                "jht_employer": jht_employer,
-                "jp_employer": jp_employer,
-                "kesehatan_employer": kesehatan_employer,
-                "jkk": jkk,
-                "jkm": jkm
-            })
-        
-            employee_count += 1
-    
-        if employee_count == 0:
-            frappe.msgprint(_("No eligible employees found with BPJS participation."))
-        else:
-            # Update components based on employee details
-            self.update_components_from_employee_details()
-            frappe.msgprint(_("Added {0} employees to BPJS Payment Summary.").format(employee_count))
+# ----- Fungsi tambahan untuk integrasi dengan Salary Slip -----
 
-    def update_components_from_employee_details(self):
-        """Update component table based on employee details"""
-        if not self.employee_details:
-            return
+@frappe.whitelist()
+def create_from_salary_slip(salary_slip):
+    """
+    Create or update BPJS Payment Summary from a Salary Slip
+    Called asynchronously from the Salary Slip's on_submit method
+    """
+    debug_log(f"Starting create_from_salary_slip for {salary_slip}")
+    
+    try:
+        # Get the salary slip document
+        slip = frappe.get_doc("Salary Slip", salary_slip)
+        if not slip or slip.docstatus != 1:
+            debug_log(f"Salary slip {salary_slip} not found or not submitted")
+            return None
+            
+        # Check if there are any BPJS components
+        bpjs_components = {
+            "employee": {},
+            "employer": {}
+        }
+        
+        # Ambil data langsung dari salary slip tanpa menghitung ulang
+        for deduction in slip.deductions:
+            # Employee contributions
+            if deduction.salary_component == "BPJS JHT Employee":
+                bpjs_components["employee"]["jht"] = flt(deduction.amount)
+            elif deduction.salary_component == "BPJS JP Employee":
+                bpjs_components["employee"]["jp"] = flt(deduction.amount)
+            elif deduction.salary_component == "BPJS Kesehatan Employee":
+                bpjs_components["employee"]["kesehatan"] = flt(deduction.amount)
+        
+        # Check employer contributions in earnings (often added as non-taxable benefits)
+        for earning in slip.earnings:
+            # Employer contributions
+            if earning.salary_component == "BPJS JHT Employer":
+                bpjs_components["employer"]["jht"] = flt(earning.amount)
+            elif earning.salary_component == "BPJS JP Employer":
+                bpjs_components["employer"]["jp"] = flt(earning.amount)
+            elif earning.salary_component == "BPJS Kesehatan Employer":
+                bpjs_components["employer"]["kesehatan"] = flt(earning.amount)
+            elif earning.salary_component == "BPJS JKK":
+                bpjs_components["employer"]["jkk"] = flt(earning.amount)
+            elif earning.salary_component == "BPJS JKM":
+                bpjs_components["employer"]["jkm"] = flt(earning.amount)
+        
+        # If no BPJS components found, no need to continue
+        if not any(bpjs_components["employee"].values()) and not any(bpjs_components["employer"].values()):
+            debug_log(f"No BPJS components found in salary slip {salary_slip}")
+            return None
+        
+        # Get the period
+        month = getdate(slip.end_date).month
+        year = getdate(slip.end_date).year
+        
+        debug_log(f"Processing BPJS for company={slip.company}, year={year}, month={month}")
+        
+        # Check if a BPJS Payment Summary already exists for this period
+        bpjs_summary_name = frappe.db.get_value(
+            "BPJS Payment Summary",
+            {"company": slip.company, "year": year, "month": month, "docstatus": ["!=", 2]},
+            "name"
+        )
+        
+        if bpjs_summary_name:
+            debug_log(f"Found existing BPJS Payment Summary: {bpjs_summary_name}")
+            bpjs_summary = frappe.get_doc("BPJS Payment Summary", bpjs_summary_name)
+            
+            # Check if already submitted
+            if bpjs_summary.docstatus > 0:
+                debug_log(f"BPJS Payment Summary {bpjs_summary_name} already submitted, creating a new one")
+                bpjs_summary = create_new_bpjs_summary(slip, month, year)
+            
+        else:
+            debug_log(f"Creating new BPJS Payment Summary for {slip.company}, {year}, {month}")
+            bpjs_summary = create_new_bpjs_summary(slip, month, year)
+        
+        # Check if employee is already in the summary
+        employee_exists = False
+        for employee_detail in bpjs_summary.employee_details:
+            if employee_detail.employee == slip.employee and employee_detail.salary_slip == salary_slip:
+                debug_log(f"Employee {slip.employee} already exists in BPJS Payment Summary {bpjs_summary.name}, updating")
+                update_employee_bpjs_details(employee_detail, slip, bpjs_components)
+                employee_exists = True
+                break
+        
+        # If employee doesn't exist, add them
+        if not employee_exists:
+            debug_log(f"Adding employee {slip.employee} to BPJS Payment Summary {bpjs_summary.name}")
+            add_employee_to_bpjs_summary(bpjs_summary, slip, bpjs_components)
         
         # Calculate totals
-        jht_total = 0
-        jp_total = 0
-        kesehatan_total = 0
-        jkk_total = 0
-        jkm_total = 0
+        recalculate_bpjs_totals(bpjs_summary)
+        
+        # Save the document
+        bpjs_summary.flags.ignore_permissions = True
+        bpjs_summary.save()
+        debug_log(f"Successfully saved BPJS Payment Summary: {bpjs_summary.name}")
+        
+        # Create BPJS Payment Component if setting is enabled
+        try:
+            bpjs_settings = frappe.get_single("BPJS Settings")
+            if hasattr(bpjs_settings, 'auto_create_component') and bpjs_settings.auto_create_component:
+                debug_log(f"Auto-creating BPJS payment component for {salary_slip}")
+                frappe.enqueue(
+                    method="payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.create_from_salary_slip",
+                    queue="short",
+                    timeout=300,
+                    is_async=True,
+                    **{"salary_slip": salary_slip, "bpjs_summary": bpjs_summary.name}
+                )
+        except Exception as e:
+            debug_log(f"Error checking BPJS settings: {str(e)}")
+        
+        return bpjs_summary.name
+        
+    except Exception as e:
+        debug_log(f"Error in create_from_salary_slip: {str(e)}\nTraceback: {frappe.get_traceback()}")
+        frappe.log_error(
+            f"Error creating BPJS Payment Summary from {salary_slip}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "BPJS Payment Summary Error"
+        )
+        return None
+
+def create_new_bpjs_summary(slip, month, year):
+    """Create a new BPJS Payment Summary"""
+    debug_log(f"Creating new BPJS Payment Summary for {slip.company}, {month}/{year}")
     
-        for emp in self.employee_details:
-            jht_total += flt(emp.jht_employee) + flt(emp.jht_employer)
-            jp_total += flt(emp.jp_employee) + flt(emp.jp_employer)
-            kesehatan_total += flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer)
-            jkk_total += flt(emp.jkk)
-            jkm_total += flt(emp.jkm)
+    bpjs_summary = frappe.new_doc("BPJS Payment Summary")
+    bpjs_summary.company = slip.company
+    bpjs_summary.month = month
+    bpjs_summary.year = year
+    bpjs_summary.posting_date = today()
     
-        # Clear existing components
-        self.komponen = []
+    # Get company details
+    company_doc = frappe.get_doc("Company", slip.company)
+    if company_doc:
+        # Set company details like BPJS registration numbers if available
+        for field in ['bpjs_company_registration', 'npwp', 'bpjs_branch_office']:
+            if hasattr(company_doc, field):
+                setattr(bpjs_summary, field, getattr(company_doc, field))
     
-        # Add JHT component
-        if jht_total > 0:
-            self.append("komponen", {
-                "component": "BPJS JHT",
-                "description": "JHT Contribution (Employee + Employer)",
-                "amount": jht_total
-            })
+    # Initialize employee details and totals
+    bpjs_summary.employee_details = []
+    bpjs_summary.komponen = []
     
-        # Add JP component
-        if jp_total > 0:
-            self.append("komponen", {
-                "component": "BPJS JP",
-                "description": "JP Contribution (Employee + Employer)",
-                "amount": jp_total
-            })
+    return bpjs_summary
+
+def add_employee_to_bpjs_summary(bpjs_summary, slip, bpjs_components):
+    """Add an employee to BPJS Payment Summary"""
+    debug_log(f"Adding employee {slip.employee} to BPJS Payment Summary {bpjs_summary.name}")
     
-        # Add Kesehatan component
-        if kesehatan_total > 0:
-            self.append("komponen", {
-                "component": "BPJS Kesehatan",
-                "description": "Kesehatan Contribution (Employee + Employer)",
-                "amount": kesehatan_total
-            })
+    employee = frappe.get_doc("Employee", slip.employee)
     
-        # Add JKK component
-        if jkk_total > 0:
-            self.append("komponen", {
-                "component": "BPJS JKK",
-                "description": "JKK Contribution (Employer)",
-                "amount": jkk_total
-            })
+    # Create new employee detail
+    employee_detail = {
+        "employee": slip.employee,
+        "employee_name": slip.employee_name,
+        "salary_slip": slip.name,
+        "department": getattr(employee, "department", ""),
+        "designation": getattr(employee, "designation", ""),
+        "bpjs_number": getattr(employee, "bpjs_number", ""),
+        "nik": getattr(employee, "ktp", ""),
+        "jht_employee": bpjs_components["employee"].get("jht", 0),
+        "jp_employee": bpjs_components["employee"].get("jp", 0),
+        "kesehatan_employee": bpjs_components["employee"].get("kesehatan", 0),
+        "jht_employer": bpjs_components["employer"].get("jht", 0),
+        "jp_employer": bpjs_components["employer"].get("jp", 0),
+        "jkk": bpjs_components["employer"].get("jkk", 0),
+        "jkm": bpjs_components["employer"].get("jkm", 0),
+        "kesehatan_employer": bpjs_components["employer"].get("kesehatan", 0)
+    }
     
-        # Add JKM component
-        if jkm_total > 0:
-            self.append("komponen", {
-                "component": "BPJS JKM",
-                "description": "JKM Contribution (Employer)",
-                "amount": jkm_total
-            })
+    # Add to the employee_details child table
+    bpjs_summary.append("employee_details", employee_detail)
+    
+    debug_log(f"Successfully added employee {slip.employee} to BPJS Payment Summary")
+
+def update_employee_bpjs_details(employee_detail, slip, bpjs_components):
+    """Update an employee's BPJS details"""
+    debug_log(f"Updating BPJS details for employee {slip.employee}")
+    
+    # Update employee information
+    employee_detail.employee_name = slip.employee_name
+    employee_detail.salary_slip = slip.name
+    
+    # Update component amounts
+    employee_detail.jht_employee = bpjs_components["employee"].get("jht", 0)
+    employee_detail.jp_employee = bpjs_components["employee"].get("jp", 0)
+    employee_detail.kesehatan_employee = bpjs_components["employee"].get("kesehatan", 0)
+    employee_detail.jht_employer = bpjs_components["employer"].get("jht", 0)
+    employee_detail.jp_employer = bpjs_components["employer"].get("jp", 0)
+    employee_detail.jkk = bpjs_components["employer"].get("jkk", 0)
+    employee_detail.jkm = bpjs_components["employer"].get("jkm", 0)
+    employee_detail.kesehatan_employer = bpjs_components["employer"].get("kesehatan", 0)
+    
+    debug_log(f"Successfully updated BPJS details for employee {slip.employee}")
+
+def recalculate_bpjs_totals(bpjs_summary):
+    """Recalculate BPJS Payment Summary totals"""
+    debug_log(f"Recalculating totals for BPJS Payment Summary {bpjs_summary.name}")
+    
+    # Calculate totals
+    jht_total = 0
+    jp_total = 0
+    kesehatan_total = 0
+    jkk_total = 0
+    jkm_total = 0
+    
+    for emp in bpjs_summary.employee_details:
+        jht_total += flt(emp.jht_employee) + flt(emp.jht_employer)
+        jp_total += flt(emp.jp_employee) + flt(emp.jp_employer)
+        kesehatan_total += flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer)
+        jkk_total += flt(emp.jkk)
+        jkm_total += flt(emp.jkm)
+    
+    # Clear existing components
+    bpjs_summary.komponen = []
+    
+    # Add components
+    if jht_total > 0:
+        bpjs_summary.append("komponen", {
+            "component": "BPJS JHT",
+            "description": "JHT Contribution (Employee + Employer)",
+            "amount": jht_total
+        })
+    
+    if jp_total > 0:
+        bpjs_summary.append("komponen", {
+            "component": "BPJS JP",
+            "description": "JP Contribution (Employee + Employer)",
+            "amount": jp_total
+        })
+    
+    if kesehatan_total > 0:
+        bpjs_summary.append("komponen", {
+            "component": "BPJS Kesehatan",
+            "description": "Kesehatan Contribution (Employee + Employer)",
+            "amount": kesehatan_total
+        })
+    
+    if jkk_total > 0:
+        bpjs_summary.append("komponen", {
+            "component": "BPJS JKK",
+            "description": "JKK Contribution (Employer)",
+            "amount": jkk_total
+        })
+    
+    if jkm_total > 0:
+        bpjs_summary.append("komponen", {
+            "component": "BPJS JKM",
+            "description": "JKM Contribution (Employer)",
+            "amount": jkm_total
+        })
+    
+    # Calculate grand total
+    bpjs_summary.total = jht_total + jp_total + kesehatan_total + jkk_total + jkm_total
+    
+    debug_log(f"Successfully recalculated totals for BPJS Payment Summary {bpjs_summary.name}")
+
+@frappe.whitelist()
+def update_on_salary_slip_cancel(salary_slip, month, year):
+    """
+    Update BPJS Payment Summary when a Salary Slip is cancelled
+    Called asynchronously from the Salary Slip's on_cancel method
+    """
+    debug_log(f"Starting update_on_salary_slip_cancel for {salary_slip}, month={month}, year={year}")
+    
+    try:
+        # Get the salary slip document
+        slip = frappe.get_doc("Salary Slip", salary_slip)
+        if not slip:
+            debug_log(f"Salary slip {salary_slip} not found")
+            return False
+            
+        # Find the BPJS Payment Summary
+        bpjs_summary_name = frappe.db.get_value(
+            "BPJS Payment Summary",
+            {"company": slip.company, "year": year, "month": month, "docstatus": ["!=", 2]},
+            "name"
+        )
+        
+        if not bpjs_summary_name:
+            debug_log(f"No BPJS Payment Summary found for company={slip.company}, month={month}, year={year}")
+            return False
+            
+        # Get the document
+        bpjs_doc = frappe.get_doc("BPJS Payment Summary", bpjs_summary_name)
+        
+        # Check if already submitted
+        if bpjs_doc.docstatus > 0:
+            debug_log(f"BPJS Payment Summary {bpjs_summary_name} already submitted, cannot update")
+            frappe.msgprint(_("BPJS Payment Summary {0} sudah disubmit dan tidak dapat diperbarui.").format(bpjs_summary_name))
+            return False
+            
+        # Find and remove the employee entry
+        to_remove = []
+        for i, d in enumerate(bpjs_doc.employee_details):
+            if getattr(d, "salary_slip") == salary_slip:
+                debug_log(f"Found entry to remove: employee_details[{i}] with salary_slip={salary_slip}")
+                to_remove.append(d)
+                
+        # If entries found, remove them and save
+        if to_remove:
+            debug_log(f"Found {len(to_remove)} entries to remove from BPJS Payment Summary {bpjs_summary_name}")
+            
+            for d in to_remove:
+                bpjs_doc.employee_details.remove(d)
+                
+            # Recalculate totals
+            recalculate_bpjs_totals(bpjs_doc)
+            
+            # Save the document
+            bpjs_doc.flags.ignore_permissions = True
+            bpjs_doc.save()
+            debug_log(f"Successfully updated BPJS Payment Summary: {bpjs_summary_name}")
+            
+            return True
+        else:
+            debug_log(f"No entries found for salary_slip={salary_slip} in BPJS Payment Summary {bpjs_summary_name}")
+            return False
+            
+    except Exception as e:
+        debug_log(f"Error in update_on_salary_slip_cancel: {str(e)}\nTraceback: {frappe.get_traceback()}")
+        frappe.log_error(
+            f"Error updating BPJS Payment Summary on cancel for {salary_slip}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "BPJS Payment Summary Cancel Error"
+        )
+        return False
