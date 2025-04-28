@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 10:43:43 by dannyaudian
+# Last modified: 2025-04-28 03:02:05 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -65,7 +65,16 @@ doc_events = {
     "Salary Slip": {
         "before_insert": "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries",
         "validate": "payroll_indonesia.override.salary_slip_functions.validate_salary_slip",
-        "on_submit": "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
+        "on_submit": [
+            "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
+            "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
+            "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip"
+        ],
+        "on_cancel": [
+            "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
+            "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.update_on_salary_slip_cancel",
+            "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel"
+        ],
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
     "BPJS Account Mapping": {
@@ -98,7 +107,7 @@ fixtures = [
     "PPh 21 Tax Bracket",
     "PPh 21 TER Table",
     "PPh 21 PTKP",
-    "BPJS Account Mapping",  # Tambahkan BPJS Account Mapping ke fixtures
+    "BPJS Account Mapping",
     
     # Master Data - Payroll
     "Golongan",
@@ -161,6 +170,8 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.utils.get_bpjs_settings",
         "payroll_indonesia.payroll_indonesia.utils.calculate_bpjs_contributions",
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
+        "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation.hitung_bpjs",
+        "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation.debug_log",
         
         # PPh 21 Settings & Functions
         "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings",
@@ -179,7 +190,13 @@ jinja = {
         # Modular Calculator Functions
         "payroll_indonesia.override.salary_slip.base.get_formatted_currency",
         "payroll_indonesia.override.salary_slip.ter_calculator.get_ter_rate",
-        "payroll_indonesia.override.salary_slip.ter_calculator.should_use_ter_method"
+        "payroll_indonesia.override.salary_slip.ter_calculator.should_use_ter_method",
+        
+        # PPh TER Table & Employee Tax Summary Functions
+        "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
+        "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.update_on_salary_slip_cancel",
+        "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
+        "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel"
     ]
 }
 
@@ -226,7 +243,7 @@ after_migrate = [
     "payroll_indonesia.fixtures.setup.check_system_readiness",
     "payroll_indonesia.utilities.tax_slab.create_income_tax_slab",
     "payroll_indonesia.override.salary_structure.create_default_salary_structure",
-    "payroll_indonesia.utilities.fix_doctype_structure.fix_all_doctypes"  # Tambahkan baris ini
+    "payroll_indonesia.utilities.fix_doctype_structure.fix_all_doctypes"
 ]
 
 override_whitelisted_methods = {
@@ -265,5 +282,8 @@ module_info = {
     "payroll_indonesia.override.salary_slip.tax_summary_creator": "Tax Summary Document Creator",
     "payroll_indonesia.override.salary_slip.bpjs_summary_creator": "BPJS Summary Document Creator",
     "payroll_indonesia.override.salary_slip.ter_table_creator": "TER Table Document Creator",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping": "BPJS Account Mapping Controller"
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping": "BPJS Account Mapping Controller",
+    "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation": "BPJS Calculation Module",
+    "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table": "PPh TER Table Controller",
+    "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary": "Employee Tax Summary Controller"
 }
