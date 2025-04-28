@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-28 03:07:24 by dannyaudian
+# Last modified: 2025-04-28 06:21:30 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -68,14 +68,12 @@ doc_events = {
         "on_submit": [
             "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
             "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
-            "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
-            "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.process_salary_slip_submission"
+            "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip"
         ],
         "on_cancel": [
             "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
             "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.update_on_salary_slip_cancel",
-            "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
-            "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.process_salary_slip_cancellation"
+            "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel"
         ],
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
@@ -164,7 +162,7 @@ scheduler_events = {
     ],
     "monthly": [
         "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries",
-        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.generate_monthly_summaries"
+        # Hapus referensi ke generate_monthly_summaries karena tidak ada
     ],
     "yearly": [
         "payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"
@@ -202,9 +200,7 @@ jinja = {
         
         # PPh TER Table & Employee Tax Summary Functions
         "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
-        "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.update_on_salary_slip_cancel",
         "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
-        "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
         
         # BPJS Payment Summary Functions
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.get_summary_for_period",
@@ -288,8 +284,8 @@ rest_export = {
 debug_tools = [
     "payroll_indonesia.override.salary_slip.diagnose_salary_slip_submission",
     "payroll_indonesia.override.salary_slip.manually_create_related_documents",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.diagnose_bpjs_payment",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.rebuild_payment_summary"
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.diagnose_bpjs_payment"
+    # Hapus rebuild_payment_summary jika tidak ada
 ]
 
 # Daftar modul yang baru dibuat untuk memudahkan debugging
@@ -299,9 +295,6 @@ module_info = {
     "payroll_indonesia.override.salary_slip.tax_calculator": "PPh 21 Calculator",
     "payroll_indonesia.override.salary_slip.bpjs_calculator": "BPJS Calculator",
     "payroll_indonesia.override.salary_slip.ter_calculator": "TER Method Calculator",
-    "payroll_indonesia.override.salary_slip.tax_summary_creator": "Tax Summary Document Creator",
-    "payroll_indonesia.override.salary_slip.bpjs_summary_creator": "BPJS Summary Document Creator",
-    "payroll_indonesia.override.salary_slip.ter_table_creator": "TER Table Document Creator",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping": "BPJS Account Mapping Controller",
     "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation": "BPJS Calculation Module",
     "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table": "PPh TER Table Controller",
