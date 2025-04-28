@@ -428,6 +428,7 @@ class BPJSPaymentSummary(Document):
             )
             frappe.msgprint(_("Error creating Payment Entry"))
             frappe.throw(str(e))
+
 @frappe.whitelist()
 def get_bpjs_suppliers():
     """
@@ -458,3 +459,32 @@ def get_bpjs_suppliers():
             "BPJS Suppliers Error"
         )
         return []
+
+# Add module-level validate function to fix the error
+@frappe.whitelist()
+def validate(doc):
+    """
+    Module-level validate function that delegates to the document's validate method
+    This is needed for compatibility with code that calls this function directly
+    """
+    try:
+        if isinstance(doc, str):
+            doc = frappe.get_doc("BPJS Payment Summary", doc)
+        
+        # Ensure we have a document instance with a validate method
+        if hasattr(doc, "validate") and callable(doc.validate):
+            doc.validate()
+            return True
+        else:
+            frappe.log_error(
+                "Invalid document passed to validate function",
+                "BPJS Payment Summary Validation Error"
+            )
+            return False
+    except Exception as e:
+        frappe.log_error(
+            f"Error in BPJS Payment Summary validation: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "BPJS Payment Summary Validation Error"
+        )
+        return False
