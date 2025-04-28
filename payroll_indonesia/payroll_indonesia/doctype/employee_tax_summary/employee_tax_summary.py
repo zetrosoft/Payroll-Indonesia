@@ -503,3 +503,31 @@ def update_on_salary_slip_cancel(salary_slip, year):
             "Employee Tax Summary Cancel Error"
         )
         return False
+    
+@frappe.whitelist()
+def validate(doc):
+    """
+    Module-level validate function that delegates to the document's validate method
+    This is needed for compatibility with code that calls this function directly
+    """
+    try:
+        if isinstance(doc, str):
+            doc = frappe.get_doc("Employee Tax Summary", doc)
+        
+        # Ensure we have a document instance with a validate method
+        if hasattr(doc, "validate") and callable(doc.validate):
+            doc.validate()
+            return True
+        else:
+            frappe.log_error(
+                "Invalid document passed to validate function",
+                "Employee Tax Summary Validation Error"
+            )
+            return False
+    except Exception as e:
+        frappe.log_error(
+            f"Error in Employee Tax Summary validation: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Employee Tax Summary Validation Error"
+        )
+        return False

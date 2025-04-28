@@ -392,3 +392,30 @@ def update_on_salary_slip_cancel(salary_slip, month, year):
             "PPh TER Table Cancel Error"
         )
         return False
+@frappe.whitelist()
+def validate(doc):
+    """
+    Module-level validate function that delegates to the document's validate method
+    This is needed for compatibility with code that calls this function directly
+    """
+    try:
+        if isinstance(doc, str):
+            doc = frappe.get_doc("PPh TER Table", doc)
+        
+        # Ensure we have a document instance with a validate method
+        if hasattr(doc, "validate") and callable(doc.validate):
+            doc.validate()
+            return True
+        else:
+            frappe.log_error(
+                "Invalid document passed to validate function",
+                "PPh TER Table Validation Error"
+            )
+            return False
+    except Exception as e:
+        frappe.log_error(
+            f"Error in PPh TER Table validation: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "PPh TER Table Validation Error"
+        )
+        return False
