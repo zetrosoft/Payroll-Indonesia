@@ -569,6 +569,10 @@ def update_bpjs_payment_summary(doc):
                 
                 # Add employee detail
                 bpjs_summary_doc.append("employee_details", employee_data)
+
+                # Setelah menambahkan employee_detail di bpjs_summary_doc
+                if hasattr(bpjs_summary_doc, 'populate_from_employee_details') and callable(bpjs_summary_doc.populate_from_employee_details):
+                    bpjs_summary_doc.populate_from_employee_details()
                 
                 # Insert the document
                 bpjs_summary_doc.insert(ignore_permissions=True)

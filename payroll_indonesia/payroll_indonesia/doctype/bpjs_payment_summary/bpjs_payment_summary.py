@@ -488,3 +488,53 @@ def validate(doc):
             "BPJS Payment Summary Validation Error"
         )
         return False
+
+@frappe.whitelist()
+def populate_from_employee_details(self):
+    """
+    Generate komponen entries from employee_details data
+    Called when document is created from salary slip functions
+    """
+    if not hasattr(self, 'employee_details') or not self.employee_details:
+        return False
+        
+    # Reset existing komponen child table
+    self.komponen = []
+    
+    # Reuse the bpjs_totals calculation that already exists in set_account_details method
+    bpjs_totals = {
+        "Kesehatan": 0,
+        "JHT": 0,
+        "JP": 0,
+        "JKK": 0,
+        "JKM": 0
+    }
+    
+    # Calculate totals - this code already exists in set_account_details
+    for emp in self.employee_details:
+        bpjs_totals["Kesehatan"] += flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer)
+        bpjs_totals["JHT"] += flt(emp.jht_employee) + flt(emp.jht_employer)
+        bpjs_totals["JP"] += flt(emp.jp_employee) + flt(emp.jp_employer)
+        bpjs_totals["JKK"] += flt(emp.jkk)
+        bpjs_totals["JKM"] += flt(emp.jkm)
+    
+    # Map from internal type to component name in child table
+    component_name_map = {
+        "Kesehatan": "BPJS Kesehatan",
+        "JHT": "BPJS JHT",
+        "JP": "BPJS JP",
+        "JKK": "BPJS JKK",
+        "JKM": "BPJS JKM"
+    }
+    
+    # Add components
+    for bpjs_type, amount in bpjs_totals.items():
+        if amount > 0:
+            component_name = component_name_map.get(bpjs_type)
+            if component_name:
+                self.append("komponen", {
+                    "component": component_name,
+                    "amount": amount
+                })
+    
+    return True
