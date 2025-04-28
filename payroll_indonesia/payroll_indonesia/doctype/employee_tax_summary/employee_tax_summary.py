@@ -1,13 +1,19 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 03:20:15 by dannyaudian
+# Last modified: 2025-04-28 02:30:00 by dannyaudian
 
 from __future__ import unicode_literals
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, getdate, cint
+from frappe.utils import flt, getdate, cint, now_datetime
+
+# Debug function for error tracking
+def debug_log(message, module_name="Employee Tax Summary"):
+    """Log debug message with timestamp and additional info"""
+    timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
+    frappe.log_error(f"[{timestamp}] {message}", module_name)
 
 class EmployeeTaxSummary(Document):
     def validate(self):
@@ -346,3 +352,154 @@ class EmployeeTaxSummary(Document):
                 f"Error in on_update for Employee Tax Summary {self.name}: {str(e)}",
                 "Employee Tax Summary Update Error"
             )
+
+# ----- Fungsi tambahan untuk integrasi dengan Salary Slip -----
+
+@frappe.whitelist()
+def create_from_salary_slip(salary_slip):
+    """
+    Create or update Employee Tax Summary from a Salary Slip
+    Called asynchronously from the Salary Slip's on_submit method
+    """
+    debug_log(f"Starting create_from_salary_slip for {salary_slip}")
+    
+    try:
+        # Get the salary slip document
+        slip = frappe.get_doc("Salary Slip", salary_slip)
+        if not slip or slip.docstatus != 1:
+            debug_log(f"Salary slip {salary_slip} not found or not submitted")
+            return None
+            
+        employee = slip.employee
+        year = getdate(slip.end_date).year
+        month = getdate(slip.end_date).month
+        
+        debug_log(f"Processing tax summary for employee={employee}, year={year}, month={month}")
+        
+        # Check if an Employee Tax Summary already exists for this employee and year
+        tax_summary_name = frappe.db.get_value(
+            "Employee Tax Summary", 
+            {"employee": employee, "year": year}
+        )
+        
+        if tax_summary_name:
+            debug_log(f"Found existing Employee Tax Summary: {tax_summary_name}")
+            tax_summary = frappe.get_doc("Employee Tax Summary", tax_summary_name)
+        else:
+            debug_log(f"Creating new Employee Tax Summary for {employee}, {year}")
+            # Create a new Employee Tax Summary
+            tax_summary = frappe.new_doc("Employee Tax Summary")
+            tax_summary.employee = employee
+            tax_summary.year = year
+            
+            # Get employee details
+            emp_doc = frappe.get_doc("Employee", employee)
+            if emp_doc:
+                tax_summary.employee_name = emp_doc.employee_name
+                tax_summary.department = emp_doc.department
+                tax_summary.designation = emp_doc.designation
+                
+                # Copy NPWP and other tax-related fields if they exist
+                for field in ['npwp', 'ptkp_status', 'ktp']:
+                    if hasattr(emp_doc, field):
+                        setattr(tax_summary, field, getattr(emp_doc, field))
+            
+            # Initialize monthly details
+            tax_summary.monthly_details = []
+            for i in range(1, 13):
+                tax_summary.append("monthly_details", {
+                    "month": i,
+                    "gross_pay": 0,
+                    "bpjs_deductions": 0,
+                    "tax_amount": 0
+                })
+                
+            # Insert the new document
+            tax_summary.insert(ignore_permissions=True)
+        
+        # Call the add_monthly_data method to update the document with salary slip data
+        tax_summary.add_monthly_data(slip)
+        
+        debug_log(f"Successfully processed Employee Tax Summary: {tax_summary.name}")
+        
+        return tax_summary.name
+        
+    except Exception as e:
+        debug_log(f"Error in create_from_salary_slip: {str(e)}\nTraceback: {frappe.get_traceback()}")
+        frappe.log_error(
+            f"Error creating Employee Tax Summary from {salary_slip}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Employee Tax Summary Error"
+        )
+        return None
+
+@frappe.whitelist()
+def update_on_salary_slip_cancel(salary_slip, year):
+    """
+    Update Employee Tax Summary when a Salary Slip is cancelled
+    Called asynchronously from the Salary Slip's on_cancel method
+    """
+    debug_log(f"Starting update_on_salary_slip_cancel for {salary_slip}, year={year}")
+    
+    try:
+        # Get the salary slip document
+        slip = frappe.get_doc("Salary Slip", salary_slip)
+        if not slip:
+            debug_log(f"Salary slip {salary_slip} not found")
+            return False
+            
+        employee = slip.employee
+        month = getdate(slip.end_date).month
+        
+        # Find the Employee Tax Summary
+        tax_summary_name = frappe.db.get_value(
+            "Employee Tax Summary", 
+            {"employee": employee, "year": year}
+        )
+        
+        if not tax_summary_name:
+            debug_log(f"No Employee Tax Summary found for employee={employee}, year={year}")
+            return False
+            
+        # Get the document
+        tax_doc = frappe.get_doc("Employee Tax Summary", tax_summary_name)
+        
+        # Update the monthly entry for this salary slip
+        changed = False
+        for i, d in enumerate(tax_doc.monthly_details):
+            if getattr(d, "month") == month and getattr(d, "salary_slip") == salary_slip:
+                debug_log(f"Found entry to update: monthly_details[{i}] with month={month}, salary_slip={salary_slip}")
+                # Reset values for this month
+                d.gross_pay = 0
+                d.bpjs_deductions = 0
+                d.other_deductions = 0
+                d.tax_amount = 0
+                d.salary_slip = None
+                d.is_using_ter = 0
+                d.ter_rate = 0
+                changed = True
+                
+        # Recalculate YTD if changes were made
+        if changed:
+            debug_log(f"Recalculating YTD tax for Employee Tax Summary {tax_summary_name}")
+            tax_doc.calculate_ytd_from_monthly()
+            
+            # Save the document
+            tax_doc.flags.ignore_validate_update_after_submit = True
+            tax_doc.flags.ignore_permissions = True
+            tax_doc.save()
+            debug_log(f"Successfully updated Employee Tax Summary: {tax_summary_name}")
+            
+            return True
+        else:
+            debug_log(f"No changes needed for Employee Tax Summary: {tax_summary_name}")
+            return False
+            
+    except Exception as e:
+        debug_log(f"Error in update_on_salary_slip_cancel: {str(e)}\nTraceback: {frappe.get_traceback()}")
+        frappe.log_error(
+            f"Error updating Employee Tax Summary on cancel for {salary_slip}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Employee Tax Summary Cancel Error"
+        )
+        return False
