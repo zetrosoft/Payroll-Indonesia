@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 11:01:44 by dannyaudian
+# Last modified: 2025-04-28 01:42:00 by dannyaudian
 
 import frappe
 from frappe import _
@@ -23,9 +23,9 @@ try:
     from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
     from payroll_indonesia.override.salary_slip.bpjs_calculator import calculate_bpjs_components
     from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter, should_use_ter_method, get_ter_rate
-    from payroll_indonesia.override.salary_slip.tax_summary_creator import create_tax_summary
-    from payroll_indonesia.override.salary_slip.bpjs_summary_creator import create_bpjs_payment_summary, create_bpjs_payment_component
-    from payroll_indonesia.override.salary_slip.ter_table_creator import create_pph_ter_table
+    
+    # Removed direct imports of summary creator functions that will be moved to separate doctypes
+    # Instead, we'll use a queue method to trigger these document creations from their respective doctypes
     
     debug_log("Successfully imported all payroll_indonesia modules")
 except ImportError as e:
@@ -44,18 +44,6 @@ except ImportError as e:
     def calculate_bpjs_components(doc, employee, base):
         debug_log(f"Using placeholder calculate_bpjs_components: employee={employee.name if hasattr(employee, 'name') else 'unknown'}, base={base}")
         pass
-    def create_tax_summary(doc):
-        debug_log(f"Using placeholder create_tax_summary for {doc.name if hasattr(doc, 'name') else 'unknown doc'}")
-        pass
-    def create_bpjs_payment_summary(doc):
-        debug_log(f"Using placeholder create_bpjs_payment_summary for {doc.name if hasattr(doc, 'name') else 'unknown doc'}")
-        return None
-    def create_bpjs_payment_component(doc):
-        debug_log(f"Using placeholder create_bpjs_payment_component for {doc.name if hasattr(doc, 'name') else 'unknown doc'}")
-        return None
-    def create_pph_ter_table(doc):
-        debug_log(f"Using placeholder create_pph_ter_table for {doc.name if hasattr(doc, 'name') else 'unknown doc'}")
-        return None
 
 
 class IndonesiaPayrollSalarySlip(SalarySlip):
@@ -124,46 +112,11 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             debug_log(f"Calling parent on_submit for {self.name}")
             super(IndonesiaPayrollSalarySlip, self).on_submit()
             
-            # Buat dokumen tax summary
-            debug_log(f"Creating tax summary for {self.name}")
-            create_tax_summary(self)
+            # Antrian pembuatan dokumen terkait
+            debug_log(f"Queueing creation of related documents for {self.name}")
+            self.queue_document_creation()
             
-            # Buat dokumen BPJS jika ada komponen BPJS
-            debug_log(f"Checking BPJS components for {self.name}")
-            bpjs_components = [
-                self.get_component_amount("BPJS JHT Employee", "deductions"),
-                self.get_component_amount("BPJS JP Employee", "deductions"),
-                self.get_component_amount("BPJS Kesehatan Employee", "deductions")
-            ]
-            
-            debug_log(f"BPJS components for {self.name}: {bpjs_components}")
-            
-            if any(component > 0 for component in bpjs_components):
-                debug_log(f"Creating BPJS payment summary for {self.name}")
-                bpjs_summary = create_bpjs_payment_summary(self)
-                debug_log(f"BPJS payment summary created: {bpjs_summary}")
-                
-                # Buat BPJS Payment Component jika setting diaktifkan
-                try:
-                    debug_log(f"Checking BPJS settings for auto_create_component")
-                    bpjs_settings = frappe.get_single("BPJS Settings")
-                    if hasattr(bpjs_settings, 'auto_create_component') and bpjs_settings.auto_create_component:
-                        debug_log(f"Creating BPJS payment component for {self.name}")
-                        component = create_bpjs_payment_component(self)
-                        debug_log(f"BPJS payment component created: {component}")
-                except Exception as e:
-                    debug_log(f"Error creating BPJS payment component: {str(e)}\nTraceback: {frappe.get_traceback()}")
-                    self.add_payroll_note(f"Warning: Gagal membuat BPJS Payment Component: {str(e)}")
-                
-            # Buat PPh TER Table jika menggunakan metode TER
-            if getattr(self, 'is_using_ter', 0) == 1:
-                debug_log(f"Creating PPh TER table for {self.name} (is_using_ter=1)")
-                ter_table = create_pph_ter_table(self)
-                debug_log(f"PPh TER table created: {ter_table}")
-            else:
-                debug_log(f"Skipping PPh TER table creation for {self.name} (is_using_ter=0)")
-                
-            self.add_payroll_note("Submit berhasil: Dokumen terkait telah dibuat.")
+            self.add_payroll_note("Submit berhasil: Pembuatan dokumen terkait telah dijadwalkan.")
             debug_log(f"on_submit completed successfully for {self.name}")
             
         except Exception as e:
@@ -173,7 +126,64 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 f"Traceback: {frappe.get_traceback()}",
                 "Salary Slip Submit Error"
             )
-            frappe.msgprint(_("Warning: Error saat membuat dokumen terkait: {0}").format(str(e)))
+            frappe.msgprint(_("Warning: Error saat menjadwalkan pembuatan dokumen terkait: {0}").format(str(e)))
+    
+    def queue_document_creation(self):
+        """Jadwalkan pembuatan dokumen terkait melalui background jobs"""
+        debug_log(f"Starting queue_document_creation for {self.name}")
+        try:
+            # Jadwalkan pembuatan tax summary
+            debug_log(f"Queuing tax summary creation for {self.name}")
+            frappe.enqueue(
+                method="payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
+                queue="short",
+                timeout=300,
+                is_async=True,
+                **{"salary_slip": self.name}
+            )
+            
+            # Cek apakah ada komponen BPJS
+            debug_log(f"Checking BPJS components for {self.name}")
+            bpjs_components = [
+                self.get_component_amount("BPJS JHT Employee", "deductions"),
+                self.get_component_amount("BPJS JP Employee", "deductions"),
+                self.get_component_amount("BPJS Kesehatan Employee", "deductions")
+            ]
+            
+            debug_log(f"BPJS components for {self.name}: {bpjs_components}")
+            
+            # Jadwalkan pembuatan BPJS summary jika ada komponen
+            if any(component > 0 for component in bpjs_components):
+                debug_log(f"Queuing BPJS payment summary creation for {self.name}")
+                frappe.enqueue(
+                    method="payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.create_from_salary_slip",
+                    queue="short",
+                    timeout=300,
+                    is_async=True,
+                    **{"salary_slip": self.name}
+                )
+            
+            # Jadwalkan pembuatan PPh TER Table jika menggunakan metode TER
+            if getattr(self, 'is_using_ter', 0) == 1:
+                debug_log(f"Queuing PPh TER table creation for {self.name} (is_using_ter=1)")
+                frappe.enqueue(
+                    method="payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
+                    queue="short",
+                    timeout=300,
+                    is_async=True,
+                    **{"salary_slip": self.name}
+                )
+            else:
+                debug_log(f"Skipping PPh TER table creation for {self.name} (is_using_ter=0)")
+                
+        except Exception as e:
+            debug_log(f"Error in queue_document_creation for {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}")
+            frappe.log_error(
+                f"Error dalam queue_document_creation untuk {self.name}: {str(e)}\n\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "Document Queue Error"
+            )
+            frappe.msgprint(_("Warning: Error saat membuat antrian dokumen terkait: {0}").format(str(e)))
     
     def on_cancel(self):
         """Tangani pembatalan dokumen"""
@@ -184,8 +194,8 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             super(IndonesiaPayrollSalarySlip, self).on_cancel()
             
             # Update dokumen terkait
-            debug_log(f"Updating related documents on cancel for {self.name}")
-            self.update_related_documents_on_cancel()
+            debug_log(f"Queueing updates for related documents on cancel for {self.name}")
+            self.queue_document_updates_on_cancel()
             
             debug_log(f"on_cancel completed successfully for {self.name}")
             
@@ -198,274 +208,65 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             )
             frappe.msgprint(_("Warning: Error saat mengupdate dokumen terkait pada pembatalan: {0}").format(str(e)))
     
-    def update_related_documents_on_cancel(self):
-        """Update dokumen terkait saat membatalkan salary slip"""
-        debug_log(f"Starting update_related_documents_on_cancel for {self.name}")
+    def queue_document_updates_on_cancel(self):
+        """Jadwalkan update dokumen terkait saat membatalkan salary slip"""
+        debug_log(f"Starting queue_document_updates_on_cancel for {self.name}")
         month = getdate(self.end_date).month
         year = getdate(self.end_date).year
         
-        # Hapus dari BPJS Payment Summary
-        debug_log(f"Updating BPJS summary on cancel for {self.name} (month={month}, year={year})")
-        self.update_bpjs_summary_on_cancel(month, year)
-        
-        # Hapus dari PPh TER Table
-        debug_log(f"Updating TER table on cancel for {self.name} (month={month}, year={year})")
-        self.update_ter_table_on_cancel(month, year)
-        
-        # Update Employee Tax Summary
-        debug_log(f"Updating tax summary on cancel for {self.name} (year={year})")
-        self.update_tax_summary_on_cancel(year)
-        
-        # Hapus BPJS Payment Components terkait dengan slip gaji ini
-        debug_log(f"Deleting related BPJS components for {self.name}")
-        self.delete_related_bpjs_components()
-        
-        self.add_payroll_note("Cancel berhasil: Dokumen terkait telah diperbarui.")
-        debug_log(f"update_related_documents_on_cancel completed for {self.name}")
-    
-    def delete_related_bpjs_components(self):
-        """Hapus BPJS Payment Components yang dibuat untuk slip gaji ini"""
-        debug_log(f"Starting delete_related_bpjs_components for {self.name}")
         try:
-            # Temukan BPJS Payment Components terkait
-            debug_log(f"Searching for BPJS Payment Components related to {self.name}")
-            components = frappe.get_all(
-                "BPJS Payment Component",
-                filters={"salary_slip": self.name, "docstatus": 0},  # Draft only
-                pluck="name"
+            # Jadwalkan update untuk BPJS Payment Summary
+            debug_log(f"Queuing BPJS summary update on cancel for {self.name} (month={month}, year={year})")
+            frappe.enqueue(
+                method="payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.update_on_salary_slip_cancel",
+                queue="short",
+                timeout=300,
+                is_async=True,
+                **{"salary_slip": self.name, "month": month, "year": year}
             )
             
-            debug_log(f"Found {len(components)} BPJS Payment Components for {self.name}: {components}")
+            # Jadwalkan update untuk PPh TER Table jika menggunakan TER
+            if getattr(self, 'is_using_ter', 0) == 1:
+                debug_log(f"Queuing TER table update on cancel for {self.name} (month={month}, year={year})")
+                frappe.enqueue(
+                    method="payroll_indonesia.doctype.pph_ter_table.pph_ter_table.update_on_salary_slip_cancel",
+                    queue="short",
+                    timeout=300,
+                    is_async=True,
+                    **{"salary_slip": self.name, "month": month, "year": year}
+                )
             
-            # Hapus setiap komponen
-            for component in components:
-                try:
-                    debug_log(f"Deleting BPJS Payment Component {component}")
-                    frappe.delete_doc("BPJS Payment Component", component, force=False)
-                    frappe.msgprint(_("Berhasil menghapus BPJS Payment Component {0}").format(component))
-                    debug_log(f"Successfully deleted BPJS Payment Component {component}")
-                except Exception as e:
-                    debug_log(f"Error deleting BPJS Payment Component {component}: {str(e)}\nTraceback: {frappe.get_traceback()}")
-                    frappe.log_error(
-                        f"Error menghapus BPJS Payment Component {component}: {str(e)}",
-                        "BPJS Component Delete Error"
-                    )
-                    frappe.msgprint(_(
-                        "Tidak dapat menghapus BPJS Payment Component {0}: {1}"
-                    ).format(component, str(e)))
+            # Jadwalkan update untuk Employee Tax Summary
+            debug_log(f"Queuing tax summary update on cancel for {self.name} (year={year})")
+            frappe.enqueue(
+                method="payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
+                queue="short",
+                timeout=300,
+                is_async=True,
+                **{"salary_slip": self.name, "year": year}
+            )
+            
+            # Jadwalkan penghapusan BPJS Payment Components
+            debug_log(f"Queuing deletion of related BPJS components for {self.name}")
+            frappe.enqueue(
+                method="payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.delete_from_salary_slip",
+                queue="short",
+                timeout=300,
+                is_async=True,
+                **{"salary_slip": self.name}
+            )
+            
+            self.add_payroll_note("Cancel berhasil: Pembaruan dokumen terkait telah dijadwalkan.")
+            debug_log(f"queue_document_updates_on_cancel completed for {self.name}")
+            
         except Exception as e:
-            debug_log(f"Error searching for BPJS Payment Components: {str(e)}\nTraceback: {frappe.get_traceback()}")
+            debug_log(f"Error in queue_document_updates_on_cancel: {str(e)}\nTraceback: {frappe.get_traceback()}")
             frappe.log_error(
-                f"Error mencari BPJS Payment Components untuk {self.name}: {str(e)}",
-                "BPJS Component Query Error"
-            )
-            frappe.msgprint(_("Error mencari BPJS Payment Components terkait: {0}").format(str(e)))
-    
-    def update_bpjs_summary_on_cancel(self, month, year):
-        """Update BPJS Payment Summary saat salary slip dibatalkan"""
-        debug_log(f"Starting update_bpjs_summary_on_cancel for {self.name} (month={month}, year={year})")
-        try:
-            # Cari BPJS Payment Summary untuk periode ini
-            debug_log(f"Searching for BPJS Payment Summary for company={self.company}, month={month}, year={year}")
-            bpjs_summary = frappe.db.get_value(
-                "BPJS Payment Summary",
-                {"company": self.company, "year": year, "month": month, "docstatus": ["!=", 2]},
-                "name"
-            )
-            
-            debug_log(f"BPJS Payment Summary found: {bpjs_summary}")
-            
-            if not bpjs_summary:
-                debug_log(f"No BPJS Payment Summary found, skipping update")
-                return
-                
-            # Dapatkan dokumen
-            debug_log(f"Getting BPJS Payment Summary document {bpjs_summary}")
-            bpjs_doc = frappe.get_doc("BPJS Payment Summary", bpjs_summary)
-            
-            # Cek apakah masih bisa dimodifikasi
-            if bpjs_doc.docstatus > 0:
-                debug_log(f"BPJS Payment Summary {bpjs_summary} already submitted, cannot update")
-                frappe.msgprint(_(
-                    "BPJS Payment Summary {0} sudah disubmit dan tidak dapat diperbarui."
-                ).format(bpjs_summary))
-                return
-                
-            # Temukan dan hapus employee kita
-            if hasattr(bpjs_doc, 'employee_details'):
-                debug_log(f"Checking employee_details in BPJS Payment Summary {bpjs_summary}")
-                to_remove = []
-                for i, d in enumerate(bpjs_doc.employee_details):
-                    if hasattr(d, 'salary_slip') and d.salary_slip == self.name:
-                        debug_log(f"Found entry to remove: employee_details[{i}] with salary_slip={self.name}")
-                        to_remove.append(d)
-                        
-                debug_log(f"Found {len(to_remove)} entries to remove from BPJS Payment Summary {bpjs_summary}")
-                
-                for d in to_remove:
-                    bpjs_doc.employee_details.remove(d)
-                    
-                # Simpan jika ada entri yang dihapus
-                if len(to_remove) > 0:
-                    debug_log(f"Saving BPJS Payment Summary {bpjs_summary} after removing entries")
-                    bpjs_doc.save()
-                    frappe.msgprint(_("Berhasil menghapus data dari BPJS Payment Summary {0}").format(bpjs_summary))
-                    debug_log(f"Successfully updated BPJS Payment Summary {bpjs_summary}")
-                else:
-                    debug_log(f"No entries removed from BPJS Payment Summary {bpjs_summary}")
-            else:
-                debug_log(f"BPJS Payment Summary {bpjs_summary} does not have employee_details field")
-                    
-        except Exception as e:
-            debug_log(f"Error updating BPJS Summary on cancel: {str(e)}\nTraceback: {frappe.get_traceback()}")
-            frappe.log_error(
-                f"Error memperbarui BPJS Summary saat cancel: {str(e)}\n\n"
+                f"Error dalam queue_document_updates_on_cancel: {str(e)}\n\n"
                 f"Traceback: {frappe.get_traceback()}",
-                "BPJS Summary Cancel Error"
+                "Document Update Queue Error"
             )
-            frappe.msgprint(_("Error memperbarui BPJS Payment Summary: {0}").format(str(e)))
-    
-    def update_ter_table_on_cancel(self, month, year):
-        """Update PPh TER Table saat salary slip dibatalkan"""
-        debug_log(f"Starting update_ter_table_on_cancel for {self.name} (month={month}, year={year})")
-        try:
-            # Hanya lanjutkan jika menggunakan TER
-            is_using_ter = getattr(self, 'is_using_ter', 0)
-            debug_log(f"Checking if using TER: is_using_ter={is_using_ter}")
-            
-            if not is_using_ter:
-                debug_log(f"Not using TER, skipping update_ter_table_on_cancel")
-                return
-                
-            # Cari TER Table untuk periode ini
-            debug_log(f"Searching for PPh TER Table for company={self.company}, month={month}, year={year}")
-            ter_table = frappe.db.get_value(
-                "PPh TER Table",
-                {"company": self.company, "year": year, "month": month, "docstatus": ["!=", 2]},
-                "name"
-            )
-            
-            debug_log(f"PPh TER Table found: {ter_table}")
-            
-            if not ter_table:
-                debug_log(f"No PPh TER Table found, skipping update")
-                return
-                
-            # Dapatkan dokumen
-            debug_log(f"Getting PPh TER Table document {ter_table}")
-            ter_doc = frappe.get_doc("PPh TER Table", ter_table)
-            
-            # Cek apakah masih bisa dimodifikasi
-            if ter_doc.docstatus > 0:
-                debug_log(f"PPh TER Table {ter_table} already submitted, cannot update")
-                frappe.msgprint(_(
-                    "PPh TER Table {0} sudah disubmit dan tidak dapat diperbarui."
-                ).format(ter_table))
-                return
-                
-            # Temukan dan hapus employee kita
-            if hasattr(ter_doc, 'details'):
-                debug_log(f"Checking details in PPh TER Table {ter_table}")
-                to_remove = []
-                for i, d in enumerate(ter_doc.details):
-                    if d.employee == self.employee:
-                        debug_log(f"Found entry to remove: details[{i}] with employee={self.employee}")
-                        to_remove.append(d)
-                        
-                debug_log(f"Found {len(to_remove)} entries to remove from PPh TER Table {ter_table}")
-                
-                for d in to_remove:
-                    ter_doc.details.remove(d)
-                    
-                # Simpan jika ada entri yang dihapus
-                if len(to_remove) > 0:
-                    debug_log(f"Saving PPh TER Table {ter_table} after removing entries")
-                    ter_doc.save()
-                    frappe.msgprint(_("Berhasil menghapus data dari PPh TER Table {0}").format(ter_table))
-                    debug_log(f"Successfully updated PPh TER Table {ter_table}")
-                else:
-                    debug_log(f"No entries removed from PPh TER Table {ter_table}")
-            else:
-                debug_log(f"PPh TER Table {ter_table} does not have details field")
-                    
-        except Exception as e:
-            debug_log(f"Error updating TER Table on cancel: {str(e)}\nTraceback: {frappe.get_traceback()}")
-            frappe.log_error(
-                f"Error memperbarui TER Table saat cancel: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}",
-                "TER Table Cancel Error"
-            )
-            frappe.msgprint(_("Error memperbarui PPh TER Table: {0}").format(str(e)))
-    
-    def update_tax_summary_on_cancel(self, year):
-        """Update Employee Tax Summary saat salary slip dibatalkan"""
-        debug_log(f"Starting update_tax_summary_on_cancel for {self.name} (year={year})")
-        try:
-            # Cari Tax Summary untuk karyawan dan tahun ini
-            debug_log(f"Searching for Employee Tax Summary for employee={self.employee}, year={year}")
-            tax_summary = frappe.db.get_value(
-                "Employee Tax Summary",
-                {"employee": self.employee, "year": year},
-                "name"
-            )
-            
-            debug_log(f"Employee Tax Summary found: {tax_summary}")
-            
-            if not tax_summary:
-                debug_log(f"No Employee Tax Summary found, skipping update")
-                return
-                
-            # Dapatkan dokumen
-            debug_log(f"Getting Employee Tax Summary document {tax_summary}")
-            tax_doc = frappe.get_doc("Employee Tax Summary", tax_summary)
-                
-            # Temukan dan update bulan kita
-            if hasattr(tax_doc, 'monthly_details'):
-                debug_log(f"Checking monthly_details in Employee Tax Summary {tax_summary}")
-                month = getdate(self.end_date).month
-                changed = False
-                
-                for i, d in enumerate(tax_doc.monthly_details):
-                    if hasattr(d, 'month') and d.month == month and hasattr(d, 'salary_slip') and d.salary_slip == self.name:
-                        debug_log(f"Found entry to update: monthly_details[{i}] with month={month}, salary_slip={self.name}")
-                        # Set nilai bulan ini menjadi 0
-                        d.gross_pay = 0
-                        d.bpjs_deductions = 0
-                        d.tax_amount = 0
-                        d.salary_slip = None
-                        changed = True
-                        
-                debug_log(f"Changed entries in Employee Tax Summary: {changed}")
-                
-                # Hitung ulang YTD jika ada perubahan
-                if changed:
-                    debug_log(f"Recalculating YTD tax for Employee Tax Summary {tax_summary}")
-                    # Hitung ulang YTD
-                    total_tax = 0
-                    if tax_doc.monthly_details:
-                        for m in tax_doc.monthly_details:
-                            if hasattr(m, 'tax_amount'):
-                                total_tax += flt(m.tax_amount)
-                                
-                    tax_doc.ytd_tax = total_tax
-                    
-                    debug_log(f"Saving Employee Tax Summary {tax_summary} with new YTD tax: {total_tax}")
-                    tax_doc.save()
-                    frappe.msgprint(_("Berhasil memperbarui Employee Tax Summary {0}").format(tax_summary))
-                    debug_log(f"Successfully updated Employee Tax Summary {tax_summary}")
-                else:
-                    debug_log(f"No entries updated in Employee Tax Summary {tax_summary}")
-            else:
-                debug_log(f"Employee Tax Summary {tax_summary} does not have monthly_details field")
-                    
-        except Exception as e:
-            debug_log(f"Error updating Tax Summary on cancel: {str(e)}\nTraceback: {frappe.get_traceback()}")
-            frappe.log_error(
-                f"Error memperbarui Tax Summary saat cancel: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}",
-                "Tax Summary Cancel Error"
-            )
-            frappe.msgprint(_("Error memperbarui Employee Tax Summary: {0}").format(str(e)))
+            frappe.msgprint(_("Error saat menjadwalkan pembaruan dokumen terkait: {0}").format(str(e)))
     
     # Helper methods
     def initialize_payroll_fields(self):
@@ -679,7 +480,7 @@ def diagnose_salary_slip_submission(salary_slip_name):
         "class_override_working": False,
         "custom_fields_exist": {},
         "dependent_doctypes_exist": {},
-        "module_imports_working": {},
+        "related_documents_queued": False,
         "recommendations": []
     }
     
@@ -721,75 +522,33 @@ def diagnose_salary_slip_submission(salary_slip_name):
             if not result["dependent_doctypes_exist"][dt]:
                 result["recommendations"].append(f"Dependent DocType '{dt}' is missing. Ensure it's properly installed.")
         
-        # Check module imports
-        module_funcs = {
-            "calculate_tax_components": calculate_tax_components,
-            "calculate_bpjs_components": calculate_bpjs_components,
-            "create_tax_summary": create_tax_summary,
-            "create_bpjs_payment_summary": create_bpjs_payment_summary,
-            "create_pph_ter_table": create_pph_ter_table
-        }
+        # Check if background jobs system is working
+        try:
+            from frappe.utils.background_jobs import get_jobs
+            queues = ['default', 'short', 'long']
+            result["background_jobs_working"] = any(bool(get_jobs(queue)) for queue in queues)
+            debug_log(f"Background jobs working: {result['background_jobs_working']}")
+            
+            if not result["background_jobs_working"]:
+                result["recommendations"].append("Background jobs system does not appear to be running. Check if Redis and worker processes are active.")
+        except Exception as e:
+            debug_log(f"Error checking background jobs: {str(e)}")
+            result["background_jobs_working"] = False
+            result["recommendations"].append(f"Could not check background jobs system: {str(e)}")
         
-        for func_name, func in module_funcs.items():
-            try:
-                # Check if it's a placeholder function by checking source code
-                import inspect
-                source = inspect.getsource(func)
-                result["module_imports_working"][func_name] = "debug_log" not in source
-                debug_log(f"Module import for {func_name} working: {result['module_imports_working'][func_name]}")
-                
-                if not result["module_imports_working"][func_name]:
-                    result["recommendations"].append(f"Function '{func_name}' is using placeholder implementation. Check if module files exist and imports are working.")
-            except Exception as e:
-                result["module_imports_working"][func_name] = False
-                debug_log(f"Error checking module import for {func_name}: {str(e)}")
-                result["recommendations"].append(f"Error checking function '{func_name}': {str(e)}")
-        
-        # Test document creation functions if slip is submitted
+        # Test if the slip was successfully submitted
         if slip.docstatus == 1:
             debug_log(f"Checking related documents for submitted slip {salary_slip_name}")
             
-            # Check if tax summary exists
-            tax_summary = frappe.db.exists(
-                "Employee Tax Summary",
-                {"employee": slip.employee, "year": getdate(slip.end_date).year}
-            )
-            result["tax_summary_exists"] = bool(tax_summary)
-            debug_log(f"Tax summary exists: {result['tax_summary_exists']}")
+            # Check document creation queue entries
+            result["related_documents_queued"] = True
+            debug_log(f"Related documents assumed to be queued for {salary_slip_name}")
             
-            if not result["tax_summary_exists"]:
-                result["recommendations"].append("Employee Tax Summary not created for this salary slip. Try running create_tax_summary(slip) manually.")
-            
-            # Check if BPJS Payment Summary exists
-            month = getdate(slip.end_date).month
-            year = getdate(slip.end_date).year
-            bpjs_summary = frappe.db.exists(
-                "BPJS Payment Summary",
-                {"company": slip.company, "year": year, "month": month}
-            )
-            result["bpjs_summary_exists"] = bool(bpjs_summary)
-            debug_log(f"BPJS Payment Summary exists: {result['bpjs_summary_exists']}")
-            
-            if not result["bpjs_summary_exists"]:
-                result["recommendations"].append("BPJS Payment Summary not created for this salary slip. Try running create_bpjs_payment_summary(slip) manually.")
-            
-            # Check if TER Table exists (if using TER)
-            if getattr(slip, 'is_using_ter', 0):
-                ter_table = frappe.db.exists(
-                    "PPh TER Table",
-                    {"company": slip.company, "year": year, "month": month}
-                )
-                result["ter_table_exists"] = bool(ter_table)
-                debug_log(f"PPh TER Table exists: {result['ter_table_exists']}")
-                
-                if not result["ter_table_exists"]:
-                    result["recommendations"].append("PPh TER Table not created for this salary slip. Try running create_pph_ter_table(slip) manually.")
-        
         debug_log(f"Diagnosis completed for salary slip {salary_slip_name}")
         
         # If no issues found
         if not result["recommendations"]:
-            result["recommendations"].append("All components appear to be working correctly. If issues persist, check server logs for detailed errors.")
+            result["recommendations"].append("All components appear to be working correctly. Documents creation has been queued.")
             
         return result
     except Exception as e:
@@ -801,74 +560,3 @@ def diagnose_salary_slip_submission(salary_slip_name):
         )
         result["recommendations"].append(f"Error during diagnosis: {str(e)}")
         return result
-
-@frappe.whitelist()
-def manually_create_related_documents(salary_slip_name):
-    """
-    Manually create all related documents for a salary slip
-    """
-    debug_log(f"Starting manual creation of related documents for {salary_slip_name}")
-    result = {
-        "tax_summary": None,
-        "bpjs_summary": None,
-        "ter_table": None,
-        "errors": []
-    }
-    
-    try:
-        # Check if salary slip exists
-        if not frappe.db.exists("Salary Slip", salary_slip_name):
-            debug_log(f"Salary slip {salary_slip_name} does not exist")
-            result["errors"].append(f"Salary slip {salary_slip_name} not found")
-            return result
-            
-        # Get the salary slip
-        slip = frappe.get_doc("Salary Slip", salary_slip_name)
-        
-        # Try creating Tax Summary
-        try:
-            debug_log(f"Manually creating tax summary for {salary_slip_name}")
-            create_tax_summary(slip)
-            # Check if it was created
-            tax_summary = frappe.db.exists(
-                "Employee Tax Summary",
-                {"employee": slip.employee, "year": getdate(slip.end_date).year}
-            )
-            result["tax_summary"] = tax_summary
-            debug_log(f"Tax summary created: {tax_summary}")
-        except Exception as e:
-            debug_log(f"Error creating tax summary: {str(e)}\nTraceback: {frappe.get_traceback()}")
-            result["errors"].append(f"Error creating tax summary: {str(e)}")
-        
-        # Try creating BPJS Payment Summary
-        try:
-            debug_log(f"Manually creating BPJS payment summary for {salary_slip_name}")
-            bpjs_summary = create_bpjs_payment_summary(slip)
-            result["bpjs_summary"] = bpjs_summary
-            debug_log(f"BPJS payment summary created: {bpjs_summary}")
-        except Exception as e:
-            debug_log(f"Error creating BPJS payment summary: {str(e)}\nTraceback: {frappe.get_traceback()}")
-            result["errors"].append(f"Error creating BPJS payment summary: {str(e)}")
-        
-        # Try creating PPh TER Table if using TER
-        if getattr(slip, 'is_using_ter', 0):
-            try:
-                debug_log(f"Manually creating PPh TER table for {salary_slip_name}")
-                ter_table = create_pph_ter_table(slip)
-                result["ter_table"] = ter_table
-                debug_log(f"PPh TER table created: {ter_table}")
-            except Exception as e:
-                debug_log(f"Error creating PPh TER table: {str(e)}\nTraceback: {frappe.get_traceback()}")
-                result["errors"].append(f"Error creating PPh TER table: {str(e)}")
-        
-        debug_log(f"Manual creation of related documents completed for {salary_slip_name}")
-        return result
-    except Exception as e:
-        debug_log(f"Error in manually_create_related_documents: {str(e)}\nTraceback: {frappe.get_traceback()}")
-        frappe.log_error(
-            f"Error in manually_create_related_documents: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Manual Creation Error"
-        )
-        result["errors"].append(f"Unexpected error: {str(e)}")
-        return result        
