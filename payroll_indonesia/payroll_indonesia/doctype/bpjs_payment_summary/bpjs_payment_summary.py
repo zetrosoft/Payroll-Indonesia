@@ -768,3 +768,25 @@ def update_on_salary_slip_cancel(salary_slip, month, year):
             "BPJS Payment Summary Cancel Error"
         )
         return False
+
+@frappe.whitelist()
+def get_summary_for_period(company, month, year):
+    """
+    Get BPJS Payment Summary for a specific period
+    Returns the name of an existing BPJS Payment Summary or None if not found
+    """
+    try:
+        bpjs_summary_name = frappe.db.get_value(
+            "BPJS Payment Summary",
+            {"company": company, "year": year, "month": month, "docstatus": ["!=", 2]},
+            "name"
+        )
+        
+        return bpjs_summary_name
+    except Exception as e:
+        frappe.log_error(
+            f"Error in get_summary_for_period: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "BPJS Summary Period Error"
+        )
+        return None
