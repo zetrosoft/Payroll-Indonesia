@@ -70,15 +70,15 @@ doc_events = {
             "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
             "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
             "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
-            # Pastikan fungsi ini tersedia di modul bpjs_payment_summary
-            "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.process_salary_slip_submission"
+            # PERBEDAAN: Menggunakan bpjs_payment_api bukan bpjs_payment_integration
+            "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.create_from_salary_slip"
         ],
         "on_cancel": [
             "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
             "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.update_on_salary_slip_cancel",
             "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
-            # Pastikan fungsi ini tersedia di modul bpjs_payment_summary
-            "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.process_salary_slip_cancellation"
+            # PERBEDAAN: Menggunakan bpjs_payment_api bukan bpjs_payment_integration
+            "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.update_on_salary_slip_cancel"
         ],
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
@@ -166,8 +166,8 @@ scheduler_events = {
         "payroll_indonesia.override.salary_structure.update_salary_structures"
     ],
     "monthly": [
-        "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries",
-        # REMOVED: generate_monthly_summaries - fungsi yang tidak ada
+        "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries"
+        # PERBEDAAN: Tidak ada komentar "REMOVED: generate_monthly_summaries"
     ],
     "yearly": [
         "payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"
@@ -209,11 +209,12 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
         "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
         
-        # BPJS Payment Summary Functions
-        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.get_summary_for_period",
-        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.get_employee_bpjs_details",
-        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.create_payment_entry",
-        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.get_bpjs_suppliers"
+        # BPJS Payment Summary Functions - Updated paths to match new structure
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_summary_for_period",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_employee_bpjs_details",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.create_payment_entry",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_bpjs_suppliers"
+        # PERBEDAAN: Tidak ada fungsi utils di jinja methods
     ]
 }
 
@@ -291,8 +292,8 @@ rest_export = {
 debug_tools = [
     "payroll_indonesia.override.salary_slip.diagnose_salary_slip_submission",
     "payroll_indonesia.override.salary_slip.manually_create_related_documents",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.diagnose_bpjs_payment"
-    # REMOVED: rebuild_payment_summary - fungsi yang tidak ada
+    # PERBEDAAN: Tidak menggunakan diagnose_bpjs_payment, tetapi debug_log dari utils
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.debug_log"
 ]
 
 # Daftar modul yang baru dibuat untuk memudahkan debugging
@@ -302,20 +303,24 @@ module_info = {
     "payroll_indonesia.override.salary_slip.tax_calculator": "PPh 21 Calculator",
     "payroll_indonesia.override.salary_slip.bpjs_calculator": "BPJS Calculator",
     "payroll_indonesia.override.salary_slip.ter_calculator": "TER Method Calculator",
-    # REMOVED: tax_summary_creator, bpjs_summary_creator, dan ter_table_creator 
-    # karena module ini tidak ada
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping": "BPJS Account Mapping Controller",
     "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation": "BPJS Calculation Module",
     "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table": "PPh TER Table Controller",
     "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary": "Employee Tax Summary Controller",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary": "BPJS Payment Summary Controller",
+    # PERBEDAAN: Deskripsi lebih pendek
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api": "BPJS Payment API",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_integration": "BPJS Payment Integration",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils": "BPJS Payment Utilities",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks": "BPJS Payment Hooks"
 }
 
 # Whitelist for Client-side API Calls
 whitelist_methods = [
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.create_payment_entry",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.get_payment_details",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.get_employee_bpjs_details",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.create_payment_entry",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_employee_bpjs_details",
+    # PERBEDAAN: Mengubah urutan fungsi whitelist
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_summary_for_period",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_bpjs_suppliers",
     "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.get_ytd_data_until_month"
 ]
