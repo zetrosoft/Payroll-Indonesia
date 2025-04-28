@@ -1,18 +1,13 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-28 02:15:00 by dannyaudian
+# Last modified: 2025-04-28 11:56:28 by dannyaudian
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import today, flt, fmt_money, getdate, now_datetime
-
-# Debug function for error tracking
-def debug_log(message, module_name="BPJS Payment Summary"):
-    """Log debug message with timestamp and additional info"""
-    timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
-    frappe.log_error(f"[{timestamp}] {message}", module_name)
+from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs, debug_log
 
 # Define custom formatter to replace missing get_formatted_currency
 def get_formatted_currency(value, company=None):
@@ -130,47 +125,8 @@ class BPJSPaymentSummary(Document):
                         if bpjs_type:
                             bpjs_totals[bpjs_type] += flt(comp.amount)
                 
-                # Mapping field nama dengan properti account dan tipe BPJS
-                account_fields = [
-                    {"field": "kesehatan_account", "type": "Kesehatan"},
-                    {"field": "jht_account", "type": "JHT"},
-                    {"field": "jp_account", "type": "JP"},
-                    {"field": "jkk_account", "type": "JKK"},
-                    {"field": "jkm_account", "type": "JKM"}
-                ]
-                
-                # Tambahkan account details berdasarkan mapping
-                for field_info in account_fields:
-                    field = field_info["field"]
-                    bpjs_type = field_info["type"]
-                    
-                    # Ambil akun dari mapping
-                    account = getattr(mapping_doc, field, None)
-                    amount = bpjs_totals[bpjs_type]
-                    
-                    if account and amount > 0:
-                        # Format penamaan referensi sesuai standar
-                        month_names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
-                                      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-                        month_name = month_names[self.month - 1] if self.month >= 1 and self.month <= 12 else str(self.month)
-                        
-                        self.append("account_details", {
-                            "account_type": bpjs_type,
-                            "account": account,
-                            "amount": amount,
-                            "reference_number": f"BPJS-{bpjs_type}-{self.month}-{self.year}",
-                            "description": f"BPJS {bpjs_type} {month_name} {self.year}"
-                        })
-                
-                # Validasi total account_details sesuai dengan total dokumen
-                account_total = sum(flt(acc.amount) for acc in self.account_details)
-                if abs(account_total - self.total) > 0.1:  # Toleransi 0.1 untuk pembulatan
-                    frappe.msgprint(
-                        _("Warning: Total from account details ({0}) doesn't match document total ({1})").format(
-                            account_total, self.total
-                        ),
-                        indicator='orange'
-                    )
+                # Add account details using helper function
+                self._add_account_details_from_mapping(mapping_doc, bpjs_totals)
                     
             else:
                 # Jika tidak ada mapping khusus perusahaan, gunakan BPJS Settings global
@@ -199,21 +155,10 @@ class BPJSPaymentSummary(Document):
                                 indicator='orange'
                             )
                             continue
-                            
-                        # Format penamaan referensi sesuai standar
-                        month_names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
-                                      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-                        month_name = month_names[self.month - 1] if self.month >= 1 and self.month <= 12 else str(self.month)
                         
-                        # Tambahkan ke account_details table
-                        self.append("account_details", {
-                            "account_type": account_type,
-                            "account": getattr(bpjs_settings, account_field),
-                            "amount": comp.amount,
-                            "reference_number": f"BPJS-{account_type}-{self.month}-{self.year}",
-                            "description": f"BPJS {account_type} {month_name} {self.year}"
-                        })
-        
+                        # Add account detail using helper function
+                        self._add_account_detail(account_type, getattr(bpjs_settings, account_field), comp.amount)
+                        
         except Exception as e:
             frappe.log_error(
                 f"Error setting account details for BPJS Payment Summary {self.name}: {str(e)}\n\n"
@@ -224,6 +169,57 @@ class BPJSPaymentSummary(Document):
                 _("Error setting account details: {0}").format(str(e)),
                 indicator='red'
             )
+            
+    def _add_account_details_from_mapping(self, mapping_doc, bpjs_totals):
+        """Helper function to add account details from mapping"""
+        # Mapping field nama dengan properti account dan tipe BPJS
+        account_fields = [
+            {"field": "kesehatan_account", "type": "Kesehatan"},
+            {"field": "jht_account", "type": "JHT"},
+            {"field": "jp_account", "type": "JP"},
+            {"field": "jkk_account", "type": "JKK"},
+            {"field": "jkm_account", "type": "JKM"}
+        ]
+        
+        # Tambahkan account details berdasarkan mapping
+        for field_info in account_fields:
+            field = field_info["field"]
+            bpjs_type = field_info["type"]
+            
+            # Ambil akun dari mapping
+            account = getattr(mapping_doc, field, None)
+            amount = bpjs_totals[bpjs_type]
+            
+            if account and amount > 0:
+                self._add_account_detail(bpjs_type, account, amount)
+                
+        # Validasi total account_details sesuai dengan total dokumen
+        account_total = sum(flt(acc.amount) for acc in self.account_details)
+        if abs(account_total - self.total) > 0.1:  # Toleransi 0.1 untuk pembulatan
+            frappe.msgprint(
+                _("Warning: Total from account details ({0}) doesn't match document total ({1})").format(
+                    account_total, self.total
+                ),
+                indicator='orange'
+            )
+            
+    def _add_account_detail(self, account_type, account, amount):
+        """Helper function to add a single account detail"""
+        if not account or amount <= 0:
+            return
+            
+        # Format penamaan referensi sesuai standar
+        month_names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+                      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+        month_name = month_names[self.month - 1] if self.month >= 1 and self.month <= 12 else str(self.month)
+        
+        self.append("account_details", {
+            "account_type": account_type,
+            "account": account,
+            "amount": amount,
+            "reference_number": f"BPJS-{account_type}-{self.month}-{self.year}",
+            "description": f"BPJS {account_type} {month_name} {self.year}"
+        })
     
     def on_submit(self):
         """Set status to Submitted and create journal entry"""
@@ -273,26 +269,7 @@ class BPJSPaymentSummary(Document):
             je.user_remark = f"BPJS Contributions for {month_name} {self.year}"
             
             # Calculate totals from employee_details
-            employee_total = 0
-            employer_total = 0
-            
-            if hasattr(self, 'employee_details') and self.employee_details:
-                for d in self.employee_details:
-                    # Sum up employee contributions
-                    employee_total += (
-                        flt(d.kesehatan_employee) + 
-                        flt(d.jht_employee) + 
-                        flt(d.jp_employee)
-                    )
-                    
-                    # Sum up employer contributions
-                    employer_total += (
-                        flt(d.kesehatan_employer) + 
-                        flt(d.jht_employer) + 
-                        flt(d.jp_employer) +
-                        flt(d.jkk) + 
-                        flt(d.jkm)
-                    )
+            employee_total, employer_total = self._calculate_contribution_totals()
             
             # Add expense entries (debit)
             # First for employee contributions - expense to Salary Payable
@@ -343,6 +320,31 @@ class BPJSPaymentSummary(Document):
                 "BPJS Journal Entry Error"
             )
             frappe.msgprint(_("Error creating Journal Entry: {0}").format(str(e)))
+            
+    def _calculate_contribution_totals(self):
+        """Calculate employee and employer contribution totals"""
+        employee_total = 0
+        employer_total = 0
+        
+        if hasattr(self, 'employee_details') and self.employee_details:
+            for d in self.employee_details:
+                # Sum up employee contributions
+                employee_total += (
+                    flt(d.kesehatan_employee) + 
+                    flt(d.jht_employee) + 
+                    flt(d.jp_employee)
+                )
+                
+                # Sum up employer contributions
+                employer_total += (
+                    flt(d.kesehatan_employer) + 
+                    flt(d.jht_employer) + 
+                    flt(d.jp_employer) +
+                    flt(d.jkk) + 
+                    flt(d.jkm)
+                )
+                
+        return employee_total, employer_total
     
     @frappe.whitelist()
     def generate_payment_entry(self):
@@ -453,35 +455,8 @@ def create_from_salary_slip(salary_slip):
             debug_log(f"Salary slip {salary_slip} not found or not submitted")
             return None
             
-        # Check if there are any BPJS components
-        bpjs_components = {
-            "employee": {},
-            "employer": {}
-        }
-        
-        # Ambil data langsung dari salary slip tanpa menghitung ulang
-        for deduction in slip.deductions:
-            # Employee contributions
-            if deduction.salary_component == "BPJS JHT Employee":
-                bpjs_components["employee"]["jht"] = flt(deduction.amount)
-            elif deduction.salary_component == "BPJS JP Employee":
-                bpjs_components["employee"]["jp"] = flt(deduction.amount)
-            elif deduction.salary_component == "BPJS Kesehatan Employee":
-                bpjs_components["employee"]["kesehatan"] = flt(deduction.amount)
-        
-        # Check employer contributions in earnings (often added as non-taxable benefits)
-        for earning in slip.earnings:
-            # Employer contributions
-            if earning.salary_component == "BPJS JHT Employer":
-                bpjs_components["employer"]["jht"] = flt(earning.amount)
-            elif earning.salary_component == "BPJS JP Employer":
-                bpjs_components["employer"]["jp"] = flt(earning.amount)
-            elif earning.salary_component == "BPJS Kesehatan Employer":
-                bpjs_components["employer"]["kesehatan"] = flt(earning.amount)
-            elif earning.salary_component == "BPJS JKK":
-                bpjs_components["employer"]["jkk"] = flt(earning.amount)
-            elif earning.salary_component == "BPJS JKM":
-                bpjs_components["employer"]["jkm"] = flt(earning.amount)
+        # Extract BPJS components from salary slip
+        bpjs_components = extract_bpjs_from_salary_slip(slip)
         
         # If no BPJS components found, no need to continue
         if not any(bpjs_components["employee"].values()) and not any(bpjs_components["employer"].values()):
@@ -494,25 +469,8 @@ def create_from_salary_slip(salary_slip):
         
         debug_log(f"Processing BPJS for company={slip.company}, year={year}, month={month}")
         
-        # Check if a BPJS Payment Summary already exists for this period
-        bpjs_summary_name = frappe.db.get_value(
-            "BPJS Payment Summary",
-            {"company": slip.company, "year": year, "month": month, "docstatus": ["!=", 2]},
-            "name"
-        )
-        
-        if bpjs_summary_name:
-            debug_log(f"Found existing BPJS Payment Summary: {bpjs_summary_name}")
-            bpjs_summary = frappe.get_doc("BPJS Payment Summary", bpjs_summary_name)
-            
-            # Check if already submitted
-            if bpjs_summary.docstatus > 0:
-                debug_log(f"BPJS Payment Summary {bpjs_summary_name} already submitted, creating a new one")
-                bpjs_summary = create_new_bpjs_summary(slip, month, year)
-            
-        else:
-            debug_log(f"Creating new BPJS Payment Summary for {slip.company}, {year}, {month}")
-            bpjs_summary = create_new_bpjs_summary(slip, month, year)
+        # Get or create BPJS Payment Summary for the period
+        bpjs_summary = get_or_create_bpjs_summary(slip, month, year)
         
         # Check if employee is already in the summary
         employee_exists = False
@@ -537,19 +495,7 @@ def create_from_salary_slip(salary_slip):
         debug_log(f"Successfully saved BPJS Payment Summary: {bpjs_summary.name}")
         
         # Create BPJS Payment Component if setting is enabled
-        try:
-            bpjs_settings = frappe.get_single("BPJS Settings")
-            if hasattr(bpjs_settings, 'auto_create_component') and bpjs_settings.auto_create_component:
-                debug_log(f"Auto-creating BPJS payment component for {salary_slip}")
-                frappe.enqueue(
-                    method="payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.create_from_salary_slip",
-                    queue="short",
-                    timeout=300,
-                    is_async=True,
-                    **{"salary_slip": salary_slip, "bpjs_summary": bpjs_summary.name}
-                )
-        except Exception as e:
-            debug_log(f"Error checking BPJS settings: {str(e)}")
+        trigger_bpjs_payment_component_creation(salary_slip, bpjs_summary.name)
         
         return bpjs_summary.name
         
@@ -561,6 +507,60 @@ def create_from_salary_slip(salary_slip):
             "BPJS Payment Summary Error"
         )
         return None
+
+def extract_bpjs_from_salary_slip(slip):
+    """Extract BPJS components from salary slip"""
+    bpjs_components = {
+        "employee": {},
+        "employer": {}
+    }
+    
+    # Extract employee contributions from deductions
+    for deduction in slip.deductions:
+        if deduction.salary_component == "BPJS JHT Employee":
+            bpjs_components["employee"]["jht"] = flt(deduction.amount)
+        elif deduction.salary_component == "BPJS JP Employee":
+            bpjs_components["employee"]["jp"] = flt(deduction.amount)
+        elif deduction.salary_component == "BPJS Kesehatan Employee":
+            bpjs_components["employee"]["kesehatan"] = flt(deduction.amount)
+    
+    # Extract employer contributions from earnings
+    for earning in slip.earnings:
+        if earning.salary_component == "BPJS JHT Employer":
+            bpjs_components["employer"]["jht"] = flt(earning.amount)
+        elif earning.salary_component == "BPJS JP Employer":
+            bpjs_components["employer"]["jp"] = flt(earning.amount)
+        elif earning.salary_component == "BPJS Kesehatan Employer":
+            bpjs_components["employer"]["kesehatan"] = flt(earning.amount)
+        elif earning.salary_component == "BPJS JKK":
+            bpjs_components["employer"]["jkk"] = flt(earning.amount)
+        elif earning.salary_component == "BPJS JKM":
+            bpjs_components["employer"]["jkm"] = flt(earning.amount)
+            
+    return bpjs_components
+
+def get_or_create_bpjs_summary(slip, month, year):
+    """Get existing BPJS Payment Summary or create a new one"""
+    # Check if a BPJS Payment Summary already exists for this period
+    bpjs_summary_name = frappe.db.get_value(
+        "BPJS Payment Summary",
+        {"company": slip.company, "year": year, "month": month, "docstatus": ["!=", 2]},
+        "name"
+    )
+    
+    if bpjs_summary_name:
+        debug_log(f"Found existing BPJS Payment Summary: {bpjs_summary_name}")
+        bpjs_summary = frappe.get_doc("BPJS Payment Summary", bpjs_summary_name)
+        
+        # Check if already submitted
+        if bpjs_summary.docstatus > 0:
+            debug_log(f"BPJS Payment Summary {bpjs_summary_name} already submitted, creating a new one")
+            bpjs_summary = create_new_bpjs_summary(slip, month, year)
+    else:
+        debug_log(f"Creating new BPJS Payment Summary for {slip.company}, {year}, {month}")
+        bpjs_summary = create_new_bpjs_summary(slip, month, year)
+        
+    return bpjs_summary
 
 def create_new_bpjs_summary(slip, month, year):
     """Create a new BPJS Payment Summary"""
@@ -658,45 +658,41 @@ def recalculate_bpjs_totals(bpjs_summary):
     bpjs_summary.komponen = []
     
     # Add components
-    if jht_total > 0:
-        bpjs_summary.append("komponen", {
-            "component": "BPJS JHT",
-            "description": "JHT Contribution (Employee + Employer)",
-            "amount": jht_total
-        })
-    
-    if jp_total > 0:
-        bpjs_summary.append("komponen", {
-            "component": "BPJS JP",
-            "description": "JP Contribution (Employee + Employer)",
-            "amount": jp_total
-        })
-    
-    if kesehatan_total > 0:
-        bpjs_summary.append("komponen", {
-            "component": "BPJS Kesehatan",
-            "description": "Kesehatan Contribution (Employee + Employer)",
-            "amount": kesehatan_total
-        })
-    
-    if jkk_total > 0:
-        bpjs_summary.append("komponen", {
-            "component": "BPJS JKK",
-            "description": "JKK Contribution (Employer)",
-            "amount": jkk_total
-        })
-    
-    if jkm_total > 0:
-        bpjs_summary.append("komponen", {
-            "component": "BPJS JKM",
-            "description": "JKM Contribution (Employer)",
-            "amount": jkm_total
-        })
+    add_component_if_positive(bpjs_summary, "BPJS JHT", "JHT Contribution (Employee + Employer)", jht_total)
+    add_component_if_positive(bpjs_summary, "BPJS JP", "JP Contribution (Employee + Employer)", jp_total)
+    add_component_if_positive(bpjs_summary, "BPJS Kesehatan", "Kesehatan Contribution (Employee + Employer)", kesehatan_total)
+    add_component_if_positive(bpjs_summary, "BPJS JKK", "JKK Contribution (Employer)", jkk_total)
+    add_component_if_positive(bpjs_summary, "BPJS JKM", "JKM Contribution (Employer)", jkm_total)
     
     # Calculate grand total
     bpjs_summary.total = jht_total + jp_total + kesehatan_total + jkk_total + jkm_total
     
     debug_log(f"Successfully recalculated totals for BPJS Payment Summary {bpjs_summary.name}")
+    
+def add_component_if_positive(bpjs_summary, component, description, amount):
+    """Add a component to BPJS summary if amount is positive"""
+    if amount > 0:
+        bpjs_summary.append("komponen", {
+            "component": component,
+            "description": description,
+            "amount": amount
+        })
+
+def trigger_bpjs_payment_component_creation(salary_slip, bpjs_summary_name):
+    """Trigger creation of BPJS payment component if enabled in settings"""
+    try:
+        bpjs_settings = frappe.get_single("BPJS Settings")
+        if hasattr(bpjs_settings, 'auto_create_component') and bpjs_settings.auto_create_component:
+            debug_log(f"Auto-creating BPJS payment component for {salary_slip}")
+            frappe.enqueue(
+                method="payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.create_from_salary_slip",
+                queue="short",
+                timeout=300,
+                is_async=True,
+                **{"salary_slip": salary_slip, "bpjs_summary": bpjs_summary_name}
+            )
+    except Exception as e:
+        debug_log(f"Error checking BPJS settings: {str(e)}")
 
 @frappe.whitelist()
 def update_on_salary_slip_cancel(salary_slip, month, year):
@@ -714,11 +710,7 @@ def update_on_salary_slip_cancel(salary_slip, month, year):
             return False
             
         # Find the BPJS Payment Summary
-        bpjs_summary_name = frappe.db.get_value(
-            "BPJS Payment Summary",
-            {"company": slip.company, "year": year, "month": month, "docstatus": ["!=", 2]},
-            "name"
-        )
+        bpjs_summary_name = get_summary_for_period(slip.company, month, year)
         
         if not bpjs_summary_name:
             debug_log(f"No BPJS Payment Summary found for company={slip.company}, month={month}, year={year}")
@@ -803,7 +795,7 @@ def get_employee_bpjs_details(employee, company=None):
         if not employee_doc:
             return None
             
-        # Initialize result dict
+        # Initialize result dict with employee info
         result = {
             "employee": employee,
             "employee_name": employee_doc.employee_name,
@@ -821,7 +813,7 @@ def get_employee_bpjs_details(employee, company=None):
             "kesehatan_employer": 0
         }
         
-        # If company is provided, try to get the latest BPJS settings
+        # If company is provided, calculate BPJS using centralized function
         if company:
             # Try to get salary structure assignment
             salary_structure = frappe.db.get_value(
@@ -832,35 +824,20 @@ def get_employee_bpjs_details(employee, company=None):
             )
             
             if salary_structure:
-                structure_name, base_salary = salary_structure
+                _, base_salary = salary_structure
                 
-                # Get BPJS Settings
-                bpjs_settings = frappe.get_single("BPJS Settings")
+                # Use the centralized BPJS calculation function
+                bpjs_amounts = hitung_bpjs(employee, base_salary)
                 
-                # Calculate BPJS components based on settings
-                if hasattr(bpjs_settings, 'jht_employee_percent') and bpjs_settings.jht_employee_percent:
-                    result["jht_employee"] = base_salary * (bpjs_settings.jht_employee_percent / 100)
-                
-                if hasattr(bpjs_settings, 'jht_employer_percent') and bpjs_settings.jht_employer_percent:
-                    result["jht_employer"] = base_salary * (bpjs_settings.jht_employer_percent / 100)
-                
-                if hasattr(bpjs_settings, 'jp_employee_percent') and bpjs_settings.jp_employee_percent:
-                    result["jp_employee"] = base_salary * (bpjs_settings.jp_employee_percent / 100)
-                
-                if hasattr(bpjs_settings, 'jp_employer_percent') and bpjs_settings.jp_employer_percent:
-                    result["jp_employer"] = base_salary * (bpjs_settings.jp_employer_percent / 100)
-                
-                if hasattr(bpjs_settings, 'kesehatan_employee_percent') and bpjs_settings.kesehatan_employee_percent:
-                    result["kesehatan_employee"] = base_salary * (bpjs_settings.kesehatan_employee_percent / 100)
-                
-                if hasattr(bpjs_settings, 'kesehatan_employer_percent') and bpjs_settings.kesehatan_employer_percent:
-                    result["kesehatan_employer"] = base_salary * (bpjs_settings.kesehatan_employer_percent / 100)
-                
-                if hasattr(bpjs_settings, 'jkk_percent') and bpjs_settings.jkk_percent:
-                    result["jkk"] = base_salary * (bpjs_settings.jkk_percent / 100)
-                
-                if hasattr(bpjs_settings, 'jkm_percent') and bpjs_settings.jkm_percent:
-                    result["jkm"] = base_salary * (bpjs_settings.jkm_percent / 100)
+                # Map the calculated values to our result
+                result["jht_employee"] = bpjs_amounts["jht_employee"]
+                result["jp_employee"] = bpjs_amounts["jp_employee"]
+                result["kesehatan_employee"] = bpjs_amounts["kesehatan_employee"]
+                result["jht_employer"] = bpjs_amounts["jht_employer"]
+                result["jp_employer"] = bpjs_amounts["jp_employer"]
+                result["jkk"] = bpjs_amounts["jkk_employer"]
+                result["jkm"] = bpjs_amounts["jkm_employer"]
+                result["kesehatan_employer"] = bpjs_amounts["kesehatan_employer"]
         
         # Try to get the latest values from existing BPJS Payment Summary records
         latest_bpjs_record = frappe.db.sql("""
@@ -881,7 +858,7 @@ def get_employee_bpjs_details(employee, company=None):
         """, employee, as_dict=1)
         
         if latest_bpjs_record and len(latest_bpjs_record) > 0:
-            # Update with latest values
+            # Update with latest values if they exist and are > 0
             record = latest_bpjs_record[0]
             for key in ["jht_employee", "jp_employee", "kesehatan_employee",
                        "jht_employer", "jp_employer", "kesehatan_employer",
