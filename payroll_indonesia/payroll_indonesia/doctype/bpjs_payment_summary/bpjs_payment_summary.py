@@ -898,3 +898,30 @@ def get_employee_bpjs_details(employee, company=None):
             "BPJS Employee Details Error"
         )
         return None
+
+@frappe.whitelist()
+def create_payment_entry(bpjs_summary):
+    """
+    Create a Payment Entry for a BPJS Payment Summary
+    Returns the name of the created Payment Entry or None if it fails
+    """
+    try:
+        # Get the BPJS Payment Summary document
+        bpjs_doc = frappe.get_doc("BPJS Payment Summary", bpjs_summary)
+        if not bpjs_doc:
+            frappe.throw(_("BPJS Payment Summary not found"))
+            
+        # Use the document's generate_payment_entry method
+        payment_entry_name = bpjs_doc.generate_payment_entry()
+        
+        # Return the payment entry name
+        return payment_entry_name
+    except Exception as e:
+        frappe.log_error(
+            f"Error in create_payment_entry for {bpjs_summary}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "BPJS Payment Entry Creation Error"
+        )
+        # Re-throw the error to show to the user
+        frappe.msgprint(_("Error creating payment entry: {0}").format(str(e)), indicator="red")
+        return None
