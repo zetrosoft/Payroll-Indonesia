@@ -790,3 +790,111 @@ def get_summary_for_period(company, month, year):
             "BPJS Summary Period Error"
         )
         return None
+
+@frappe.whitelist()
+def get_employee_bpjs_details(employee, company=None):
+    """
+    Get BPJS details for a specific employee
+    Returns a dict with the employee's BPJS information
+    """
+    try:
+        # Get the employee document
+        employee_doc = frappe.get_doc("Employee", employee)
+        if not employee_doc:
+            return None
+            
+        # Initialize result dict
+        result = {
+            "employee": employee,
+            "employee_name": employee_doc.employee_name,
+            "department": getattr(employee_doc, "department", ""),
+            "designation": getattr(employee_doc, "designation", ""),
+            "bpjs_number": getattr(employee_doc, "bpjs_number", ""),
+            "nik": getattr(employee_doc, "ktp", ""),
+            "jht_employee": 0,
+            "jp_employee": 0,
+            "kesehatan_employee": 0,
+            "jht_employer": 0,
+            "jp_employer": 0,
+            "jkk": 0,
+            "jkm": 0,
+            "kesehatan_employer": 0
+        }
+        
+        # If company is provided, try to get the latest BPJS settings
+        if company:
+            # Try to get salary structure assignment
+            salary_structure = frappe.db.get_value(
+                "Salary Structure Assignment",
+                {"employee": employee, "docstatus": 1},
+                ["salary_structure", "base"],
+                order_by="from_date desc"
+            )
+            
+            if salary_structure:
+                structure_name, base_salary = salary_structure
+                
+                # Get BPJS Settings
+                bpjs_settings = frappe.get_single("BPJS Settings")
+                
+                # Calculate BPJS components based on settings
+                if hasattr(bpjs_settings, 'jht_employee_percent') and bpjs_settings.jht_employee_percent:
+                    result["jht_employee"] = base_salary * (bpjs_settings.jht_employee_percent / 100)
+                
+                if hasattr(bpjs_settings, 'jht_employer_percent') and bpjs_settings.jht_employer_percent:
+                    result["jht_employer"] = base_salary * (bpjs_settings.jht_employer_percent / 100)
+                
+                if hasattr(bpjs_settings, 'jp_employee_percent') and bpjs_settings.jp_employee_percent:
+                    result["jp_employee"] = base_salary * (bpjs_settings.jp_employee_percent / 100)
+                
+                if hasattr(bpjs_settings, 'jp_employer_percent') and bpjs_settings.jp_employer_percent:
+                    result["jp_employer"] = base_salary * (bpjs_settings.jp_employer_percent / 100)
+                
+                if hasattr(bpjs_settings, 'kesehatan_employee_percent') and bpjs_settings.kesehatan_employee_percent:
+                    result["kesehatan_employee"] = base_salary * (bpjs_settings.kesehatan_employee_percent / 100)
+                
+                if hasattr(bpjs_settings, 'kesehatan_employer_percent') and bpjs_settings.kesehatan_employer_percent:
+                    result["kesehatan_employer"] = base_salary * (bpjs_settings.kesehatan_employer_percent / 100)
+                
+                if hasattr(bpjs_settings, 'jkk_percent') and bpjs_settings.jkk_percent:
+                    result["jkk"] = base_salary * (bpjs_settings.jkk_percent / 100)
+                
+                if hasattr(bpjs_settings, 'jkm_percent') and bpjs_settings.jkm_percent:
+                    result["jkm"] = base_salary * (bpjs_settings.jkm_percent / 100)
+        
+        # Try to get the latest values from existing BPJS Payment Summary records
+        latest_bpjs_record = frappe.db.sql("""
+            SELECT 
+                ed.jht_employee, ed.jp_employee, ed.kesehatan_employee,
+                ed.jht_employer, ed.jp_employer, ed.kesehatan_employer,
+                ed.jkk, ed.jkm
+            FROM 
+                `tabBPJS Payment Summary Employee` ed
+            JOIN 
+                `tabBPJS Payment Summary` bps ON ed.parent = bps.name
+            WHERE 
+                ed.employee = %s
+                AND bps.docstatus != 2
+            ORDER BY 
+                bps.year DESC, bps.month DESC
+            LIMIT 1
+        """, employee, as_dict=1)
+        
+        if latest_bpjs_record and len(latest_bpjs_record) > 0:
+            # Update with latest values
+            record = latest_bpjs_record[0]
+            for key in ["jht_employee", "jp_employee", "kesehatan_employee",
+                       "jht_employer", "jp_employer", "kesehatan_employer",
+                       "jkk", "jkm"]:
+                if key in record and record[key] is not None and record[key] > 0:
+                    result[key] = record[key]
+        
+        return result
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error in get_employee_bpjs_details: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "BPJS Employee Details Error"
+        )
+        return None
