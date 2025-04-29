@@ -356,7 +356,7 @@ class EmployeeTaxSummary(Document):
 # ----- Fungsi tambahan untuk integrasi dengan Salary Slip -----
 
 @frappe.whitelist()
-def create_from_salary_slip(salary_slip):
+def create_from_salary_slip(salary_slip, method=None):
     """
     Create or update Employee Tax Summary from a Salary Slip
     Called asynchronously from the Salary Slip's on_submit method
