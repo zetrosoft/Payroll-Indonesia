@@ -524,6 +524,18 @@ def update_bpjs_payment_summary(doc):
         kesehatan_salary = min(gross_pay, kesehatan_max_salary)
         kesehatan_employer = kesehatan_salary * (kesehatan_employer_percent / 100)
         
+        # Calculate component values
+        bpjs_components = {
+            "BPJS Kesehatan": flt(bpjs_data["kesehatan_employee"]) + flt(kesehatan_employer),
+            "BPJS JHT": flt(bpjs_data["jht_employee"]) + flt(jht_employer),
+            "BPJS JP": flt(bpjs_data["jp_employee"]) + flt(jp_employer),
+            "BPJS JKK": flt(jkk),
+            "BPJS JKM": flt(jkm)
+        }
+        
+        # Calculate total amount of all BPJS contributions
+        total_amount = sum(bpjs_components.values())
+        
         # Check if BPJS Payment Summary exists for this period
         try:
             bpjs_summary = frappe.db.get_value(
@@ -533,14 +545,6 @@ def update_bpjs_payment_summary(doc):
             )
         except Exception as e:
             frappe.throw(_("Error querying BPJS Payment Summary: {0}").format(str(e)))
-        
-        # Calculate total amount of all BPJS contributions
-        total_amount = (
-            flt(bpjs_data["jht_employee"]) + jht_employer +
-            flt(bpjs_data["jp_employee"]) + jp_employer +
-            flt(bpjs_data["kesehatan_employee"]) + kesehatan_employer +
-            jkk + jkm
-        )
         
         if not bpjs_summary:
             try:
@@ -581,6 +585,15 @@ def update_bpjs_payment_summary(doc):
                 
                 # Add employee detail
                 bpjs_summary_doc.append("employee_details", employee_data)
+                
+                # Add components
+                for component_name, amount in bpjs_components.items():
+                    if amount > 0:
+                        bpjs_summary_doc.append("komponen", {
+                            "component": component_name,
+                            "component_type": component_name.replace("BPJS ", ""),
+                            "amount": amount
+                        })
                 
                 # Insert the document
                 bpjs_summary_doc.insert(ignore_permissions=True)
@@ -639,18 +652,36 @@ def update_bpjs_payment_summary(doc):
                     
                     bpjs_summary_doc.append("employee_details", employee_data)
                 
-                # Update amount field to reflect current total
-                # Re-calculate totals considering all employee entries
-                updated_amount = 0
-                for emp in bpjs_summary_doc.employee_details:
-                    updated_amount += (
-                        flt(emp.jht_employee) + flt(emp.jht_employer) +
-                        flt(emp.jp_employee) + flt(emp.jp_employer) +
-                        flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer) +
-                        flt(emp.jkk) + flt(emp.jkm)
-                    )
+                # Update komponen - remove any existing and recalculate
+                bpjs_summary_doc.komponen = []  # Clear existing components
                 
-                bpjs_summary_doc.amount = updated_amount
+                # Calculate new totals from all employee_details
+                new_component_totals = {
+                    "BPJS Kesehatan": 0,
+                    "BPJS JHT": 0,
+                    "BPJS JP": 0,
+                    "BPJS JKK": 0,
+                    "BPJS JKM": 0
+                }
+                
+                for emp in bpjs_summary_doc.employee_details:
+                    new_component_totals["BPJS Kesehatan"] += flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer)
+                    new_component_totals["BPJS JHT"] += flt(emp.jht_employee) + flt(emp.jht_employer)
+                    new_component_totals["BPJS JP"] += flt(emp.jp_employee) + flt(emp.jp_employer)
+                    new_component_totals["BPJS JKK"] += flt(emp.jkk)
+                    new_component_totals["BPJS JKM"] += flt(emp.jkm)
+                
+                # Add updated components
+                for component_name, amount in new_component_totals.items():
+                    if amount > 0:
+                        bpjs_summary_doc.append("komponen", {
+                            "component": component_name,
+                            "component_type": component_name.replace("BPJS ", ""),
+                            "amount": amount
+                        })
+                
+                # Update amount field
+                bpjs_summary_doc.amount = sum(new_component_totals.values())
                 
                 # Save changes
                 bpjs_summary_doc.flags.ignore_validate_update_after_submit = True
