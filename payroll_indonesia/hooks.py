@@ -67,11 +67,11 @@ doc_events = {
         "before_insert": "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries",
         "validate": "payroll_indonesia.override.salary_slip_functions.validate_salary_slip",
         "on_submit": [
-                    "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
-                    "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
-                    "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
-                    "payroll_indonesia.override.salary_slip_functions.wrapper_create_from_salary_slip"
-                    ],
+            "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
+            "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
+            "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
+            "payroll_indonesia.override.salary_slip_functions.wrapper_create_from_salary_slip"
+        ],
         "on_cancel": [
             "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
             "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.update_on_salary_slip_cancel",
