@@ -1448,3 +1448,15 @@ def truncate_message(message, max_length=140):
         return message
         
     return message[:max_length - 3] + "..."
+
+def on_cancel_salary_slip(doc, method=None):
+    """Actions to take when a salary slip is cancelled"""
+    try:
+        # Remove individual commits from functions to prevent transaction issues
+        frappe.msgprint(_("Salary Slip cancelled. Related documents will be updated."))
+    except Exception as e:
+        frappe.log_error(
+            f"Error in on_cancel_salary_slip for {doc.name}: {str(e)}",
+            "Salary Slip Cancel Error"
+        )
+        frappe.throw(_("Error processing salary slip cancellation: {0}").format(str(e)))
