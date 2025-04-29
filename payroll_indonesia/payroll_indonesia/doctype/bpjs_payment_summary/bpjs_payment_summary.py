@@ -518,9 +518,9 @@ def get_bpjs_suppliers():
         )
         return []
 
-# Add module-level validate function to fix the error
+# Add module-level validate function to fix the error - PENTING: ditambah parameter method=None
 @frappe.whitelist()
-def validate(doc):
+def validate(doc, method=None):
     """
     Module-level validate function that delegates to the document's validate method
     This is needed for compatibility with code that calls this function directly
