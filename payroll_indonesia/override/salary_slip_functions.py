@@ -1034,3 +1034,9 @@ def add_to_payroll_notifications(doc):
         )
         # Don't throw here to prevent blocking salary slip creation
         frappe.msgprint(_("Warning: Could not create payroll notification: {0}").format(str(e)))
+
+def wrapper_create_from_salary_slip(doc, method=None):
+    """Wrapper untuk memanggil create_from_salary_slip dari bpjs_payment_api"""
+    from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import create_from_salary_slip
+    # Panggil fungsi asli hanya dengan parameter doc
+    create_from_salary_slip(doc)

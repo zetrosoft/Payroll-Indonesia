@@ -17,16 +17,27 @@ from .bpjs_payment_integration import (
 from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
 
 @frappe.whitelist()
-def create_from_salary_slip(salary_slip):
+def create_from_salary_slip(doc, method=None):
     """
     Create or update BPJS Payment Summary from a Salary Slip
     Called asynchronously from the Salary Slip's on_submit method
+    
+    Parameters:
+        doc: Salary Slip document or document name
+        method: Hook method name (optional, needed for hook compatibility)
     """
-    debug_log(f"Starting create_from_salary_slip for {salary_slip}")
+    debug_log(f"Starting create_from_salary_slip for {doc}")
     
     try:
-        # Get the salary slip document
-        slip = frappe.get_doc("Salary Slip", salary_slip)
+        # Handle case when doc is a document name string instead of object
+        if isinstance(doc, str):
+            salary_slip = doc
+            slip = frappe.get_doc("Salary Slip", salary_slip)
+        else:
+            # When called from hook, doc is the actual document
+            salary_slip = doc.name
+            slip = doc
+            
         if not slip or slip.docstatus != 1:
             debug_log(f"Salary slip {salary_slip} not found or not submitted")
             return None
@@ -67,6 +78,7 @@ def create_from_salary_slip(salary_slip):
         
         # Save the document
         bpjs_summary.flags.ignore_permissions = True
+        bpjs_summary.flags.ignore_mandatory = True  # Add this flag to bypass mandatory field validation
         bpjs_summary.save()
         debug_log(f"Successfully saved BPJS Payment Summary: {bpjs_summary.name}")
         
@@ -78,26 +90,41 @@ def create_from_salary_slip(salary_slip):
     except Exception as e:
         debug_log(f"Error in create_from_salary_slip: {str(e)}\nTraceback: {frappe.get_traceback()}")
         frappe.log_error(
-            f"Error creating BPJS Payment Summary from {salary_slip}: {str(e)}\n\n"
+            f"Error creating BPJS Payment Summary from {doc if isinstance(doc, str) else doc.name}: {str(e)}\n\n"
             f"Traceback: {frappe.get_traceback()}",
             "BPJS Payment Summary Error"
         )
         return None
 
 @frappe.whitelist()
-def update_on_salary_slip_cancel(salary_slip, month, year):
+def update_on_salary_slip_cancel(doc, method=None):
     """
     Update BPJS Payment Summary when a Salary Slip is cancelled
     Called asynchronously from the Salary Slip's on_cancel method
+    
+    Parameters:
+        doc: Salary Slip document or document name
+        method: Hook method name (optional, needed for hook compatibility)
     """
-    debug_log(f"Starting update_on_salary_slip_cancel for {salary_slip}, month={month}, year={year}")
+    debug_log(f"Starting update_on_salary_slip_cancel for {doc}")
     
     try:
-        # Get the salary slip document
-        slip = frappe.get_doc("Salary Slip", salary_slip)
+        # Handle case when doc is a document name string instead of object
+        if isinstance(doc, str):
+            salary_slip = doc
+            slip = frappe.get_doc("Salary Slip", salary_slip)
+        else:
+            # When called from hook, doc is the actual document
+            salary_slip = doc.name
+            slip = doc
+            
         if not slip:
             debug_log(f"Salary slip {salary_slip} not found")
             return False
+            
+        # Get month and year from slip
+        month = getdate(slip.end_date).month
+        year = getdate(slip.end_date).year
             
         # Find the BPJS Payment Summary
         bpjs_summary_name = get_summary_for_period(slip.company, month, year)
@@ -134,6 +161,7 @@ def update_on_salary_slip_cancel(salary_slip, month, year):
             
             # Save the document
             bpjs_doc.flags.ignore_permissions = True
+            bpjs_doc.flags.ignore_mandatory = True  # Add this flag to bypass mandatory field validation
             bpjs_doc.save()
             debug_log(f"Successfully updated BPJS Payment Summary: {bpjs_summary_name}")
             
@@ -145,12 +173,12 @@ def update_on_salary_slip_cancel(salary_slip, month, year):
     except Exception as e:
         debug_log(f"Error in update_on_salary_slip_cancel: {str(e)}\nTraceback: {frappe.get_traceback()}")
         frappe.log_error(
-            f"Error updating BPJS Payment Summary on cancel for {salary_slip}: {str(e)}\n\n"
+            f"Error updating BPJS Payment Summary on cancel for {doc if isinstance(doc, str) else doc.name}: {str(e)}\n\n"
             f"Traceback: {frappe.get_traceback()}",
             "BPJS Payment Summary Cancel Error"
         )
         return False
-
+    
 @frappe.whitelist()
 def get_summary_for_period(company, month, year):
     """
