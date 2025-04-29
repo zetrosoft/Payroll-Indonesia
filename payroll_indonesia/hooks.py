@@ -66,22 +66,11 @@ doc_events = {
     "Salary Slip": {
         "before_insert": "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries",
         "validate": "payroll_indonesia.override.salary_slip_functions.validate_salary_slip",
-        "on_submit": [
-            "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
-            # PERUBAHAN: Gunakan wrapper functions untuk semua fungsi eksternal
-            "payroll_indonesia.override.salary_slip_functions.wrapper_create_from_pph_ter_table",
-            "payroll_indonesia.override.salary_slip_functions.wrapper_create_from_employee_tax_summary",
-            "payroll_indonesia.override.salary_slip_functions.wrapper_create_from_salary_slip"
-        ],
-        "on_cancel": [
-            "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
-            # PERUBAHAN: Gunakan wrapper functions untuk semua fungsi eksternal
-            "payroll_indonesia.override.salary_slip_functions.wrapper_update_on_salary_slip_cancel_pph_ter_table",
-            "payroll_indonesia.override.salary_slip_functions.wrapper_update_on_salary_slip_cancel_employee_tax_summary",
-            "payroll_indonesia.override.salary_slip_functions.wrapper_update_on_salary_slip_cancel"
-        ],
+        "on_submit": "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
+        "on_cancel": "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
+    
     "BPJS Account Mapping": {
         "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.validate"
     },

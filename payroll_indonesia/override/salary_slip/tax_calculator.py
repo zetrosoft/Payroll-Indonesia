@@ -32,8 +32,9 @@ def calculate_tax_components(doc, employee):
         if is_december(doc):
             calculate_december_pph(doc, employee)
         else:
-            calculate_monthly_pph(doc, employee)
-
+            # IMPROVED: Strategy selection is already done in the controller
+            # This function just handles the calculation based on the month
+            check_and_apply_selected_method(doc, employee)
     except Exception as e:
         frappe.log_error(
             f"Tax Calculation Error for Employee {employee.name}: {str(e)}",
@@ -42,139 +43,51 @@ def calculate_tax_components(doc, employee):
         # Convert to user-friendly error
         frappe.throw(_("Error calculating tax components: {0}").format(str(e)))
 
-def calculate_monthly_pph(doc, employee):
-    """Calculate PPh 21 for regular months"""
+def check_and_apply_selected_method(doc, employee):
+    """
+    Check which method has been selected (TER attribute already set)
+    and perform any necessary adjustments
+    """
+    # The actual tax calculation is now handled in controller by the selected strategy
+    # This function only does method-specific post-processing if needed
+    pass
+
+def calculate_monthly_pph_with_ter(doc, employee):
+    """Calculate PPh 21 using TER method"""
     try:
-        # Get PPh 21 Settings with validation
-        try:
-            pph_settings = frappe.get_single("PPh 21 Settings")
-        except Exception as e:
-            frappe.throw(_("Error retrieving PPh 21 Settings: {0}. Please configure PPh 21 Settings properly.").format(str(e)))
-        
-        # Check if calculation_method and use_ter fields exist
-        if not hasattr(pph_settings, 'calculation_method'):
-            frappe.msgprint(_("PPh 21 Settings missing calculation_method, defaulting to Progressive"))
-            pph_settings.calculation_method = "Progressive"
-            
-        if not hasattr(pph_settings, 'use_ter'):
-            frappe.msgprint(_("PPh 21 Settings missing use_ter, defaulting to No"))
-            pph_settings.use_ter = 0
-
-        # Check if TER method is enabled
-        if pph_settings.calculation_method == "TER" and pph_settings.use_ter:
-            calculate_monthly_pph_with_ter(doc, employee)
-        else:
-            calculate_monthly_pph_progressive(doc, employee)
-            
-    except Exception as e:
-        frappe.log_error(
-            f"Monthly PPh Calculation Error for Employee {employee.name}: {str(e)}",
-            "PPh Calculation Error"
-        )
-        # Convert to user-friendly error
-        frappe.throw(_("Error calculating monthly PPh 21: {0}").format(str(e)))
-
-def calculate_monthly_pph_progressive(doc, employee):
-    """Calculate PPh 21 using progressive method"""
-    try:
-        # Get PPh 21 Settings
-        try:
-            pph_settings = frappe.get_single("PPh 21 Settings")
-        except Exception as e:
-            frappe.throw(_("Error retrieving PPh 21 Settings: {0}. Please configure PPh 21 Settings properly.").format(str(e)))
-
-        # Get PTKP value
+        # Validate employee status_pajak
         if not hasattr(employee, 'status_pajak') or not employee.status_pajak:
             employee.status_pajak = "TK0"  # Default to TK0 if not set
             frappe.msgprint(_("Warning: Employee tax status not set, using TK0 as default"))
 
-        ptkp = get_ptkp_amount(pph_settings, employee.status_pajak)
+        # Get TER rate based on status and gross income
+        ter_rate = get_ter_rate(employee.status_pajak, doc.gross_pay)
 
-        # Annualize monthly netto
-        annual_netto = doc.netto * 12
+        # Calculate tax using TER
+        monthly_tax = doc.gross_pay * ter_rate
 
-        # Calculate PKP
-        pkp = max(annual_netto - ptkp, 0)
-
-        # Calculate annual tax
-        annual_tax, tax_details = calculate_progressive_tax(pkp, pph_settings)
-
-        # Get monthly tax (1/12 of annual)
-        monthly_tax = annual_tax / 12
+        # Save TER info
+        doc.is_using_ter = 1
+        doc.ter_rate = ter_rate * 100  # Convert to percentage for display
 
         # Update PPh 21 component
         update_component_amount(doc, "PPh 21", monthly_tax, "deductions")
 
-        # Update note with tax info
-        doc.payroll_note += f"\n\n=== Perhitungan PPh 21 Progresif ==="
-        doc.payroll_note += f"\nPenghasilan Neto Setahun: Rp {annual_netto:,.0f}"
-        doc.payroll_note += f"\nPTKP ({employee.status_pajak}): Rp {ptkp:,.0f}"
-        doc.payroll_note += f"\nPKP: Rp {pkp:,.0f}"
-
-        # Add tax calculation details
-        if tax_details:
-            doc.payroll_note += f"\n\nPerhitungan Pajak:"
-            for detail in tax_details:
-                doc.payroll_note += f"\n- {detail['rate']}% x Rp {detail['taxable']:,.0f} = Rp {detail['tax']:,.0f}"
-
-        doc.payroll_note += f"\n\nPPh 21 Setahun: Rp {annual_tax:,.0f}"
+        # Update note with TER info
+        doc.payroll_note += "\n\n=== Perhitungan PPh 21 dengan TER ==="
+        doc.payroll_note += f"\nStatus Pajak: {employee.status_pajak}"
+        doc.payroll_note += f"\nPenghasilan Bruto: Rp {doc.gross_pay:,.0f}"
+        doc.payroll_note += f"\nTarif Efektif Rata-rata: {ter_rate * 100:.2f}%"
         doc.payroll_note += f"\nPPh 21 Sebulan: Rp {monthly_tax:,.0f}"
-        
+        doc.payroll_note += "\n\nSesuai PMK 168/2023 tentang Tarif Efektif Rata-rata"
+
     except Exception as e:
         frappe.log_error(
-            f"Progressive Tax Calculation Error for Employee {employee.name}: {str(e)}",
-            "Progressive Tax Error"
+            f"TER Calculation Error for Employee {employee.name}: {str(e)}",
+            "TER Calculation Error"
         )
-        frappe.throw(_("Error calculating progressive tax: {0}").format(str(e)))
-
-def get_ptkp_amount(pph_settings, status_pajak):
-    """Get PTKP amount for a given tax status"""
-    try:
-        # Validate inputs
-        if not status_pajak:
-            status_pajak = "TK0"
-            frappe.msgprint(_("Tax status not provided, using TK0 as default"))
+        frappe.throw(_("Error calculating PPh 21 with TER: {0}").format(str(e)))
         
-        # Attempt to get from method if it exists
-        if hasattr(pph_settings, 'get_ptkp_amount'):
-            return pph_settings.get_ptkp_amount(status_pajak)
-
-        # Otherwise query directly from PTKP table
-        ptkp = frappe.db.sql("""
-            SELECT ptkp_amount
-            FROM `tabPPh 21 PTKP`
-            WHERE status_pajak = %s
-            AND parent = 'PPh 21 Settings'
-            LIMIT 1
-        """, status_pajak, as_dict=1)
-
-        if not ptkp:
-            # Default PTKP values if not found
-            default_ptkp = {
-                "TK0": 54000000, "K0": 58500000, "K1": 63000000,
-                "K2": 67500000, "K3": 72000000, "TK1": 58500000,
-                "TK2": 63000000, "TK3": 67500000
-            }
-            frappe.msgprint(_(
-                "PTKP for status {0} not found in settings, using default value."
-            ).format(status_pajak))
-            
-            # If we don't have a default for this status, use TK0
-            if status_pajak not in default_ptkp:
-                frappe.msgprint(_("No default PTKP for status {0}, using TK0 value.").format(status_pajak))
-                return default_ptkp["TK0"]
-                
-            return default_ptkp.get(status_pajak)
-
-        return flt(ptkp[0].ptkp_amount)
-        
-    except Exception as e:
-        frappe.log_error(
-            f"Error getting PTKP for status {status_pajak}: {str(e)}",
-            "PTKP Retrieval Error"
-        )
-        frappe.throw(_("Error retrieving PTKP amount: {0}").format(str(e)))
-
 def calculate_december_pph(doc, employee):
     """Calculate year-end tax correction for December"""
     try:

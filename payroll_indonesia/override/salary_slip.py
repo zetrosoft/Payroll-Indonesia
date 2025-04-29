@@ -116,6 +116,25 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             self.add_payroll_note("Validasi berhasil: Komponen BPJS dan Pajak dihitung.")
             debug_log(f"Validation completed successfully for {self.name}", employee=employee_info)
             
+            # Initialize additional fields
+            self.initialize_payroll_fields()
+        
+            # Get employee document
+            employee = self.get_employee_doc()
+        
+            # Calculate base salary for BPJS
+            base_salary = self.get_base_salary_for_bpjs()
+        
+            # Calculate BPJS components
+            self.calculate_and_set_bpjs_components(employee, base_salary)
+        
+            # IMPROVED: First determine tax calculation strategy, then calculate
+            tax_strategy = self.determine_tax_strategy(employee)
+            self.calculate_tax_with_strategy(tax_strategy, employee)
+        
+            # Generate tax ID data
+            self.generate_tax_id_data(employee)
+
         except Exception as e:
             debug_log(f"Error in validate for {self.name}: {str(e)}", employee=employee_info, trace=True)
             frappe.log_error(
@@ -125,47 +144,88 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             )
             frappe.throw(_("Error dalam validasi Salary Slip: {0}").format(str(e)))
     
+    def determine_tax_strategy(self, employee):
+        """
+        Determine which tax calculation strategy should be used
+        Returns: String indicating the strategy ("TER" or "PROGRESSIVE")
+        """
+        try:
+            # Get PPh 21 Settings
+            pph_settings = frappe.get_single("PPh 21 Settings")
+        
+            # Check if calculation_method and use_ter fields exist
+            if not hasattr(pph_settings, 'calculation_method'):
+                frappe.log_error("PPh 21 Settings missing calculation_method, defaulting to Progressive", 
+                           "Tax Strategy Selection")
+                return "PROGRESSIVE"
+            
+            if not hasattr(pph_settings, 'use_ter'):
+                frappe.log_error("PPh 21 Settings missing use_ter, defaulting to Progressive",
+                           "Tax Strategy Selection")
+                return "PROGRESSIVE"
+        
+            # Check if TER method is enabled globally
+            if pph_settings.calculation_method == "TER" and pph_settings.use_ter:
+                # Check if employee is eligible for TER
+                from payroll_indonesia.override.salary_slip.ter_calculator import should_use_ter_method
+            
+                if should_use_ter_method(employee, pph_settings):
+                    frappe.log_error(f"Using TER method for employee {employee.name}", "Tax Strategy Selection")
+                    return "TER"
+        
+            # Default to progressive method
+            frappe.log_error(f"Using Progressive method for employee {employee.name}", "Tax Strategy Selection")
+            return "PROGRESSIVE"
+        except Exception as e:
+            frappe.log_error(
+                f"Error determining tax strategy for {employee.name}: {str(e)}\n"
+                f"Falling back to Progressive method", 
+                "Tax Strategy Error"
+            )
+            return "PROGRESSIVE"
+
+    def calculate_tax_with_strategy(self, strategy, employee):
+        """
+        Calculate tax based on selected strategy
+        Args:
+            strategy: String indicating strategy ("TER" or "PROGRESSIVE")
+            employee: Employee document
+        """
+        if strategy == "TER":
+            from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter
+        
+            frappe.log_error(f"Calculating tax with TER for {self.name}", "Tax Calculation")
+            calculate_monthly_pph_with_ter(self, employee)
+        else:
+            from payroll_indonesia.override.salary_slip.tax_calculator import calculate_monthly_pph_progressive
+        
+            frappe.log_error(f"Calculating tax with Progressive method for {self.name}", "Tax Calculation")
+            calculate_monthly_pph_progressive(self, employee)
+
     def on_submit(self):
-        """
-        Actions to be performed when a salary slip is submitted.
-        - Run parent on_submit
-        - Verify BPJS components
-        - Queue creation of related documents
-        """
-        frappe.log_error(
-            f"Starting on_submit for Salary Slip: {self.name} | "
-            f"Employee: {self.employee} ({self.employee_name if hasattr(self, 'employee_name') else 'N/A'}) | "
-            f"Period: {getattr(self, 'start_date', 'N/A')} to {getattr(self, 'end_date', 'N/A')}",
-            "Salary Slip - Submit Start"
-        )
+        """Create related documents on submit and verify BPJS values"""
+        frappe.log_error(f"Starting on_submit for salary slip {self.name}", "Salary Slip - Submit")
     
         try:
-            # Check for required data before proceeding
-            if not self.employee:
-                frappe.log_error(f"Missing employee in Salary Slip: {self.name}", "Salary Slip - Submit Error")
-                frappe.throw(_("Employee is mandatory for salary slip submission."))
-
             # Verify BPJS components before submission
             self.verify_bpjs_components()
         
             # Call parent on_submit method
-            frappe.log_error(f"Calling parent on_submit for {self.name}", "Salary Slip - Submit Parent Call")
             super(IndonesiaPayrollSalarySlip, self).on_submit()
         
-            # Queue creation of related documents
-            frappe.log_error(f"Calling queue_document_creation for {self.name}", "Salary Slip - Queue Start")
+            # IMPROVED: Use queue for document creation
+            # Don't depend on hooks for this functionality
             self.queue_document_creation()
         
-            frappe.log_error(f"on_submit completed successfully for {self.name}", "Salary Slip - Submit Complete")
+            self.add_payroll_note("Submit berhasil: Pembuatan dokumen terkait telah dijadwalkan.")
         
         except Exception as e:
             frappe.log_error(
-                f"Error in on_submit for {self.name}: {str(e)}\n"
-                f"Employee: {self.employee if hasattr(self, 'employee') else 'N/A'}\n"
+                f"Error in on_submit for {self.name}: {str(e)}\n\n"
                 f"Traceback: {frappe.get_traceback()}",
-                "Salary Slip - Submit Error"
+                "Salary Slip Submit Error"
             )
-            frappe.throw(_("Error during salary slip submission: {0}").format(str(e))) 
+            frappe.throw(_("Error during salary slip submission: {0}").format(str(e)))
                
     def calculate_and_set_bpjs_components(self, employee, base_salary):
         """
@@ -173,75 +233,93 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         and update salary slip components
         """
         employee_info = f"{employee.name} ({employee.employee_name})" if hasattr(employee, 'employee_name') else employee.name
-        debug_log(f"Starting BPJS calculation for {self.name}", employee=employee_info)
-        
+        frappe.log_error(f"Starting BPJS calculation for {self.name} with base_salary={base_salary}", "BPJS Calculation")
+    
         try:
             # Check if employee is enrolled in BPJS
             is_enrolled = self.check_bpjs_enrollment(employee)
             if not is_enrolled:
-                debug_log(f"Employee {employee_info} not enrolled in BPJS - skipping calculation", employee=employee_info)
+                frappe.log_error(f"Employee {employee_info} not enrolled in BPJS - skipping calculation", "BPJS Calculation")
                 return
-            
+        
             # Calculate BPJS values using hitung_bpjs
-            debug_log(f"Calling hitung_bpjs with base_salary={base_salary}", employee=employee_info)
+            from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
             bpjs_values = hitung_bpjs(employee.name, base_salary)
-            
-            # Log BPJS calculation results in detail
-            debug_log(
-                f"BPJS calculation results for {self.name}:\n"
-                f"Base salary: {base_salary}\n"
-                f"JHT Employee: {bpjs_values.get('jht_employee', 0)}\n"
-                f"JP Employee: {bpjs_values.get('jp_employee', 0)}\n"
-                f"Kesehatan Employee: {bpjs_values.get('kesehatan_employee', 0)}\n"
-                f"Total Employee: {bpjs_values.get('total_employee', 0)}",
-                employee=employee_info
+        
+            # Log detailed BPJS results for debugging
+            frappe.log_error(
+                f"BPJS calculation results for {self.name}:\n" +
+                "\n".join([f"{k}: {v}" for k, v in bpjs_values.items()]),
+                "BPJS Calculation Results"
             )
-            
-            # Check for zero values and log warnings
-            if bpjs_values.get('total_employee', 0) <= 0:
-                debug_log(
-                    f"WARNING: BPJS calculation returned zero or negative total: {bpjs_values.get('total_employee', 0)}. "
-                    f"Check BPJS settings and employee configuration.",
-                    employee=employee_info
-                )
-            
+        
             # Set BPJS components in salary slip
             if bpjs_values:
                 # BPJS JHT Employee
                 jht_amount = flt(bpjs_values.get("jht_employee", 0))
                 self.set_component_value("BPJS JHT Employee", jht_amount, is_deduction=True)
-                debug_log(f"Set BPJS JHT Employee = {jht_amount}", employee=employee_info)
-                
+            
                 # BPJS JP Employee
                 jp_amount = flt(bpjs_values.get("jp_employee", 0))
                 self.set_component_value("BPJS JP Employee", jp_amount, is_deduction=True)
-                debug_log(f"Set BPJS JP Employee = {jp_amount}", employee=employee_info)
-                
+            
                 # BPJS Kesehatan Employee
                 kesehatan_amount = flt(bpjs_values.get("kesehatan_employee", 0))
                 self.set_component_value("BPJS Kesehatan Employee", kesehatan_amount, is_deduction=True)
-                debug_log(f"Set BPJS Kesehatan Employee = {kesehatan_amount}", employee=employee_info)
-                
+            
                 # Calculate and store total BPJS deductions
                 total_bpjs = jht_amount + jp_amount + kesehatan_amount
-                
+            
                 # Set total in custom field
                 if hasattr(self, 'total_bpjs'):
                     self.total_bpjs = total_bpjs
-                    debug_log(f"Set total_bpjs = {total_bpjs}", employee=employee_info)
-                
-                debug_log(f"BPJS components set successfully for {self.name}", employee=employee_info)
+            
+                frappe.log_error(f"BPJS components set successfully for {self.name}, total: {total_bpjs}", "BPJS Calculation")
+            
+                # Add BPJS details to payroll note
+                self.add_bpjs_details_to_note(bpjs_values)
             else:
-                debug_log(f"No BPJS values returned for employee {employee_info}", employee=employee_info)
-                
+                frappe.log_error(f"No BPJS values returned for {employee_info}", "BPJS Calculation")
+            
         except Exception as e:
-            debug_log(f"Error calculating BPJS for {self.name}: {str(e)}", employee=employee_info, trace=True)
             frappe.log_error(
                 f"Error calculating BPJS for {self.name}: {str(e)}\n\n"
                 f"Traceback: {frappe.get_traceback()}",
                 "BPJS Calculation Error"
             )
-            frappe.throw(_("Error dalam perhitungan BPJS: {0}").format(str(e)))
+            frappe.throw(_("Error calculating BPJS: {0}").format(str(e)))
+        
+    def add_bpjs_details_to_note(self, bpjs_values):
+        """Add BPJS calculation details to the payroll note"""
+        try:
+            from payroll_indonesia.payroll_indonesia.utils import get_bpjs_settings
+            settings = get_bpjs_settings()
+        
+            # Get BPJS percentage rates
+            kesehatan_percent = flt(settings.get("kesehatan_employee_percent", 1.0))
+            jht_percent = flt(settings.get("jht_employee_percent", 2.0))
+            jp_percent = flt(settings.get("jp_employee_percent", 1.0))
+        
+            # BPJS details
+            self.payroll_note += "\n\n=== Perhitungan BPJS ==="
+        
+            # Add component details
+            if bpjs_values.get("kesehatan_employee", 0) > 0:
+                self.payroll_note += f"\nBPJS Kesehatan ({kesehatan_percent}%): Rp {bpjs_values['kesehatan_employee']:,.0f}"
+            
+            if bpjs_values.get("jht_employee", 0) > 0:
+                self.payroll_note += f"\nBPJS JHT ({jht_percent}%): Rp {bpjs_values['jht_employee']:,.0f}"
+            
+            if bpjs_values.get("jp_employee", 0) > 0:
+                self.payroll_note += f"\nBPJS JP ({jp_percent}%): Rp {bpjs_values['jp_employee']:,.0f}"
+        
+            # Total
+            total_employee = bpjs_values.get("total_employee", 0)
+            self.payroll_note += f"\nTotal BPJS: Rp {total_employee:,.0f}"
+        
+        except Exception as e:
+            frappe.log_error(f"Error adding BPJS details to note: {str(e)}", "BPJS Note Error")
+            # Continue even if there's an error adding details to the note
     
     def verify_bpjs_components(self):
         """
@@ -894,3 +972,5 @@ def diagnose_salary_slip_submission(salary_slip_name):
         )
         result["recommendations"].append(f"Error during diagnosis: {str(e)}")
         return result
+    
+
