@@ -126,34 +126,47 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             frappe.throw(_("Error dalam validasi Salary Slip: {0}").format(str(e)))
     
     def on_submit(self):
-        """Create related documents on submit and verify BPJS values"""
-        employee_info = f"{self.employee} ({self.employee_name})" if hasattr(self, 'employee_name') else self.employee
-        debug_log(f"Starting on_submit for salary slip {self.name}", employee=employee_info)
-        
-        try:
-            # CRITICAL FIX: Verify BPJS components before submission
-            self.verify_bpjs_components()
-            
-            # Call parent on_submit method
-            debug_log(f"Calling parent on_submit for {self.name}", employee=employee_info)
-            super(IndonesiaPayrollSalarySlip, self).on_submit()
-            
-            # Queue creation of related documents
-            debug_log(f"Queueing creation of related documents for {self.name}", employee=employee_info)
-            self.queue_document_creation()
-            
-            self.add_payroll_note("Submit berhasil: Pembuatan dokumen terkait telah dijadwalkan.")
-            debug_log(f"on_submit completed successfully for {self.name}", employee=employee_info)
-            
-        except Exception as e:
-            debug_log(f"Error in on_submit for {self.name}: {str(e)}", employee=employee_info, trace=True)
-            frappe.log_error(
-                f"Error dalam on_submit Salary Slip untuk {self.name}: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}",
-                "Salary Slip Submit Error"
-            )
-            frappe.msgprint(_("Warning: Error saat menjadwalkan pembuatan dokumen terkait: {0}").format(str(e)))
+        """
+        Actions to be performed when a salary slip is submitted.
+        - Run parent on_submit
+        - Verify BPJS components
+        - Queue creation of related documents
+        """
+        frappe.log_error(
+            f"Starting on_submit for Salary Slip: {self.name} | "
+            f"Employee: {self.employee} ({self.employee_name if hasattr(self, 'employee_name') else 'N/A'}) | "
+            f"Period: {getattr(self, 'start_date', 'N/A')} to {getattr(self, 'end_date', 'N/A')}",
+            "Salary Slip - Submit Start"
+        )
     
+        try:
+            # Check for required data before proceeding
+            if not self.employee:
+                frappe.log_error(f"Missing employee in Salary Slip: {self.name}", "Salary Slip - Submit Error")
+                frappe.throw(_("Employee is mandatory for salary slip submission."))
+
+            # Verify BPJS components before submission
+            self.verify_bpjs_components()
+        
+            # Call parent on_submit method
+            frappe.log_error(f"Calling parent on_submit for {self.name}", "Salary Slip - Submit Parent Call")
+            super(IndonesiaPayrollSalarySlip, self).on_submit()
+        
+            # Queue creation of related documents
+            frappe.log_error(f"Calling queue_document_creation for {self.name}", "Salary Slip - Queue Start")
+            self.queue_document_creation()
+        
+            frappe.log_error(f"on_submit completed successfully for {self.name}", "Salary Slip - Submit Complete")
+        
+        except Exception as e:
+            frappe.log_error(
+                f"Error in on_submit for {self.name}: {str(e)}\n"
+                f"Employee: {self.employee if hasattr(self, 'employee') else 'N/A'}\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "Salary Slip - Submit Error"
+            )
+            frappe.throw(_("Error during salary slip submission: {0}").format(str(e))) 
+               
     def calculate_and_set_bpjs_components(self, employee, base_salary):
         """
         Calculate BPJS components using direct call to hitung_bpjs
@@ -319,65 +332,137 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             return True  # Default to True if there's an error to ensure calculation is attempted
     
     def queue_document_creation(self):
-        """Schedule creation of related documents through background jobs"""
-        employee_info = f"{self.employee} ({self.employee_name})" if hasattr(self, 'employee_name') else self.employee
-        debug_log(f"Starting queue_document_creation for {self.name}", employee=employee_info)
-        
+        """
+        Queue creation of related documents after salary slip submission:
+        - Employee Tax Summary
+        - BPJS Payment Summary (if BPJS components exist)
+        - PPh TER Table (if using TER method)
+    
+        All document creation is done through background jobs with comprehensive logging.
+        """
+        # Log start of document creation process with docname and employee details
+        frappe.log_error(
+            f"Starting document creation for Salary Slip: {self.name} | "
+            f"Employee: {self.employee} ({self.employee_name if hasattr(self, 'employee_name') else 'N/A'}) | "
+            f"Period: {getattr(self, 'start_date', 'N/A')} to {getattr(self, 'end_date', 'N/A')}",
+            "Salary Slip - Queue Document Creation"
+        )
+    
         try:
-            # Schedule tax summary creation
-            debug_log(f"Queuing tax summary creation for {self.name}", employee=employee_info)
+            # 1. Queue Employee Tax Summary creation
+            frappe.log_error(
+                f"Queueing Employee Tax Summary creation for Salary Slip: {self.name}",
+                "Queue - Employee Tax Summary"
+            )
+        
+            # Enqueue the creation of Employee Tax Summary
             frappe.enqueue(
-                method="payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
+                method="payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
                 queue="short",
                 timeout=300,
                 is_async=True,
-                **{"salary_slip": self.name}
+                salary_slip=self.name
             )
-            
-            # Check BPJS components
-            debug_log(f"Checking BPJS components for {self.name}", employee=employee_info)
-            bpjs_components = [
-                self.get_component_value("BPJS JHT Employee", "deductions"),
-                self.get_component_value("BPJS JP Employee", "deductions"),
-                self.get_component_value("BPJS Kesehatan Employee", "deductions")
-            ]
-            
-            debug_log(f"BPJS components for {self.name}: {bpjs_components}", employee=employee_info)
-            
-            # Schedule BPJS summary creation if components exist
-            if any(component > 0 for component in bpjs_components):
-                debug_log(f"Queuing BPJS payment summary creation for {self.name}", employee=employee_info)
-                frappe.enqueue(
-                    method="payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.create_from_salary_slip",
-                    queue="short",
-                    timeout=300,
-                    is_async=True,
-                    **{"salary_slip": self.name}
-                )
-            else:
-                debug_log(f"Skipping BPJS payment summary creation - no BPJS components found", employee=employee_info)
-            
-            # Schedule PPh TER Table creation if using TER method
-            if getattr(self, 'is_using_ter', 0) == 1:
-                debug_log(f"Queuing PPh TER table creation for {self.name} (is_using_ter=1)", employee=employee_info)
-                frappe.enqueue(
-                    method="payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
-                    queue="short",
-                    timeout=300,
-                    is_async=True,
-                    **{"salary_slip": self.name}
-                )
-            else:
-                debug_log(f"Skipping PPh TER table creation for {self.name} (is_using_ter=0)", employee=employee_info)
-                
-        except Exception as e:
-            debug_log(f"Error in queue_document_creation for {self.name}: {str(e)}", employee=employee_info, trace=True)
+        
             frappe.log_error(
-                f"Error dalam queue_document_creation untuk {self.name}: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}",
-                "Document Queue Error"
+                f"Successfully queued Employee Tax Summary creation for Salary Slip: {self.name}",
+                "Queue - Employee Tax Summary Complete"
             )
-            frappe.msgprint(_("Warning: Error saat membuat antrian dokumen terkait: {0}").format(str(e)))
+            
+            # 2. Check BPJS components and queue BPJS Payment Summary if needed
+            bpjs_components = {
+                "BPJS JHT Employee": 0,
+                "BPJS JP Employee": 0,
+                "BPJS Kesehatan Employee": 0
+            }
+        
+            # Get BPJS component values
+            for deduction in self.deductions:
+                if deduction.salary_component in bpjs_components:
+                    bpjs_components[deduction.salary_component] = frappe.utils.flt(deduction.amount)
+        
+            # Log BPJS component values
+            frappe.log_error(
+                f"BPJS components for {self.name}: "
+                f"JHT={bpjs_components['BPJS JHT Employee']}, "
+                f"JP={bpjs_components['BPJS JP Employee']}, "
+                f"Kesehatan={bpjs_components['BPJS Kesehatan Employee']}",
+                "Queue - BPJS Components"
+            )
+        
+            # Queue BPJS Payment Summary creation if any component has a value
+            if any(amount > 0 for amount in bpjs_components.values()):
+                frappe.log_error(
+                    f"Queueing BPJS Payment Summary creation for Salary Slip: {self.name}",
+                    "Queue - BPJS Payment Summary"
+                )
+            
+                frappe.enqueue(
+                    method="payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.create_from_salary_slip",
+                    queue="short",
+                    timeout=300,
+                    is_async=True,
+                    salary_slip=self.name
+                )
+            
+                frappe.log_error(
+                    f"Successfully queued BPJS Payment Summary creation for Salary Slip: {self.name}",
+                    "Queue - BPJS Payment Summary Complete"
+                )
+            else:
+                frappe.log_error(
+                    f"Skipping BPJS Payment Summary creation - no BPJS components found for {self.name}",
+                    "Queue - BPJS Payment Summary Skipped"
+                )
+        
+            # 3. Queue PPh TER Table creation if using TER method
+            is_using_ter = getattr(self, 'is_using_ter', 0)
+        
+            if is_using_ter:
+                frappe.log_error(
+                    f"Queueing PPh TER Table creation for {self.name} (is_using_ter={is_using_ter}, ter_rate={getattr(self, 'ter_rate', 0)})",
+                    "Queue - PPh TER Table"
+                )
+            
+                frappe.enqueue(
+                    method="payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
+                    queue="short",
+                    timeout=300,
+                    is_async=True,
+                    salary_slip=self.name
+                )
+            
+                frappe.log_error(
+                    f"Successfully queued PPh TER Table creation for Salary Slip: {self.name}",
+                    "Queue - PPh TER Table Complete"
+                )
+            else:
+                frappe.log_error(
+                    f"Skipping PPh TER Table creation - not using TER method for {self.name} (is_using_ter={is_using_ter})",
+                    "Queue - PPh TER Table Skipped"
+                )
+            
+            # Add note to salary slip's payroll_note field
+            if hasattr(self, 'payroll_note'):
+                from frappe.utils import now_datetime
+                timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
+                self.payroll_note += f"\n[{timestamp}] Submit berhasil: Pembuatan dokumen terkait telah dijadwalkan."
+                self.db_update()
+        
+            frappe.log_error(
+                f"All document creation jobs successfully queued for Salary Slip: {self.name}",
+                "Salary Slip - Queue Document Creation Complete"
+            )
+        
+        except Exception as e:
+            frappe.log_error(
+                f"Error queueing document creation for {self.name}: {str(e)}\n\n"
+                f"Employee: {self.employee} ({self.employee_name if hasattr(self, 'employee_name') else 'N/A'})\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "Salary Slip - Document Queue Error"
+            )
+            # Do not raise exception, just show a message to the user
+            frappe.msgprint(_("Warning: Error occurred while queueing related documents: {0}").format(str(e)))
     
     def on_cancel(self):
         """Handle document cancellation"""
