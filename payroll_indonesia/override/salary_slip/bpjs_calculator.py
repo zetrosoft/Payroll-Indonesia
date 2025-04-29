@@ -11,9 +11,15 @@ from .base import update_component_amount
 from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
 
 # Debug function for error tracking
-def debug_log(message, module_name="BPJS Calculator"):
-    """Log debug message with timestamp and additional info"""
+# Replace in bpjs_calculator.py
+def debug_log(message, module_name="BPJS Calculator", max_length=2000):
+    """Log debug message with timestamp and additional info with length limit"""
     timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Truncate message if too long
+    if len(message) > max_length:
+        message = message[:max_length-50] + f"... (truncated, full length: {len(message)})"
+        
     frappe.log_error(f"[{timestamp}] {message}", module_name)
 
 def calculate_bpjs_components(doc, employee, gaji_pokok):
@@ -122,3 +128,5 @@ def calculate_bpjs_components(doc, employee, gaji_pokok):
         )
         # Convert to user-friendly error
         frappe.throw(_("Error calculating BPJS components: {0}").format(str(e)))
+
+
