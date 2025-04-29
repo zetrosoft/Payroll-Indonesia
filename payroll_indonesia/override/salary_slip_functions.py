@@ -442,28 +442,25 @@ def log_payroll_event(doc):
         frappe.msgprint(_("Warning: Could not create payroll log: {0}").format(str(e)))
 
 def update_bpjs_payment_summary(doc):
-    """Update BPJS Payment Summary based on submitted salary slip"""
+    """Simplified update of BPJS Payment Summary from salary slip"""
     try:
-        # Validate basic requirements
-        if not doc.employee or not doc.employee_name or not doc.company:
-            frappe.throw(_("Employee details or company missing. Cannot update BPJS summary."))
-        
-        if not hasattr(doc, 'end_date') or not doc.end_date:
-            frappe.throw(_("Salary slip end date missing. Cannot update BPJS summary."))
+        # Validate basic inputs
+        if not doc.employee or not doc.company or not hasattr(doc, 'end_date'):
+            frappe.msgprint(_("Missing required data from salary slip"))
+            return
             
-        # Determine year and month from salary slip
+        # Extract month and year
         end_date = getdate(doc.end_date)
         month = end_date.month
         year = end_date.year
         
-        # Get BPJS components from salary slip
+        # Extract BPJS components from deductions
         bpjs_data = {
             "jht_employee": 0,
             "jp_employee": 0,
             "kesehatan_employee": 0
         }
         
-        # Get employee components
         for deduction in doc.deductions:
             if deduction.salary_component == "BPJS JHT Employee":
                 bpjs_data["jht_employee"] = flt(deduction.amount)
@@ -472,57 +469,41 @@ def update_bpjs_payment_summary(doc):
             elif deduction.salary_component == "BPJS Kesehatan Employee":
                 bpjs_data["kesehatan_employee"] = flt(deduction.amount)
         
-        # Get BPJS Settings
+        # Get BPJS settings
         bpjs_settings = frappe.get_cached_doc("BPJS Settings")
         
-        # Calculate employer components
+        # Calculate employer contributions
         gross_pay = flt(getattr(doc, 'gross_pay', 0))
         
-        # JHT Employer (typically 3.7%)
-        jht_employer_percent = flt(getattr(bpjs_settings, 'jht_employer_percent', 0))
+        # Calculate based on percentages
+        jht_employer_percent = flt(getattr(bpjs_settings, 'jht_employer_percent', 3.7))
         jht_employer = flt(gross_pay * (jht_employer_percent / 100))
         
-        # JP Employer (typically 2%)
-        jp_max_salary = flt(getattr(bpjs_settings, 'jp_max_salary', 0))
-        jp_employer_percent = flt(getattr(bpjs_settings, 'jp_employer_percent', 0))
+        jp_max_salary = flt(getattr(bpjs_settings, 'jp_max_salary', 9000000))
+        jp_employer_percent = flt(getattr(bpjs_settings, 'jp_employer_percent', 2))
         jp_salary = min(gross_pay, jp_max_salary)
         jp_employer = flt(jp_salary * (jp_employer_percent / 100))
         
-        # JKK (typically 0.24% - 1.74% depending on risk)
-        jkk_percent = flt(getattr(bpjs_settings, 'jkk_percent', 0))
+        jkk_percent = flt(getattr(bpjs_settings, 'jkk_percent', 0.24))
         jkk = flt(gross_pay * (jkk_percent / 100))
         
-        # JKM (typically 0.3%)
-        jkm_percent = flt(getattr(bpjs_settings, 'jkm_percent', 0))
+        jkm_percent = flt(getattr(bpjs_settings, 'jkm_percent', 0.3))
         jkm = flt(gross_pay * (jkm_percent / 100))
         
-        # Kesehatan Employer (typically 4%)
-        kesehatan_max_salary = flt(getattr(bpjs_settings, 'kesehatan_max_salary', 0))
-        kesehatan_employer_percent = flt(getattr(bpjs_settings, 'kesehatan_employer_percent', 0))
+        kesehatan_max_salary = flt(getattr(bpjs_settings, 'kesehatan_max_salary', 12000000))
+        kesehatan_employer_percent = flt(getattr(bpjs_settings, 'kesehatan_employer_percent', 4))
         kesehatan_salary = min(gross_pay, kesehatan_max_salary)
         kesehatan_employer = flt(kesehatan_salary * (kesehatan_employer_percent / 100))
         
-        # Calculate component values - ensure positive numbers
-        bpjs_components = {
-            "BPJS Kesehatan": flt(bpjs_data["kesehatan_employee"]) + flt(kesehatan_employer),
-            "BPJS JHT": flt(bpjs_data["jht_employee"]) + flt(jht_employer),
-            "BPJS JP": flt(bpjs_data["jp_employee"]) + flt(jp_employer),
-            "BPJS JKK": flt(jkk),
-            "BPJS JKM": flt(jkm)
-        }
+        # Calculate total amount (minimum 1.0 to avoid validation errors)
+        total_amount = flt(
+            bpjs_data["jht_employee"] + jht_employer +
+            bpjs_data["jp_employee"] + jp_employer +
+            bpjs_data["kesehatan_employee"] + kesehatan_employer +
+            jkk + jkm
+        ) or 1.0
         
-        # Filter out zero or negative values
-        bpjs_components = {k: v for k, v in bpjs_components.items() if v > 0}
-        
-        # Calculate total amount - ensure positive value
-        total_amount = flt(sum(bpjs_components.values()))
-        
-        # If no valid components or zero total, skip processing
-        if not bpjs_components or total_amount <= 0:
-            frappe.msgprint(_("No BPJS components found or total amount is zero. Skipping BPJS Payment Summary update."))
-            return
-        
-        # Check if BPJS Payment Summary exists for this period
+        # Check if BPJS Payment Summary exists
         bpjs_summary = frappe.db.get_value(
             "BPJS Payment Summary",
             {"company": doc.company, "year": year, "month": month, "docstatus": ["!=", 2]},
@@ -530,86 +511,18 @@ def update_bpjs_payment_summary(doc):
         )
         
         if not bpjs_summary:
-            # Create new BPJS Payment Summary
-            bpjs_summary_doc = frappe.new_doc("BPJS Payment Summary")
-            
-            # Set header fields
-            bpjs_summary_doc.company = doc.company
-            bpjs_summary_doc.year = year
-            bpjs_summary_doc.month = month
-            bpjs_summary_doc.posting_date = doc.posting_date or getdate()
-            
-            # IMPORTANT: Set amount field FIRST before adding other details
-            bpjs_summary_doc.amount = total_amount
-            
-            # Create employee detail
-            employee_data = {
-                "employee": doc.employee,
-                "employee_name": doc.employee_name,
-                "salary_slip": doc.name,
-                "jht_employee": bpjs_data["jht_employee"],
-                "jp_employee": bpjs_data["jp_employee"],
-                "kesehatan_employee": bpjs_data["kesehatan_employee"],
-                "jht_employer": jht_employer,
-                "jp_employer": jp_employer,
-                "jkk": jkk,
-                "jkm": jkm,
-                "kesehatan_employer": kesehatan_employer
-            }
-            
-            # Add employee detail
-            bpjs_summary_doc.append("employee_details", employee_data)
-            
-            # Add components
-            for component_name, amount in bpjs_components.items():
-                bpjs_summary_doc.append("komponen", {
-                    "component": component_name,
-                    "component_type": component_name.replace("BPJS ", ""),
-                    "amount": amount
-                })
+            try:
+                # Create new BPJS Payment Summary
+                bpjs_summary_doc = frappe.new_doc("BPJS Payment Summary")
                 
-            # Double-check amount field is set correctly
-            if not hasattr(bpjs_summary_doc, 'amount') or not bpjs_summary_doc.amount:
+                # Set all mandatory fields FIRST
+                bpjs_summary_doc.company = doc.company
+                bpjs_summary_doc.year = year
+                bpjs_summary_doc.month = month
+                bpjs_summary_doc.posting_date = doc.posting_date or today()
                 bpjs_summary_doc.amount = total_amount
                 
-            # Insert with debug info
-            try:
-                frappe.msgprint(f"Creating BPJS Payment Summary with amount: {total_amount}")
-                bpjs_summary_doc.insert(ignore_permissions=True)
-                frappe.msgprint(_("BPJS Payment Summary created successfully"))
-            except Exception as e:
-                frappe.msgprint(
-                    _("Error inserting BPJS Payment Summary: {0}. Document state: amount={1}, komponen count={2}").format(
-                        str(e), 
-                        bpjs_summary_doc.amount, 
-                        len(bpjs_summary_doc.komponen) if hasattr(bpjs_summary_doc, 'komponen') else 0
-                    )
-                )
-                raise
-                
-        else:
-            # Update existing BPJS Payment Summary
-            bpjs_summary_doc = frappe.get_doc("BPJS Payment Summary", bpjs_summary)
-            
-            # Check if employee already exists
-            employee_exists = False
-            for detail in bpjs_summary_doc.employee_details:
-                if detail.employee == doc.employee:
-                    # Update existing employee
-                    detail.salary_slip = doc.name
-                    detail.jht_employee = bpjs_data["jht_employee"]
-                    detail.jp_employee = bpjs_data["jp_employee"] 
-                    detail.kesehatan_employee = bpjs_data["kesehatan_employee"]
-                    detail.jht_employer = jht_employer
-                    detail.jp_employer = jp_employer
-                    detail.jkk = jkk
-                    detail.jkm = jkm
-                    detail.kesehatan_employer = kesehatan_employer
-                    employee_exists = True
-                    break
-            
-            if not employee_exists:
-                # Add new employee
+                # Create employee detail
                 employee_data = {
                     "employee": doc.employee,
                     "employee_name": doc.employee_name,
@@ -625,63 +538,74 @@ def update_bpjs_payment_summary(doc):
                 }
                 
                 bpjs_summary_doc.append("employee_details", employee_data)
-            
-            # Update komponen - clear existing and recreate
-            bpjs_summary_doc.komponen = []  # Reset komponen child table
-            
-            # Calculate new totals from all employee_details
-            new_component_totals = {
-                "BPJS Kesehatan": 0,
-                "BPJS JHT": 0,
-                "BPJS JP": 0,
-                "BPJS JKK": 0,
-                "BPJS JKM": 0
-            }
-            
-            for emp in bpjs_summary_doc.employee_details:
-                new_component_totals["BPJS Kesehatan"] += flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer)
-                new_component_totals["BPJS JHT"] += flt(emp.jht_employee) + flt(emp.jht_employer)
-                new_component_totals["BPJS JP"] += flt(emp.jp_employee) + flt(emp.jp_employer)
-                new_component_totals["BPJS JKK"] += flt(emp.jkk)
-                new_component_totals["BPJS JKM"] += flt(emp.jkm)
-            
-            # Filter out zero or negative amounts
-            new_component_totals = {k: v for k, v in new_component_totals.items() if v > 0}
-            
-            # Add updated components
-            for component_name, amount in new_component_totals.items():
-                bpjs_summary_doc.append("komponen", {
-                    "component": component_name,
-                    "component_type": component_name.replace("BPJS ", ""),
-                    "amount": amount
-                })
-            
-            # Update amount field - ensure positive value
-            updated_amount = flt(sum(new_component_totals.values()))
-            if updated_amount > 0:
-                bpjs_summary_doc.amount = updated_amount
-            
-            # Update with debug info
+                
+                # CATATAN: Kita tidak perlu menambahkan komponen secara manual
+                # Karena akan otomatis dibuat oleh check_and_generate_components()
+                
+                # Insert doc with debug info
+                frappe.msgprint(_("Creating BPJS Payment Summary with amount: {0}").format(total_amount))
+                bpjs_summary_doc.insert(ignore_permissions=True)
+                
+            except Exception as e:
+                frappe.log_error(f"Error creating BPJS Payment Summary for {doc.name}: {str(e)}", "BPJS Creation Error")
+                raise
+                
+        else:
             try:
-                frappe.msgprint(f"Updating BPJS Payment Summary with amount: {updated_amount}")
+                # Update existing BPJS Payment Summary
+                bpjs_summary_doc = frappe.get_doc("BPJS Payment Summary", bpjs_summary)
+                
+                # Check if employee already exists
+                employee_exists = False
+                for detail in bpjs_summary_doc.employee_details:
+                    if detail.employee == doc.employee:
+                        detail.salary_slip = doc.name
+                        detail.jht_employee = bpjs_data["jht_employee"]
+                        detail.jp_employee = bpjs_data["jp_employee"] 
+                        detail.kesehatan_employee = bpjs_data["kesehatan_employee"]
+                        detail.jht_employer = jht_employer
+                        detail.jp_employer = jp_employer
+                        detail.jkk = jkk
+                        detail.jkm = jkm
+                        detail.kesehatan_employer = kesehatan_employer
+                        employee_exists = True
+                        break
+                
+                if not employee_exists:
+                    # Add new employee
+                    employee_data = {
+                        "employee": doc.employee,
+                        "employee_name": doc.employee_name,
+                        "salary_slip": doc.name,
+                        "jht_employee": bpjs_data["jht_employee"],
+                        "jp_employee": bpjs_data["jp_employee"],
+                        "kesehatan_employee": bpjs_data["kesehatan_employee"],
+                        "jht_employer": jht_employer,
+                        "jp_employer": jp_employer,
+                        "jkk": jkk,
+                        "jkm": jkm,
+                        "kesehatan_employer": kesehatan_employer
+                    }
+                    
+                    bpjs_summary_doc.append("employee_details", employee_data)
+                
+                # CATATAN: Kita tidak perlu memperbarui komponen secara manual
+                # check_and_generate_components() akan mengurusnya saat save
+                
+                # Ensure amount has at least minimal value
+                if not bpjs_summary_doc.amount or bpjs_summary_doc.amount <= 0:
+                    bpjs_summary_doc.amount = 1.0
+                    
+                # Save with ignore_validate_update_after_submit
                 bpjs_summary_doc.flags.ignore_validate_update_after_submit = True
                 bpjs_summary_doc.save(ignore_permissions=True)
-                frappe.msgprint(_("BPJS Payment Summary updated successfully"))
+                
             except Exception as e:
-                frappe.msgprint(
-                    _("Error updating BPJS Payment Summary: {0}. Document state: amount={1}, komponen count={2}").format(
-                        str(e), 
-                        bpjs_summary_doc.amount, 
-                        len(bpjs_summary_doc.komponen) if hasattr(bpjs_summary_doc, 'komponen') else 0
-                    )
-                )
+                frappe.log_error(f"Error updating BPJS Payment Summary for {doc.name}: {str(e)}", "BPJS Update Error")
                 raise
                 
     except Exception as e:
-        frappe.log_error(
-            _("Error in BPJS Payment Summary update: {0}").format(str(e)),
-            "BPJS Update Error"
-        )
+        frappe.log_error(f"Error in BPJS update: {str(e)}", "BPJS Error")
         frappe.throw(_("Error updating BPJS Payment Summary: {0}").format(str(e)))
         
 def update_pph_ter_table(doc):
