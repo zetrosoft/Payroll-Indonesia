@@ -117,6 +117,9 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             # Generate tax ID data
             self.generate_tax_id_data(employee)
 
+            # Check if fiscal year exists for posting date, create if missing
+            self.check_or_create_fiscal_year()
+
             # Add note to payroll_note
             self.add_payroll_note("Validasi berhasil: Komponen BPJS dan Pajak dihitung.")
             debug_log(f"Validation completed successfully for {self.name}", employee=employee_info)
@@ -885,99 +888,6 @@ def clear_caches():
 # Start cache clearing process when module loads
 clear_caches()
 
-# Diagnostic function
-@frappe.whitelist()
-def diagnose_salary_slip_submission(salary_slip_name):
-    """Diagnostic function for salary slip submission issues"""
-    debug_log(f"Starting diagnosis for salary slip {salary_slip_name}")
-    result = {
-        "salary_slip_exists": False,
-        "class_override_working": False,
-        "custom_fields_exist": {},
-        "dependent_doctypes_exist": {},
-        "background_jobs_count": 0,
-        "memory_estimate": None,
-        "recommendations": []
-    }
-    
-    try:
-        # Check if salary slip exists
-        if not frappe.db.exists("Salary Slip", salary_slip_name):
-            result["recommendations"].append(f"Salary slip {salary_slip_name} not found. Please provide a valid salary slip name.")
-            return result
-            
-        result["salary_slip_exists"] = True
-        
-        # Get the salary slip
-        slip = frappe.get_doc("Salary Slip", salary_slip_name)
-        
-        # Check if class override is working
-        result["class_override_working"] = isinstance(slip, IndonesiaPayrollSalarySlip)
-        
-        # Estimate memory usage
-        if result["class_override_working"]:
-            result["memory_estimate"] = slip._estimate_memory_usage()
-        
-        # Check custom fields
-        custom_fields = ["biaya_jabatan", "netto", "total_bpjs", "is_using_ter", "ter_rate", "koreksi_pph21", "payroll_note", "npwp", "ktp"]
-        for field in custom_fields:
-            result["custom_fields_exist"][field] = hasattr(slip, field)
-            
-        # Check background jobs
-        try:
-            queues = ['default', 'short', 'long']
-            job_counts = {}
-            total_jobs = 0
-            
-            for queue in queues:
-                jobs = get_jobs(queue) or {}
-                queue_count = len(jobs)
-                job_counts[queue] = queue_count
-                total_jobs += queue_count
-                
-            result["background_jobs"] = job_counts
-            result["background_jobs_count"] = total_jobs
-            
-            # Check for job limits
-            if total_jobs > 2000:
-                result["recommendations"].append(
-                    f"High number of background jobs ({total_jobs}). "
-                    "Consider clearing the queue or increasing worker count."
-                )
-        except Exception as e:
-            result["recommendations"].append(f"Error checking background jobs: {str(e)}")
-        
-        # Check Redis memory usage if possible
-        try:
-            from rq.utils import current_timestamp
-            result["rq_timestamp"] = current_timestamp()
-        except Exception:
-            pass
-            
-        # Generate recommendations
-        if not result["class_override_working"]:
-            result["recommendations"].append("SalarySlip class override is not working. Check hooks.py for correct override_doctype_class configuration.")
-            
-        if result["memory_estimate"] and result["memory_estimate"] > 10:
-            result["recommendations"].append(
-                f"Salary slip memory usage is high ({result['memory_estimate']:.2f}MB). "
-                "Consider reviewing and optimizing attachments and child tables."
-            )
-            
-        missing_fields = [field for field, exists in result["custom_fields_exist"].items() if not exists]
-        if missing_fields:
-            result["recommendations"].append(f"Missing custom fields: {', '.join(missing_fields)}. Create these fields in Salary Slip doctype.")
-            
-        # Success case
-        if not result["recommendations"]:
-            result["recommendations"].append("Diagnostics completed successfully. No issues detected.")
-            
-        return result
-        
-    except Exception as e:
-        debug_log(f"Error in diagnose_salary_slip_submission: {str(e)}", trace=True)
-        result["recommendations"].append(f"Error during diagnosis: {str(e)}")
-        return result
 
 # Add to diagnose_system_resources function
 def check_fiscal_year_setup(date_str=None):
@@ -1264,3 +1174,59 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
             "global_error": str(e)
         })
         return results
+
+def check_or_create_fiscal_year(self):
+    """Check if fiscal year exists for the posting date, create if missing."""
+    fy = frappe.db.get_value("Fiscal Year", 
+                            {"year_start_date": ("<=", self.posting_date),
+                             "year_end_date": (">=", self.posting_date),
+                             "disabled": 0})
+    
+    if not fy:
+        # Auto-create fiscal year if it doesn't exist
+        posting_date = getdate(self.posting_date)
+        year_start_date = get_fiscal_year_start_date(posting_date)
+        year_end_date = get_fiscal_year_end_date(year_start_date)
+        
+        fiscal_year = frappe.new_doc("Fiscal Year")
+        fiscal_year.year = formatdate(year_start_date, "yyyy-yyyy")
+        fiscal_year.year_start_date = year_start_date
+        fiscal_year.year_end_date = year_end_date
+        fiscal_year.auto_created = 1
+        fiscal_year.insert()
+        
+        frappe.msgprint(_("Fiscal Year {0} created").format(fiscal_year.year))
+
+def get_fiscal_year_start_date(date):
+    """Return fiscal year start date based on company fiscal year."""
+    if not self.company:
+        frappe.throw(_("Company is mandatory"))
+        
+    company_fiscal_year_start = frappe.db.get_value("Company", self.company, "fiscal_year_start")
+    if company_fiscal_year_start:
+        fiscal_year = getdate(date).year
+        if getdate(date).month < getdate(company_fiscal_year_start).month:
+            fiscal_year -= 1
+        return f"{fiscal_year}-{getdate(company_fiscal_year_start).month}-{getdate(company_fiscal_year_start).day}"
+    else:
+        # Default to April 1st if not specified
+        fiscal_year = getdate(date).year
+        if getdate(date).month < 4:
+            fiscal_year -= 1
+        return f"{fiscal_year}-04-01"
+
+def get_fiscal_year_end_date(start_date):
+    """Return fiscal year end date based on start date."""
+    start_date = getdate(start_date)
+    end_year = start_date.year + 1
+    end_month = start_date.month
+    end_day = start_date.day - 1
+    
+    if end_day == 0:
+        end_month -= 1
+        if end_month == 0:
+            end_month = 12
+            end_year -= 1
+        end_day = calendar.monthrange(end_year, end_month)[1]
+    
+    return f"{end_year}-{end_month:02d}-{end_day:02d}"

@@ -121,11 +121,15 @@ def calculate_bpjs_components(doc, employee, gaji_pokok):
         debug_log(f"BPJS components calculation completed for {doc.name}")
             
     except Exception as e:
-        debug_log(f"BPJS Calculation Error for Employee {employee.name}: {str(e)}\n{frappe.get_traceback()}")
-        frappe.log_error(
-            f"BPJS Calculation Error for Employee {employee.name}: {str(e)}",
-            "BPJS Calculation Error"
-        )
+        # Truncate log message manually to avoid size limit issues (140 chars)
+        error_msg = f'BPJS Calculation Error for {doc.name}: {str(e)}'
+        if len(error_msg) > 130:  # Leaving some margin from 140 limit
+            error_msg = error_msg[:127] + '...'
+        frappe.log_error(error_msg, "BPJS Calculation Error")
+        
+        # Re-raise or handle based on your error handling strategy
+        frappe.msgprint(_("Error in BPJS calculation. See error log for details."))
+
         # Convert to user-friendly error
         frappe.throw(_("Error calculating BPJS components: {0}").format(str(e)))
 

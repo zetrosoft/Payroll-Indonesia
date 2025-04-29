@@ -35,6 +35,14 @@ def calculate_tax_components(doc, employee):
             # IMPROVED: Strategy selection is already done in the controller
             # This function just handles the calculation based on the month
             check_and_apply_selected_method(doc, employee)
+
+        # Initialize total_bpjs to 0 if None to prevent NoneType subtraction error
+        if doc.total_bpjs is None:
+            doc.total_bpjs = 0
+    
+        # Now the subtraction will work without errors
+        doc.netto = doc.gross_pay - doc.biaya_jabatan - doc.total_bpjs
+    
     except Exception as e:
         frappe.log_error(
             f"Tax Calculation Error for Employee {employee.name}: {str(e)}",
