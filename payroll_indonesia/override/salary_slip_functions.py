@@ -1389,10 +1389,10 @@ def wrapper_create_from_salary_slip(doc, method=None):
     Wrapper for create_from_salary_slip from bpjs_payment_api
     Args:
         doc: Salary Slip document
-        method: Method name (not used)
+        method: Method name (optional)
     """
     from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import create_from_salary_slip
-    create_from_salary_slip(doc)
+    create_from_salary_slip(doc, method=method)
 
 def wrapper_update_on_salary_slip_cancel(doc, method=None):
     """
