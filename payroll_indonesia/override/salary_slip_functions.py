@@ -1040,3 +1040,14 @@ def wrapper_create_from_salary_slip(doc, method=None):
     from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import create_from_salary_slip
     # Panggil fungsi asli hanya dengan parameter doc
     create_from_salary_slip(doc)
+
+def wrapper_update_on_salary_slip_cancel(doc, method=None):
+    """Wrapper untuk memanggil update_on_salary_slip_cancel dari bpjs_payment_api"""
+    from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import update_on_salary_slip_cancel
+    
+    # Ekstrak month dan year dari doc
+    month = getdate(doc.end_date).month
+    year = getdate(doc.end_date).year
+    
+    # Panggil original function dengan parameter yang benar
+    update_on_salary_slip_cancel(doc.name, month, year)

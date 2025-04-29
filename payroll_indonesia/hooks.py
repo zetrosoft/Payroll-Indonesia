@@ -76,8 +76,7 @@ doc_events = {
             "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
             "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.update_on_salary_slip_cancel",
             "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
-            # PERBEDAAN: Menggunakan bpjs_payment_api bukan bpjs_payment_integration
-            "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.update_on_salary_slip_cancel"
+            "payroll_indonesia.override.salary_slip_functions.wrapper_update_on_salary_slip_cancel"
         ],
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
