@@ -534,6 +534,14 @@ def update_bpjs_payment_summary(doc):
         except Exception as e:
             frappe.throw(_("Error querying BPJS Payment Summary: {0}").format(str(e)))
         
+        # Calculate total amount of all BPJS contributions
+        total_amount = (
+            flt(bpjs_data["jht_employee"]) + jht_employer +
+            flt(bpjs_data["jp_employee"]) + jp_employer +
+            flt(bpjs_data["kesehatan_employee"]) + kesehatan_employer +
+            jkk + jkm
+        )
+        
         if not bpjs_summary:
             try:
                 # Create new BPJS Payment Summary
@@ -543,6 +551,10 @@ def update_bpjs_payment_summary(doc):
                 bpjs_summary_doc.company = doc.company
                 bpjs_summary_doc.year = year
                 bpjs_summary_doc.month = month
+                
+                # Set mandatory fields that were missing
+                bpjs_summary_doc.posting_date = doc.posting_date or getdate()  # Use salary slip posting date or today
+                bpjs_summary_doc.amount = total_amount  # Set calculated total as amount
                 
                 # Set title field if it exists
                 if hasattr(bpjs_summary_doc, 'month_year_title'):
@@ -569,10 +581,6 @@ def update_bpjs_payment_summary(doc):
                 
                 # Add employee detail
                 bpjs_summary_doc.append("employee_details", employee_data)
-
-                # Setelah menambahkan employee_detail di bpjs_summary_doc
-                if hasattr(bpjs_summary_doc, 'populate_from_employee_details') and callable(bpjs_summary_doc.populate_from_employee_details):
-                    bpjs_summary_doc.populate_from_employee_details()
                 
                 # Insert the document
                 bpjs_summary_doc.insert(ignore_permissions=True)
@@ -631,6 +639,19 @@ def update_bpjs_payment_summary(doc):
                     
                     bpjs_summary_doc.append("employee_details", employee_data)
                 
+                # Update amount field to reflect current total
+                # Re-calculate totals considering all employee entries
+                updated_amount = 0
+                for emp in bpjs_summary_doc.employee_details:
+                    updated_amount += (
+                        flt(emp.jht_employee) + flt(emp.jht_employer) +
+                        flt(emp.jp_employee) + flt(emp.jp_employer) +
+                        flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer) +
+                        flt(emp.jkk) + flt(emp.jkm)
+                    )
+                
+                bpjs_summary_doc.amount = updated_amount
+                
                 # Save changes
                 bpjs_summary_doc.flags.ignore_validate_update_after_submit = True
                 bpjs_summary_doc.save(ignore_permissions=True)
@@ -651,7 +672,7 @@ def update_bpjs_payment_summary(doc):
             "BPJS Update Error"
         )
         frappe.throw(_("Error updating BPJS Payment Summary: {0}").format(str(e)))
-
+        
 def update_pph_ter_table(doc):
     """Update PPh TER Table based on submitted salary slip with improved validation"""
     try:
