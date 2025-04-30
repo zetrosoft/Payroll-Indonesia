@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-29 14:30:00 by dannyaudian
+# Last modified: 2025-04-30 07:25:00 by dannyaudian
 
 import frappe
 from frappe import _
@@ -12,9 +12,27 @@ from frappe.utils.background_jobs import get_jobs, enqueue
 import json
 import hashlib
 
+# Define exports for proper importing by other modules
+__all__ = [
+    'IndonesiaPayrollSalarySlip',
+    'debug_log',
+    'setup_fiscal_year_if_missing',
+    'process_salary_slips_batch',
+    'check_fiscal_year_setup',
+    'clear_caches'
+]
+
 # Debug function for error tracking with enhanced information
 def debug_log(message, module_name="Salary Slip Debug", employee=None, trace=False):
-    """Log debug message with timestamp, employee info, and optional traceback"""
+    """
+    Log debug message with timestamp, employee info, and optional traceback
+    
+    Args:
+        message: Message to log
+        module_name: Module name for the log
+        employee: Employee code or name
+        trace: Whether to include traceback
+    """
     timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
     employee_info = f"[Employee: {employee}] " if employee else ""
     log_message = f"[{timestamp}] {employee_info}{message}"
@@ -664,8 +682,12 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     
     # Helper methods
     def initialize_payroll_fields(self):
-        """Initialize additional payroll fields"""
-        debug_log(f"Initializing payroll fields for {self.name}")
+        """
+        Initialize additional payroll fields.
+        This method is safe to call from outside the class and is
+        designed to handle doc objects passed from hooks or other functions.
+        """
+        debug_log(f"Initializing payroll fields for {self.name if hasattr(self, 'name') else 'unknown'}")
         # Use single assignment for better performance
         defaults = {
             'biaya_jabatan': 0,
@@ -676,7 +698,8 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             'koreksi_pph21': 0,
             'payroll_note': "",
             'npwp': "",
-            'ktp': ""
+            'ktp': "",
+            'is_final_gabung_suami': 0,
         }
         
         # Set defaults for fields that don't exist or are None
@@ -684,11 +707,16 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             if not hasattr(self, field) or getattr(self, field) is None:
                 setattr(self, field, default)
                 
-        debug_log(f"Payroll fields initialized for {self.name}")
+        debug_log(f"Payroll fields initialized for {self.name if hasattr(self, 'name') else 'unknown'}")
+        return defaults  # Return defaults for external callers who might need them
     
     def get_employee_doc(self):
-        """Get employee document with validation and caching"""
-        if not self.employee:
+        """
+        Get employee document with validation and caching.
+        This method can be called externally to get an employee document
+        with proper validation.
+        """
+        if not hasattr(self, 'employee') or not self.employee:
             frappe.throw(_("Employee harus diisi untuk salary slip"))
             
         # Return cached employee if available
@@ -859,6 +887,26 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         # Update net pay
         total_loan = flt(getattr(self, 'total_loan_repayment', 0))
         self.net_pay = self.gross_pay - self.total_deduction - total_loan
+    
+    def check_or_create_fiscal_year(self):
+        """Check if fiscal year exists for the posting date, create if missing."""
+        try:
+            if not hasattr(self, 'posting_date') or not self.posting_date:
+                return
+                
+            fy = frappe.db.get_value("Fiscal Year", 
+                                    {"year_start_date": ("<=", self.posting_date),
+                                     "year_end_date": (">=", self.posting_date),
+                                     "disabled": 0})
+            
+            if not fy:
+                # Use the helper function at module level
+                result = setup_fiscal_year_if_missing(self.posting_date)
+                if result and result.get('status') == 'created':
+                    self.add_payroll_note(f"Fiscal Year {result.get('year')} was created automatically.")
+        except Exception as e:
+            debug_log(f"Error checking/creating fiscal year: {str(e)}", trace=True)
+            # Don't throw, this is a non-critical function
 
 
 # Override SalarySlip controller with enhanced version
@@ -891,7 +939,14 @@ clear_caches()
 
 # Add to diagnose_system_resources function
 def check_fiscal_year_setup(date_str=None):
-    """Check if fiscal years are properly set up"""
+    """
+    Check if fiscal years are properly set up
+    
+    Args:
+        date_str: Date string to check (optional)
+    Returns:
+        dict: Status of fiscal year setup
+    """
     try:
         from frappe.utils import getdate
         test_date = getdate(date_str) if date_str else getdate()
@@ -1175,58 +1230,22 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
         })
         return results
 
-def check_or_create_fiscal_year(self):
-    """Check if fiscal year exists for the posting date, create if missing."""
-    fy = frappe.db.get_value("Fiscal Year", 
-                            {"year_start_date": ("<=", self.posting_date),
-                             "year_end_date": (">=", self.posting_date),
-                             "disabled": 0})
-    
-    if not fy:
-        # Auto-create fiscal year if it doesn't exist
-        posting_date = getdate(self.posting_date)
-        year_start_date = get_fiscal_year_start_date(posting_date)
-        year_end_date = get_fiscal_year_end_date(year_start_date)
-        
-        fiscal_year = frappe.new_doc("Fiscal Year")
-        fiscal_year.year = formatdate(year_start_date, "yyyy-yyyy")
-        fiscal_year.year_start_date = year_start_date
-        fiscal_year.year_end_date = year_end_date
-        fiscal_year.auto_created = 1
-        fiscal_year.insert()
-        
-        frappe.msgprint(_("Fiscal Year {0} created").format(fiscal_year.year))
-
-def get_fiscal_year_start_date(date):
-    """Return fiscal year start date based on company fiscal year."""
-    if not self.company:
-        frappe.throw(_("Company is mandatory"))
-        
-    company_fiscal_year_start = frappe.db.get_value("Company", self.company, "fiscal_year_start")
-    if company_fiscal_year_start:
-        fiscal_year = getdate(date).year
-        if getdate(date).month < getdate(company_fiscal_year_start).month:
-            fiscal_year -= 1
-        return f"{fiscal_year}-{getdate(company_fiscal_year_start).month}-{getdate(company_fiscal_year_start).day}"
-    else:
-        # Default to April 1st if not specified
-        fiscal_year = getdate(date).year
-        if getdate(date).month < 4:
-            fiscal_year -= 1
-        return f"{fiscal_year}-04-01"
-
-def get_fiscal_year_end_date(start_date):
-    """Return fiscal year end date based on start date."""
-    start_date = getdate(start_date)
-    end_year = start_date.year + 1
-    end_month = start_date.month
-    end_day = start_date.day - 1
-    
-    if end_day == 0:
-        end_month -= 1
-        if end_month == 0:
-            end_month = 12
-            end_year -= 1
-        end_day = calendar.monthrange(end_year, end_month)[1]
-    
-    return f"{end_year}-{end_month:02d}-{end_day:02d}"
+# Helper function for diagnostics
+def diagnose_system_resources():
+    """Get system resource information"""
+    try:
+        import psutil
+        memory = psutil.virtual_memory()
+        return {
+            "memory_usage": {
+                "total": memory.total / (1024**3),  # GB
+                "available": memory.available / (1024**3),  # GB
+                "percent": memory.percent
+            }
+        }
+    except ImportError:
+        return {
+            "memory_usage": {
+                "status": "psutil not installed"
+            }
+        }
