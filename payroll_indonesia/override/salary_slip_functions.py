@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-30 07:20:10 by dannyaudian
+# Last modified: 2025-04-30 08:09:40 by dannyaudian
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, cint
+from frappe.utils import flt, getdate, cint, now_datetime
 
-# Import shared functions from salary_slip.py
-from payroll_indonesia.override.salary_slip import (
-    IndonesiaPayrollSalarySlip,
-    debug_log,
-    setup_fiscal_year_if_missing
-)
+# Import debug_log directly from bpjs_calculator to avoid circular imports
+from payroll_indonesia.calculations.bpjs_calculator import debug_log
+
+# Import other functions from salary_slip
+from payroll_indonesia.override.salary_slip.controller import IndonesiaPayrollSalarySlip
+from payroll_indonesia.override.salary_slip import setup_fiscal_year_if_missing
 
 # Konstanta
 MAX_ERROR_MESSAGE_LENGTH = 140
@@ -162,7 +162,6 @@ def on_submit_salary_slip(doc, method=None):
         
         # Add note to the doc's payroll_note field if it exists
         if hasattr(doc, 'payroll_note'):
-            from frappe.utils import now_datetime
             timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
             doc.payroll_note += f"\n[{timestamp}] Salary slip submitted via hook."
             doc.db_set('payroll_note', doc.payroll_note, update_modified=False)
@@ -190,7 +189,6 @@ def on_cancel_salary_slip(doc, method=None):
         
         # Tambahkan notifikasi ke payroll_note jika field tersebut ada
         if hasattr(doc, 'payroll_note'):
-            from frappe.utils import now_datetime
             timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
             doc.payroll_note += f"\n[{timestamp}] Salary slip cancelled."
             doc.db_update()
