@@ -1,13 +1,27 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-28 06:21:00 by dannyaudian
+# Last modified: 2025-04-30 07:51:52 by dannyaudian
 
-# Import the main controller class
-from .controller import IndonesiaPayrollSalarySlip
+# Export the main salary slip controller class and utility functions
+from payroll_indonesia.override.salary_slip import (
+    IndonesiaPayrollSalarySlip,
+    setup_fiscal_year_if_missing,
+    process_salary_slips_batch,
+    check_fiscal_year_setup,
+    clear_caches,
+    debug_log
+)
 
-# Export the class for direct imports
-__all__ = ['IndonesiaPayrollSalarySlip']
+# Export for direct imports
+__all__ = [
+    'IndonesiaPayrollSalarySlip',
+    'setup_fiscal_year_if_missing',
+    'process_salary_slips_batch',
+    'check_fiscal_year_setup',
+    'debug_log',
+    'clear_caches'
+]
 
-# Note: We avoid importing other modules here to prevent circular imports
-# Modules are imported directly where needed
+# Note: We selectively import functions to prevent circular imports
+# BPJS-specific functionality is now imported from payroll_indonesia.calculations.bpjs_calculator
