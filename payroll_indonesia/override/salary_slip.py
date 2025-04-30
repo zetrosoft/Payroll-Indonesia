@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-30 07:25:00 by dannyaudian
+# Last modified: 2025-04-30 07:45:00 by dannyaudian
 
 import frappe
 from frappe import _
@@ -15,32 +15,19 @@ import hashlib
 # Define exports for proper importing by other modules
 __all__ = [
     'IndonesiaPayrollSalarySlip',
-    'debug_log',
     'setup_fiscal_year_if_missing',
     'process_salary_slips_batch',
     'check_fiscal_year_setup',
     'clear_caches'
 ]
 
-# Debug function for error tracking with enhanced information
-def debug_log(message, module_name="Salary Slip Debug", employee=None, trace=False):
-    """
-    Log debug message with timestamp, employee info, and optional traceback
-    
-    Args:
-        message: Message to log
-        module_name: Module name for the log
-        employee: Employee code or name
-        trace: Whether to include traceback
-    """
-    timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
-    employee_info = f"[Employee: {employee}] " if employee else ""
-    log_message = f"[{timestamp}] {employee_info}{message}"
-    
-    if trace:
-        log_message += f"\nTraceback: {frappe.get_traceback()}"
-    
-    frappe.log_error(log_message, module_name)
+# Import BPJS calculation functions from bpjs_calculator.py
+from payroll_indonesia.calculations.bpjs_calculator import (
+    calculate_bpjs_components,
+    verify_bpjs_components,
+    debug_log,
+    check_bpjs_enrollment,
+)
 
 # Import functions from support modules with better error handling and cache TER rates
 _ter_rate_cache = {}
@@ -51,7 +38,6 @@ try:
     
     from payroll_indonesia.override.salary_slip.base import get_formatted_currency, get_component_amount, update_component_amount
     from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
-    from payroll_indonesia.override.salary_slip.bpjs_calculator import calculate_bpjs_components
     from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter, should_use_ter_method, get_ter_rate
     
     # Direct import for BPJS calculation to ensure it's always available
@@ -74,20 +60,6 @@ except ImportError as e:
     def calculate_tax_components(doc, employee):
         debug_log(f"Using placeholder calculate_tax_components for employee {employee.name if hasattr(employee, 'name') else 'unknown'}")
         pass
-        
-    def calculate_bpjs_components(doc, employee, base):
-        debug_log(f"Using placeholder calculate_bpjs_components: employee={employee.name if hasattr(employee, 'name') else 'unknown'}, base={base}")
-        pass
-        
-    def hitung_bpjs(employee, base_salary):
-        debug_log(f"Using placeholder hitung_bpjs: employee={employee}, base_salary={base_salary}")
-        # Return default structure to prevent errors
-        return {
-            "kesehatan_employee": 0,
-            "jht_employee": 0,
-            "jp_employee": 0,
-            "total_employee": 0
-        }
 
 
 class IndonesiaPayrollSalarySlip(SalarySlip):
@@ -125,8 +97,8 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             base_salary = self.get_base_salary_for_bpjs()
             debug_log(f"Base salary for BPJS calculation: {base_salary}", employee=employee_info)
             
-            # Calculate BPJS components once
-            self.calculate_and_set_bpjs_components(employee, base_salary)
+            # Calculate BPJS components - now using imported function
+            calculate_bpjs_components(self, employee, base_salary)
             
             # IMPROVED: First determine tax calculation strategy, then calculate
             tax_strategy = self.determine_tax_strategy(employee)
@@ -225,8 +197,26 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             debug_log(f"Starting on_submit for salary slip {self.name}", 
                       employee=getattr(self, 'employee_name', self.employee))
             
-            # Verify BPJS components before submission
-            self.verify_bpjs_components()
+            # Verify BPJS components before submission - using imported function
+            verification = verify_bpjs_components(self)
+            
+            # If all components are zero but employee is enrolled, attempt recalculation
+            if verification["all_zero"]:
+                try:
+                    employee = self.get_employee_doc()
+                    is_enrolled = check_bpjs_enrollment(employee_doc=employee)
+                    
+                    if is_enrolled:
+                        debug_log(
+                            f"WARNING: Employee {employee.name} is enrolled in BPJS but all BPJS components are zero. "
+                            f"This may indicate a calculation issue."
+                        )
+                        
+                        # Re-attempt BPJS calculation as a fallback
+                        base_salary = self.get_base_salary_for_bpjs()
+                        calculate_bpjs_components(self, employee, base_salary)
+                except Exception as e:
+                    debug_log(f"Error during BPJS verification: {str(e)}", trace=True)
         
             # Call parent on_submit method
             super(IndonesiaPayrollSalarySlip, self).on_submit()
@@ -255,177 +245,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 "Salary Slip Submit Error"
             )
             frappe.throw(_("Error during salary slip submission: {0}").format(str(e)))
-               
-    def calculate_and_set_bpjs_components(self, employee, base_salary):
-        """
-        Calculate BPJS components using direct call to hitung_bpjs
-        and update salary slip components
-        """
-        employee_info = f"{employee.name} ({employee.employee_name})" if hasattr(employee, 'employee_name') else employee.name
-        
-        try:
-            # Check if employee is enrolled in BPJS - use fast check
-            is_enrolled = self.check_bpjs_enrollment(employee)
-            if not is_enrolled:
-                debug_log(f"Employee {employee_info} not enrolled in BPJS - skipping calculation")
-                return
-        
-            # Calculate BPJS values using hitung_bpjs
-            from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
-            bpjs_values = hitung_bpjs(employee.name, base_salary)
-        
-            # Set BPJS components in salary slip
-            if bpjs_values:
-                # BPJS JHT Employee
-                jht_amount = flt(bpjs_values.get("jht_employee", 0))
-                self.set_component_value("BPJS JHT Employee", jht_amount, is_deduction=True)
-            
-                # BPJS JP Employee
-                jp_amount = flt(bpjs_values.get("jp_employee", 0))
-                self.set_component_value("BPJS JP Employee", jp_amount, is_deduction=True)
-            
-                # BPJS Kesehatan Employee
-                kesehatan_amount = flt(bpjs_values.get("kesehatan_employee", 0))
-                self.set_component_value("BPJS Kesehatan Employee", kesehatan_amount, is_deduction=True)
-            
-                # Calculate and store total BPJS deductions
-                total_bpjs = jht_amount + jp_amount + kesehatan_amount
-            
-                # Set total in custom field
-                if hasattr(self, 'total_bpjs'):
-                    self.total_bpjs = total_bpjs
-            
-                # Add BPJS details to payroll note
-                self.add_bpjs_details_to_note(bpjs_values)
-            
-        except Exception as e:
-            debug_log(f"Error calculating BPJS for {self.name}: {str(e)}", trace=True)
-            frappe.log_error(
-                f"Error calculating BPJS for {self.name}: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}",
-                "BPJS Calculation Error"
-            )
-            frappe.throw(_("Error calculating BPJS: {0}").format(str(e)))
-        
-    def add_bpjs_details_to_note(self, bpjs_values):
-        """Add BPJS calculation details to the payroll note"""
-        try:
-            # Get BPJS settings once and cache it
-            if not hasattr(self, '_bpjs_settings'):
-                from payroll_indonesia.payroll_indonesia.utils import get_bpjs_settings
-                self._bpjs_settings = get_bpjs_settings()
-            
-            settings = self._bpjs_settings
-            
-            # Get BPJS percentage rates
-            kesehatan_percent = flt(settings.get("kesehatan_employee_percent", 1.0))
-            jht_percent = flt(settings.get("jht_employee_percent", 2.0))
-            jp_percent = flt(settings.get("jp_employee_percent", 1.0))
-        
-            # BPJS details
-            self.payroll_note += "\n\n=== Perhitungan BPJS ==="
-        
-            # Add component details
-            if bpjs_values.get("kesehatan_employee", 0) > 0:
-                self.payroll_note += f"\nBPJS Kesehatan ({kesehatan_percent}%): Rp {bpjs_values['kesehatan_employee']:,.0f}"
-            
-            if bpjs_values.get("jht_employee", 0) > 0:
-                self.payroll_note += f"\nBPJS JHT ({jht_percent}%): Rp {bpjs_values['jht_employee']:,.0f}"
-            
-            if bpjs_values.get("jp_employee", 0) > 0:
-                self.payroll_note += f"\nBPJS JP ({jp_percent}%): Rp {bpjs_values['jp_employee']:,.0f}"
-        
-            # Total
-            total_employee = bpjs_values.get("total_employee", 0)
-            self.payroll_note += f"\nTotal BPJS: Rp {total_employee:,.0f}"
-        
-        except Exception as e:
-            debug_log(f"Error adding BPJS details to note: {str(e)}")
-            # Continue even if there's an error adding details to the note
-    
-    def verify_bpjs_components(self):
-        """
-        Verify BPJS component values before submission
-        Log detailed information about current values
-        """
-        employee_info = f"{self.employee} ({self.employee_name})" if hasattr(self, 'employee_name') else self.employee
-        debug_log(f"Verifying BPJS components for {self.name}", employee=employee_info)
-        
-        # Check if components exist and have values - use optimized lookup
-        bpjs_components = {
-            "BPJS JHT Employee": 0,
-            "BPJS JP Employee": 0,
-            "BPJS Kesehatan Employee": 0
-        }
-        
-        # Get current values - use direct lookup for better performance
-        for deduction in self.deductions:
-            if deduction.salary_component in bpjs_components:
-                bpjs_components[deduction.salary_component] = flt(deduction.amount)
-        
-        # Log component values
-        debug_log(
-            f"BPJS components for {self.name}: "
-            f"JHT={bpjs_components['BPJS JHT Employee']}, "
-            f"JP={bpjs_components['BPJS JP Employee']}, "
-            f"Kesehatan={bpjs_components['BPJS Kesehatan Employee']}, "
-            f"Total: {sum(bpjs_components.values())}",
-            employee=employee_info
-        )
-        
-        # Check if employee should have BPJS but all values are zero
-        if all(value == 0 for value in bpjs_components.values()):
-            try:
-                # Check enrollment efficiently without loading full employee doc if possible
-                if hasattr(self, '_cached_employee'):
-                    employee = self._cached_employee
-                else:
-                    employee = frappe.get_doc("Employee", self.employee)
-                    self._cached_employee = employee
-                    
-                is_enrolled = self.check_bpjs_enrollment(employee)
-                
-                if is_enrolled:
-                    debug_log(
-                        f"WARNING: Employee {employee_info} is enrolled in BPJS but all BPJS components are zero. "
-                        f"This may indicate a calculation issue.",
-                        employee=employee_info
-                    )
-                    
-                    # Re-attempt BPJS calculation as a fallback
-                    base_salary = self.get_base_salary_for_bpjs()
-                    self.calculate_and_set_bpjs_components(employee, base_salary)
-            except Exception as e:
-                debug_log(f"Error during BPJS verification: {str(e)}", employee=employee_info, trace=True)
-    
-    def check_bpjs_enrollment(self, employee=None):
-        """
-        Check if employee is enrolled in BPJS - optimized version
-        Args:
-            employee: Employee document (optional)
-        Returns:
-            bool: True if enrolled, False otherwise
-        """
-        if not employee:
-            if hasattr(self, '_cached_employee'):
-                employee = self._cached_employee
-            else:
-                employee = self.get_employee_doc()
-                self._cached_employee = employee
-            
-        # Use fast-path check with direct attribute access
-        is_enrolled = getattr(employee, 'is_bpjs_active', True)
-        
-        # Only check specific types if main flag is False
-        if not is_enrolled:
-            kesehatan_enrolled = getattr(employee, 'bpjs_kesehatan_active', False)
-            jht_enrolled = getattr(employee, 'bpjs_jht_active', False)
-            jp_enrolled = getattr(employee, 'bpjs_jp_active', False)
-            
-            # Employee is enrolled if at least one type is active
-            return kesehatan_enrolled or jht_enrolled or jp_enrolled
-            
-        return True
     
     def queue_document_creation(self):
         """
