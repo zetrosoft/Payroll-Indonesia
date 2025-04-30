@@ -8,7 +8,7 @@ from frappe import _
 from frappe.utils import flt, getdate, cint, now_datetime
 
 # Import debug_log directly from bpjs_calculator to avoid circular imports
-from payroll_indonesia.calculations.bpjs_calculator import debug_log
+from payroll_indonesia.override.salary_slip.bpjs_calculator import debug_log
 
 # Import other functions from salary_slip
 from payroll_indonesia.override.salary_slip.controller import IndonesiaPayrollSalarySlip

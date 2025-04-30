@@ -15,7 +15,7 @@ from .controller import (
 )
 
 # Import debug_log from bpjs_calculator to prevent circular imports
-from payroll_indonesia.calculations.bpjs_calculator import debug_log
+from payroll_indonesia.override.salary_slip.bpjs_calculator import debug_log
 
 # Export for direct imports
 __all__ = [

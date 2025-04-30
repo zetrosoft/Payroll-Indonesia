@@ -22,7 +22,7 @@ __all__ = [
 ]
 
 # Import BPJS calculation functions from bpjs_calculator.py
-from payroll_indonesia.calculations.bpjs_calculator import (
+from payroll_indonesia.override.salary_slip.bpjs_calculator import (
     calculate_bpjs_components,
     verify_bpjs_components,
     debug_log,
