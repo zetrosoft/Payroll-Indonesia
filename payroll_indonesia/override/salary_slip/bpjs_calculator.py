@@ -173,3 +173,44 @@ def add_bpjs_info_to_note(doc, bpjs_values):
     except Exception as e:
         # Log error but continue
         debug_log(f"Error adding BPJS info to note: {str(e)[:100]}")
+
+def get_bpjs_base_salary(doc):
+    """
+    Get base salary for BPJS calculation.
+    
+    Args:
+        doc: Salary Slip document
+        
+    Returns:
+        float: Base salary amount for BPJS calculations
+    """
+    # First try using the standardized method if available
+    if hasattr(doc, 'get_base_salary_for_bpjs') and callable(doc.get_base_salary_for_bpjs):
+        return flt(doc.get_base_salary_for_bpjs())
+    
+    # In Indonesia, BPJS is typically calculated based on Gaji Pokok
+    base_component = "Gaji Pokok"
+    base_salary = 0
+    
+    if hasattr(doc, 'earnings') and doc.earnings:
+        for earning in doc.earnings:
+            if earning.salary_component == base_component:
+                base_salary = flt(earning.amount)
+                break
+    
+    # If no Gaji Pokok found, try basic_pay field
+    if base_salary <= 0 and hasattr(doc, 'basic_pay') and doc.basic_pay:
+        base_salary = flt(doc.basic_pay)
+    
+    # Final fallback to gross_pay
+    if base_salary <= 0 and hasattr(doc, 'gross_pay') and doc.gross_pay:
+        base_salary = flt(doc.gross_pay)
+    else:
+        # If all else fails, default to 0 to prevent calculation errors
+        base_salary = 0
+        
+    # Log warning if base salary is zero
+    if base_salary <= 0:
+        frappe.logger().warning(f"BPJS calculation for {doc.name} has zero base salary")
+        
+    return base_salary

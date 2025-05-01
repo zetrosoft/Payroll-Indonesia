@@ -1072,3 +1072,37 @@ def diagnose_system_resources():
 def override_salary_slip_gl_entries(doc, method=None):
     frappe.msgprint("Override GL entries function called")
     # Rest of the function
+
+def get_base_salary_for_bpjs(self):
+    """
+    Get standardized base salary for BPJS calculations.
+    
+    Following Indonesian regulations, this uses Gaji Pokok as the primary
+    component for BPJS calculation base.
+    
+    Returns:
+        float: Base salary amount for BPJS calculations
+    """
+    # In Indonesia, BPJS is typically calculated based on Gaji Pokok
+    base_component = "Gaji Pokok"
+    
+    # Try to get from earnings first (component-based approach)
+    base_salary = 0
+    if self.earnings:
+        for earning in self.earnings:
+            if earning.salary_component == base_component:
+                base_salary = flt(earning.amount)
+                break
+    
+    # If no Gaji Pokok found, try basic_pay field
+    if base_salary <= 0 and hasattr(self, 'basic_pay') and self.basic_pay:
+        base_salary = flt(self.basic_pay)
+    
+    # Final fallback to gross_pay if needed
+    if base_salary <= 0 and hasattr(self, 'gross_pay') and self.gross_pay:
+        base_salary = flt(self.gross_pay)
+        
+    # Log the source of base salary for debugging
+    frappe.logger().debug(f"BPJS base salary for {self.name}: {base_salary}")
+    
+    return base_salary
