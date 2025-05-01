@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-30 10:42:45 by dannyaudian
+# Last modified: 2025-05-01 11:08:53 by dannyaudian
 
 # Import directly from the controller module
 from .controller import (
@@ -30,3 +30,4 @@ __all__ = [
 ]
 
 # Note: We're importing debug_log directly from bpjs_calculator to prevent circular imports
+# This module is used to initialize the Payroll Indonesia salary slip processing components
