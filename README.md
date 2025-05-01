@@ -64,6 +64,30 @@ This system requires GL accounts (Chart of Accounts) to record BPJS deductions a
 - Set maximum salary thresholds
 - Specify GL accounts for BPJS payments when using Payment Entry
 
+### 🧾 Salary Component Account Mapping
+This module uses two strategies for determining GL accounts during Salary Slip processing:
+
+#### ✅ Default (Non-BPJS) Components
+For regular components such as Basic Salary, Allowances, and Deductions, you must fill in the Default Account field in the Salary Component:
+
+- Ensure that each Salary Component points to the correct account in your Chart of Accounts (e.g., Payroll Expense or Deductions).
+- These accounts will be used when generating Journal Entries unless overridden.
+
+#### 🚫 BPJS Components (Auto-Mapped)
+For all BPJS-related components, such as:
+- BPJS Kesehatan (Employee & Employer)
+- BPJS JHT (Employee & Employer)
+- BPJS JP (Employee & Employer)
+- BPJS JKK / JKM
+
+Do not fill in the Default Account field in Salary Component.
+
+Instead:
+- The system will automatically determine the correct accounts using the BPJS Account Mapping document.
+- This ensures flexibility and avoids conflicting entries across companies with different account structures.
+
+> ℹ️ This separation ensures that account logic is clean: manual for standard components, and dynamic/centralized for BPJS.
+
 ### PPh 21 Settings
 This module supports two calculation methods:
 
