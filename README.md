@@ -25,90 +25,80 @@ Payroll module for Indonesian companies, integrated with ERPNext's Human Resourc
 bench get-app https://github.com/dannyaudian/payroll_indonesia
 bench --site yoursite.local install-app payroll_indonesia
 bench migrate
+```
 
-📘 Konfigurasi Wajib: Akun dan Pengaturan
-🔶 BPJS Account Setup
-Sistem ini membutuhkan akun-akun GL (Chart of Accounts) untuk mencatat potongan dan beban BPJS.
+## Required Configuration
 
-1. Akun Potongan Karyawan (Liability)
-BPJS Kesehatan - Karyawan
+### BPJS Account Setup
+This system requires GL accounts (Chart of Accounts) to record BPJS deductions and expenses.
 
-BPJS JHT - Karyawan
+#### 1. Employee Deduction Accounts (Liability)
+- BPJS Kesehatan - Employee
+- BPJS JHT - Employee
+- BPJS JP - Employee
 
-BPJS JP - Karyawan
+#### 2. Company Expense Accounts (Expense)
+- BPJS Kesehatan - Employer
+- BPJS JHT - Employer
+- BPJS JP - Employer
+- BPJS JKK - Employer
+- BPJS JKM - Employer
 
-2. Akun Beban Perusahaan (Expense)
-BPJS Kesehatan - Perusahaan
+#### 3. Company Liability Accounts (Liability)
+- BPJS Kesehatan - Employer
+- BPJS JHT - Employer
+- BPJS JP - Employer
+- BPJS JKK - Employer
+- BPJS JKM - Employer
 
-BPJS JHT - Perusahaan
+> **Tip:** Place these accounts under Current Liabilities and Payroll Expenses according to your company's internal structure.
 
-BPJS JP - Perusahaan
+#### 4. BPJS Account Mapping Setup
+1. Open DocType "BPJS Account Mapping"
+2. Select your company
+3. Link accounts for each component (employee & employer)
+4. Save and activate for Salary Slip
 
-BPJS JKK - Perusahaan
+#### 5. BPJS Settings Configuration
+- Define contribution percentages (employee & employer) per component
+- Set maximum salary thresholds
+- Specify GL accounts for BPJS payments when using Payment Entry
 
-BPJS JKM - Perusahaan
+### PPh 21 Settings
+This module supports two calculation methods:
 
-3. Akun Utang Perusahaan (Liability)
-BPJS Kesehatan - Perusahaan
+- **Progressive** (default, according to tax bracket rates)
+- **TER** (Effective Average Rate - per PMK 168/2023)
 
-BPJS JHT - Perusahaan
+#### Configuration:
+1. Open "PPh 21 Settings"
+2. Select method: Progressive or TER
+3. Fill in:
+   - PTKP Table (PPh 21 PTKP)
+   - Tax Bracket Table (PPh 21 Tax Bracket) for Progressive
+   - TER Table (PPh 21 TER Table) for TER
+4. Enable "Use TER for Monthly Calculation" if using TER method
 
-BPJS JP - Perusahaan
+## Module Structure
+- **BPJS Settings** – Configure rates and salary thresholds
+- **BPJS Account Mapping** – Account mapping per company
+- **PPh 21 Settings** – Tax method configuration
+- **Salary Slip** – Override validation & Indonesian components
+- **Journal Entry** – Automation of entries based on mapping
 
-BPJS JKK - Perusahaan
+## Employee Setup for BPJS
+To control BPJS enrollment on an employee-by-employee basis:
+1. Open the Employee document
+2. Set the following fields:
+   - **ikut_bpjs_kesehatan**: Enable/disable BPJS Health Insurance
+   - **ikut_bpjs_ketenagakerjaan**: Enable/disable BPJS Employment Insurance
 
-BPJS JKM - Perusahaan
+## Memory Optimization
+This module includes optimizations to reduce memory usage during salary slip processing:
+- Field initialization to prevent NoneType errors
+- Truncated error messages to avoid memory bloat
+- Garbage collection during batch processing
+- Optimized BPJS and tax calculations
 
-📌 Tips: Letakkan akun di bawah Current Liabilities dan Payroll Expenses sesuai struktur internal perusahaan Anda.
-
-4. Pengaturan BPJS Account Mapping
-Buka DocType BPJS Account Mapping
-
-Pilih perusahaan
-
-Hubungkan akun-akun untuk masing-masing komponen (karyawan & perusahaan)
-
-Simpan dan aktifkan untuk Salary Slip
-
-5. Pengaturan BPJS Settings
-Tentukan persentase kontribusi (employee & employer) per komponen
-
-Tentukan batas maksimal gaji
-
-Tentukan akun GL untuk pembayaran BPJS jika menggunakan Payment Entry
-
-🔷 PPh 21 Settings
-Modul mendukung dua metode perhitungan:
-
-Progressive (default, sesuai tarif lapisan pajak)
-
-TER (Tarif Efektif Rata-rata - sesuai PMK 168/2023)
-
-Pengaturan:
-Buka PPh 21 Settings
-
-Pilih metode: Progressive atau TER
-
-Isi:
-
-Tabel PTKP (PPh 21 PTKP)
-
-Tabel Tax Bracket (PPh 21 Tax Bracket) untuk Progressive
-
-Tabel TER (PPh 21 TER Table) untuk TER
-
-✅ Aktifkan opsi "Use TER for Monthly Calculation" jika menggunakan metode TER.
-
-📂 Struktur Modul
-BPJS Settings – Konfigurasi tarif dan batas gaji
-
-BPJS Account Mapping – Pemetaan akun per perusahaan
-
-PPh 21 Settings – Pengaturan metode pajak
-
-Salary Slip – Override validasi & komponen Indonesia
-
-Journal Entry – Otomatisasi entri berdasarkan mapping
-
-🧪 Status
-Modul ini sedang dikembangkan secara aktif dan digunakan di lingkungan produksi. Silakan laporkan bug atau request fitur di GitHub Issues.
+## Status
+This module is actively being developed and used in production environments. Please report bugs or feature requests in GitHub Issues.
