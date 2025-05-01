@@ -1068,3 +1068,7 @@ def diagnose_system_resources():
                 "status": "psutil not installed"
             }
         }
+
+def override_salary_slip_gl_entries(doc, method=None):
+    frappe.msgprint("Override GL entries function called")
+    # Rest of the function

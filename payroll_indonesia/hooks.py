@@ -67,6 +67,7 @@ doc_events = {
         "before_insert": "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries",
         "validate": "payroll_indonesia.override.salary_slip_functions.validate_salary_slip",
         "on_submit": "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
+        "on_submit": "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries",
         "on_cancel": "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
