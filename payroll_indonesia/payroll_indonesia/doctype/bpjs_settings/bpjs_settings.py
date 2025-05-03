@@ -10,34 +10,142 @@ from frappe.utils import flt
 class BPJSSettings(Document):
     def validate(self):
         """Validate BPJS settings"""
-        # Validate percentages are within acceptable ranges
-        if flt(self.kesehatan_employee_percent) <= 0 or flt(self.kesehatan_employee_percent) > 5:
-            frappe.throw("Persentase BPJS Kesehatan karyawan harus antara 0 dan 5%")
+        self.validate_percentages()
+        self.validate_max_salary()
+        self.setup_accounts()
+    
+    def validate_percentages(self):
+        """Validate BPJS percentage ranges"""
+        validations = [
+            ("kesehatan_employee_percent", 0, 5, "Persentase BPJS Kesehatan karyawan harus antara 0 dan 5%"),
+            ("kesehatan_employer_percent", 0, 10, "Persentase BPJS Kesehatan perusahaan harus antara 0 dan 10%"),
+            ("jht_employee_percent", 0, 5, "Persentase JHT karyawan harus antara 0 dan 5%"),
+            ("jht_employer_percent", 0, 10, "Persentase JHT perusahaan harus antara 0 dan 10%"),
+            ("jp_employee_percent", 0, 5, "Persentase JP karyawan harus antara 0 dan 5%"),
+            ("jp_employer_percent", 0, 5, "Persentase JP perusahaan harus antara 0 dan 5%"),
+            ("jkk_percent", 0, 5, "Persentase JKK harus antara 0 dan 5%"),
+            ("jkm_percent", 0, 5, "Persentase JKM harus antara 0 dan 5%")
+        ]
         
-        if flt(self.kesehatan_employer_percent) <= 0 or flt(self.kesehatan_employer_percent) > 10:
-            frappe.throw("Persentase BPJS Kesehatan perusahaan harus antara 0 dan 10%")
-        
-        if flt(self.jht_employee_percent) < 0 or flt(self.jht_employee_percent) > 5:
-            frappe.throw("Persentase JHT karyawan harus antara 0 dan 5%")
-        
-        if flt(self.jht_employer_percent) < 0 or flt(self.jht_employer_percent) > 10:
-            frappe.throw("Persentase JHT perusahaan harus antara 0 dan 10%")
-        
-        if flt(self.jp_employee_percent) < 0 or flt(self.jp_employee_percent) > 5:
-            frappe.throw("Persentase JP karyawan harus antara 0 dan 5%")
-        
-        if flt(self.jp_employer_percent) < 0 or flt(self.jp_employer_percent) > 5:
-            frappe.throw("Persentase JP perusahaan harus antara 0 dan 5%")
-        
-        if flt(self.jkk_percent) < 0 or flt(self.jkk_percent) > 5:
-            frappe.throw("Persentase JKK harus antara 0 dan 5%")
-        
-        if flt(self.jkm_percent) < 0 or flt(self.jkm_percent) > 5:
-            frappe.throw("Persentase JKM harus antara 0 dan 5%")
-        
-        # Validate maximum salary values
+        for field, min_val, max_val, message in validations:
+            value = flt(self.get(field))
+            if value < min_val or value > max_val:
+                frappe.throw(message)
+    
+    def validate_max_salary(self):
+        """Validate maximum salary thresholds"""
         if flt(self.kesehatan_max_salary) <= 0:
             frappe.throw("Batas maksimal gaji BPJS Kesehatan harus lebih dari 0")
-        
+            
         if flt(self.jp_max_salary) <= 0:
             frappe.throw("Batas maksimal gaji JP harus lebih dari 0")
+    
+    def setup_accounts(self):
+        """Setup GL accounts for BPJS components"""
+        company = frappe.defaults.get_defaults().company
+        if not company:
+            frappe.throw("Please set default company in Global Defaults")
+            
+        # Parent account where BPJS accounts will be created
+        parent_name = self.create_parent_account(company)
+        
+        # Define BPJS accounts to be created
+        bpjs_accounts = {
+            "kesehatan_account": {
+                "account_name": "BPJS Kesehatan Payable",
+                "account_type": "Payable",
+                "field": "kesehatan_account"
+            },
+            "jht_account": {
+                "account_name": "BPJS JHT Payable",
+                "account_type": "Payable",
+                "field": "jht_account"
+            },
+            "jp_account": {
+                "account_name": "BPJS JP Payable",
+                "account_type": "Payable",
+                "field": "jp_account"
+            },
+            "jkk_account": {
+                "account_name": "BPJS JKK Payable",
+                "account_type": "Payable",
+                "field": "jkk_account"
+            },
+            "jkm_account": {
+                "account_name": "BPJS JKM Payable",
+                "account_type": "Payable",
+                "field": "jkm_account"
+            }
+        }
+        
+        # Create accounts and update settings
+        for key, account_info in bpjs_accounts.items():
+            account = self.get(account_info["field"])
+            if not account:
+                account = self.create_account(
+                    company=company,
+                    account_name=account_info["account_name"],
+                    account_type=account_info["account_type"],
+                    parent=parent_name
+                )
+                self.set(account_info["field"], account)
+    
+    def create_parent_account(self, company):
+        """Create or get parent account for BPJS accounts"""
+        parent_account = "Duties and Taxes - " + frappe.get_cached_value('Company',  company,  'abbr')
+        parent_name = "BPJS Payable - " + frappe.get_cached_value('Company',  company,  'abbr')
+        
+        if not frappe.db.exists("Account", parent_name):
+            frappe.get_doc({
+                "doctype": "Account",
+                "account_name": "BPJS Payable",
+                "parent_account": parent_account,
+                "company": company,
+                "account_type": "Payable",
+                "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
+                "is_group": 1
+            }).insert(ignore_permissions=True)
+        
+        return parent_name
+    
+    def create_account(self, company, account_name, account_type, parent):
+        """Create GL Account if not exists"""
+        abbr = frappe.get_cached_value('Company',  company,  'abbr')
+        account_name = f"{account_name} - {abbr}"
+        
+        if not frappe.db.exists("Account", account_name):
+            doc = frappe.get_doc({
+                "doctype": "Account",
+                "account_name": account_name.replace(f" - {abbr}", ""),
+                "company": company,
+                "parent_account": parent,
+                "account_type": account_type,
+                "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
+                "is_group": 0
+            })
+            doc.insert(ignore_permissions=True)
+            frappe.db.commit()
+            
+            frappe.msgprint(f"Created account: {account_name}")
+        
+        return account_name
+    
+    def on_update(self):
+        """Update related documents when settings change"""
+        # Update salary structure assignments if needed
+        self.update_salary_structures()
+    
+    def update_salary_structures(self):
+        """Update BPJS components in active salary structures"""
+        # Get list of active salary structures
+        salary_structures = frappe.get_all(
+            "Salary Structure",
+            filters={"docstatus": 1, "is_active": "Yes"},
+            pluck="name"
+        )
+        
+        for ss in salary_structures:
+            doc = frappe.get_doc("Salary Structure", ss)
+            # Logic to update BPJS components in salary structure
+            # This would depend on your salary structure setup
+            doc.save()

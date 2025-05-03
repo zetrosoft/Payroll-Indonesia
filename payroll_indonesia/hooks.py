@@ -31,7 +31,8 @@ doctype_js = {
 doctype_list_js = {
     "PPh TER Table": "payroll_indonesia/payroll_indonesia/doctype/pph_ter_table/pph_ter_table_list.js",
     "BPJS Payment Summary": "payroll_indonesia/payroll_indonesia/doctype/bpjs_payment_summary/bpjs_payment_summary_list.js",
-    "Employee Tax Summary": "payroll_indonesia/public/js/employee_tax_summary_list.js"
+    "Employee Tax Summary": "payroll_indonesia/public/js/employee_tax_summary_list.js",
+    "BPJS Account Mapping": "payroll_indonesia/payroll_indonesia/doctype/bpjs_account_mapping/bpjs_account_mapping_list.js"
 }
 
 # Installation
@@ -56,8 +57,12 @@ doc_events = {
         "on_update": "payroll_indonesia.payroll_indonesia.tax.pph21_settings.on_update"
     },
     "BPJS Settings": {
-        "on_update": "payroll_indonesia.payroll_indonesia.bpjs.bpjs_settings.on_update"
-    },  
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.validate",
+        "on_update": [
+            "payroll_indonesia.payroll_indonesia.bpjs.bpjs_settings.on_update",
+            "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.setup_accounts"
+        ]
+    },
     "Payroll Entry": {
         "before_validate": "payroll_indonesia.override.payroll_entry_functions.before_validate",
         "validate": "payroll_indonesia.override.payroll_entry_functions.validate_payroll_entry",
@@ -66,16 +71,19 @@ doc_events = {
     "Salary Slip": {
         "before_insert": "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries",
         "validate": "payroll_indonesia.override.salary_slip_functions.validate_salary_slip",
-        "on_submit": "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
-        "on_submit": "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries",
+        "on_submit": [
+            "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
+            "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries"
+        ],
         "on_cancel": "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
-    
     "BPJS Account Mapping": {
-        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.validate"
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.validate",
+        "on_update": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.on_update"
     },
     "BPJS Payment Component": {
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.validate",
         "on_submit": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.create_journal_entries"
     },
     "Payment Entry": {
@@ -86,6 +94,9 @@ doc_events = {
         "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.validate",
         "on_submit": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.on_submit",
         "on_cancel": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.on_cancel"
+    },
+    "Account": {
+        "on_update": "payroll_indonesia.payroll_indonesia.account_hooks.account_on_update"
     }
 }
 
@@ -102,12 +113,18 @@ fixtures = [
     "Tax Category",
     
     # Payroll Indonesia Settings
-    "BPJS Settings",
+    {
+        "doctype": "BPJS Settings", 
+        "filters": [["name", "=", "BPJS Settings"]]
+    },
     "PPh 21 Settings",
     "PPh 21 Tax Bracket",
     "PPh 21 TER Table",
     "PPh 21 PTKP",
-    "BPJS Account Mapping",
+    {
+        "doctype": "BPJS Account Mapping",
+        "filters": [["company", "like", "%"]]
+    },
     
     # Master Data - Payroll
     "Golongan",
@@ -120,7 +137,19 @@ fixtures = [
     "BPJS Payment Component",
     
     # Salary Components
-    "Salary Component",
+    {
+        "doctype": "Salary Component",
+        "filters": [
+            [
+                "name", "in", [
+                    "BPJS Kesehatan Employee", "BPJS Kesehatan Employer", 
+                    "BPJS JHT Employee", "BPJS JHT Employer",
+                    "BPJS JP Employee", "BPJS JP Employer",
+                    "BPJS JKK", "BPJS JKM"
+                ]
+            ]
+        ]
+    },
     
     # Transaction DocTypes
     "BPJS Payment Summary",
@@ -153,10 +182,12 @@ fixtures = [
 scheduler_events = {
     "daily": [
         "payroll_indonesia.utilities.tax_slab.create_income_tax_slab", 
-        "payroll_indonesia.override.salary_structure.update_salary_structures"
+        "payroll_indonesia.override.salary_structure.update_salary_structures",
+        "payroll_indonesia.payroll_indonesia.bpjs.daily_tasks.check_bpjs_settings"
     ],
     "monthly": [
-        "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries"
+        "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries",
+        "payroll_indonesia.payroll_indonesia.bpjs.monthly_tasks.create_bpjs_summaries"
     ],
     "yearly": [
         "payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"
@@ -204,7 +235,11 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.create_payment_entry",
         # Fungsi utilitas dari bpjs_payment_utils.py
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.get_formatted_currency",
-        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.debug_log"
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.debug_log",
+        
+        # BPJS Account Functions - Add new functions
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.create_default_mapping",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.create_account"
     ]
 }
 
@@ -251,7 +286,8 @@ after_migrate = [
     "payroll_indonesia.fixtures.setup.check_system_readiness",
     "payroll_indonesia.utilities.tax_slab.create_income_tax_slab",
     "payroll_indonesia.override.salary_structure.create_default_salary_structure",
-    "payroll_indonesia.utilities.fix_doctype_structure.fix_all_doctypes"
+    "payroll_indonesia.utilities.fix_doctype_structure.fix_all_doctypes",
+    "payroll_indonesia.payroll_indonesia.setup.create_bpjs_accounts"  # Add new setup function
 ]
 
 override_whitelisted_methods = {
@@ -275,6 +311,10 @@ rest_export = {
     "BPJS Payment Summary": {
         "get": "payroll_indonesia.api.get_bpjs_summary",
         "list": "payroll_indonesia.api.get_bpjs_summaries"
+    },
+    "BPJS Account Mapping": {
+        "get": "payroll_indonesia.api.get_bpjs_mapping",
+        "list": "payroll_indonesia.api.get_bpjs_mappings"
     }
 }
 
@@ -283,7 +323,9 @@ debug_tools = [
     "payroll_indonesia.override.salary_slip.diagnose_salary_slip_submission",
     "payroll_indonesia.override.salary_slip.manually_create_related_documents",
     # Mengarahkan ke fungsi debug di bpjs_payment_utils.py
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.debug_log"
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.debug_log",
+    # BPJS Account diagnostic tools
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.diagnose_accounts"
 ]
 
 # Daftar modul yang baru dibuat untuk memudahkan debugging
@@ -301,7 +343,9 @@ module_info = {
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api": "BPJS Payment API",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_integration": "BPJS Payment Integration",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils": "BPJS Payment Utilities",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks": "BPJS Payment Hooks"
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks": "BPJS Payment Hooks",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings": "BPJS Settings Controller",
+    "payroll_indonesia.payroll_indonesia.setup": "BPJS Setup Module"
 }
 
 # Whitelist for Client-side API Calls
@@ -310,5 +354,53 @@ whitelist_methods = [
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_employee_bpjs_details",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_summary_for_period",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_bpjs_suppliers",
-    "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.get_ytd_data_until_month"
+    "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.get_ytd_data_until_month",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.create_default_mapping"
 ]
+
+# Setup additional files for BPJS accounting integration
+boot_info = {
+    "bpjs_account_templates": [
+        {
+            "account_name": "BPJS Kesehatan Payable",
+            "account_type": "Payable"
+        },
+        {
+            "account_name": "BPJS JHT Payable",
+            "account_type": "Payable"
+        },
+        {
+            "account_name": "BPJS JP Payable",
+            "account_type": "Payable"
+        },
+        {
+            "account_name": "BPJS JKK Payable",
+            "account_type": "Payable"
+        },
+        {
+            "account_name": "BPJS JKM Payable",
+            "account_type": "Payable"
+        },
+        {
+            "account_name": "BPJS Kesehatan Expense",
+            "account_type": "Expense"
+        },
+        {
+            "account_name": "BPJS JHT Expense",
+            "account_type": "Expense"
+        },
+        {
+            "account_name": "BPJS JP Expense",
+            "account_type": "Expense"
+        },
+        {
+            "account_name": "BPJS JKK Expense",
+            "account_type": "Expense"
+        },
+        {
+            "account_name": "BPJS JKM Expense",
+            "account_type": "Expense"
+        }
+    ]
+}

@@ -770,3 +770,114 @@ def setup_income_tax_slab():
         frappe.log_error(f"Error creating Income Tax Slab: {str(e)}", "Tax Slab Setup Error")
         frappe.msgprint(_("Error creating Income Tax Slab: {0}").format(str(e)), indicator="red")
         return False
+    
+def create_bpjs_accounts():
+    """Create required BPJS accounts for all companies during migration"""
+    try:
+        # Get all companies
+        companies = frappe.get_all("Company", pluck="name")
+        
+        for company in companies:
+            # Check if BPJS Settings exists
+            if not frappe.db.exists("BPJS Settings", None):
+                # Create default BPJS Settings if not exists
+                create_default_bpjs_settings()
+            
+            # Create default BPJS Account Mapping if not exists
+            check_or_create_bpjs_mapping(company)
+            
+        frappe.db.commit()
+        frappe.msgprint(_("BPJS accounts created successfully"))
+    except Exception as e:
+        frappe.log_error(f"Error creating BPJS accounts: {str(e)}", "BPJS Setup Error")
+        frappe.msgprint(_("Error creating BPJS accounts. Please check error log."))
+
+def create_default_bpjs_settings():
+    """Create default BPJS Settings"""
+    try:
+        settings = frappe.new_doc("BPJS Settings")
+        settings.kesehatan_employee_percent = 1.0
+        settings.kesehatan_employer_percent = 4.0
+        settings.kesehatan_max_salary = 12000000
+        settings.jht_employee_percent = 2.0
+        settings.jht_employer_percent = 3.7
+        settings.jp_employee_percent = 1.0
+        settings.jp_employer_percent = 2.0
+        settings.jp_max_salary = 9077600
+        settings.jkk_percent = 0.24
+        settings.jkm_percent = 0.3
+        settings.insert(ignore_permissions=True)
+        
+        # Setup accounts for the settings
+        settings.setup_accounts()
+        
+    except Exception as e:
+        frappe.log_error(f"Error creating default BPJS Settings: {str(e)}", "BPJS Setup Error")
+
+def check_or_create_bpjs_mapping(company):
+    """Check if BPJS Account Mapping exists for the company, create if not"""
+    try:
+        # Check if mapping exists
+        mapping_exists = frappe.db.exists("BPJS Account Mapping", {"company": company})
+        
+        if not mapping_exists:
+            # Create default mapping
+            from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
+            mapping_name = create_default_mapping(company)
+            
+            if mapping_name:
+                frappe.logger().info(f"Created BPJS Account Mapping for {company}: {mapping_name}")
+            else:
+                frappe.logger().warning(f"Failed to create BPJS Account Mapping for {company}")
+                
+    except Exception as e:
+        frappe.log_error(f"Error checking/creating BPJS mapping for {company}: {str(e)}", "BPJS Setup Error")
+
+def create_account_hooks():
+    """Create hooks for account updates"""
+    # Create file if not exists
+    account_hooks_path = frappe.get_app_path("payroll_indonesia", "payroll_indonesia", "account_hooks.py")
+    
+    try:
+        with open(account_hooks_path, "w") as f:
+            f.write("""import frappe
+
+def account_on_update(doc, method=None):
+    \"\"\"Hook when accounts are updated\"\"\"
+    if doc.account_type in ["Payable", "Expense", "Liability"] and ("BPJS" in doc.account_name):
+        # Update BPJS mappings that might be using this account
+        update_bpjs_mappings(doc)
+
+def update_bpjs_mappings(account_doc):
+    \"\"\"Update BPJS mappings that use this account\"\"\"
+    # Get all mappings for this company
+    mappings = frappe.get_all(
+        "BPJS Account Mapping",
+        filters={"company": account_doc.company},
+        pluck="name"
+    )
+    
+    for mapping_name in mappings:
+        mapping = frappe.get_doc("BPJS Account Mapping", mapping_name)
+        
+        # Check all account fields for a match
+        account_fields = [
+            "kesehatan_employee_account", "jht_employee_account", "jp_employee_account",
+            "kesehatan_employer_debit_account", "jht_employer_debit_account",
+            "jp_employer_debit_account", "jkk_employer_debit_account", "jkm_employer_debit_account",
+            "kesehatan_employer_credit_account", "jht_employer_credit_account",
+            "jp_employer_credit_account", "jkk_employer_credit_account", "jkm_employer_credit_account"
+        ]
+        
+        updated = False
+        for field in account_fields:
+            if hasattr(mapping, field) and getattr(mapping, field) == account_doc.name:
+                # Account is being used in this mapping
+                updated = True
+        
+        if updated:
+            # Clear cache for this mapping
+            frappe.cache().delete_value(f"bpjs_mapping_{mapping.company}")
+""")
+    except Exception as e:
+        frappe.log_error(f"Error creating account_hooks.py: {str(e)}", "BPJS Setup Error")
