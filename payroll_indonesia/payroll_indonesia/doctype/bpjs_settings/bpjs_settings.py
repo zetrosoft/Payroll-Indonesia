@@ -5,7 +5,7 @@
 from __future__ import unicode_literals
 import frappe
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import flt, getdate
 
 def create_account(company, account_name, account_type, parent):
     """Create GL Account if not exists - Module level function"""
@@ -153,6 +153,89 @@ class BPJSSettings(Document):
     
         # Pastikan semua company memiliki BPJS mapping
         self.ensure_bpjs_mapping_for_all_companies()
+
+    def update_salary_structures(self):
+        """Update BPJS components in active salary structures"""
+        try:
+            # Mencari salary structure aktif
+            salary_structures = frappe.get_all(
+                "Salary Structure",
+                filters={"docstatus": 1, "is_active": "Yes"},
+                pluck="name"
+            )
+            
+            if not salary_structures:
+                return  # Tidak ada salary structure yang perlu diupdate
+                
+            # Log untuk debug
+            frappe.logger().info(f"Updating {len(salary_structures)} active salary structures with BPJS settings")
+            
+            # Ambil daftar BPJS components yang perlu diupdate
+            bpjs_components = {
+                "BPJS Kesehatan Employee": self.kesehatan_employee_percent,
+                "BPJS Kesehatan Employer": self.kesehatan_employer_percent,
+                "BPJS JHT Employee": self.jht_employee_percent,
+                "BPJS JHT Employer": self.jht_employer_percent,
+                "BPJS JP Employee": self.jp_employee_percent,
+                "BPJS JP Employer": self.jp_employer_percent,
+                "BPJS JKK": self.jkk_percent,
+                "BPJS JKM": self.jkm_percent
+            }
+            
+            # Update setiap salary structure
+            updated_count = 0
+            for ss_name in salary_structures:
+                try:
+                    ss = frappe.get_doc("Salary Structure", ss_name)
+                    
+                    # Flag untuk mengecek apakah ada perubahan
+                    changes_made = False
+                    
+                    # Update setiap component
+                    for component_name, percent in bpjs_components.items():
+                        # Cari component di earnings atau deductions
+                        found = False
+                        for detail in ss.earnings:
+                            if detail.salary_component == component_name:
+                                found = True
+                                if detail.amount_based_on_formula and detail.formula:
+                                    # Jangan update jika menggunakan formula kustom
+                                    continue
+                                
+                                # Update rate jika perlu
+                                detail.amount = percent
+                                changes_made = True
+                                break
+                                
+                        if not found:
+                            for detail in ss.deductions:
+                                if detail.salary_component == component_name:
+                                    found = True
+                                    if detail.amount_based_on_formula and detail.formula:
+                                        # Jangan update jika menggunakan formula kustom
+                                        continue
+                                    
+                                    # Update rate jika perlu
+                                    detail.amount = percent
+                                    changes_made = True
+                                    break
+                    
+                    # Simpan jika ada perubahan
+                    if changes_made:
+                        ss.flags.ignore_validate = True
+                        ss.flags.ignore_mandatory = True
+                        ss.save(ignore_permissions=True)
+                        updated_count += 1
+                        
+                except Exception as e:
+                    frappe.log_error(f"Error updating salary structure {ss_name}: {str(e)}", "BPJS Update Error")
+                    continue
+            
+            if updated_count > 0:
+                frappe.logger().info(f"Updated {updated_count} salary structures with new BPJS rates")
+                
+        except Exception as e:
+            frappe.log_error(f"Error in update_salary_structures: {str(e)}", "BPJS Settings Update Error")
 
     def ensure_bpjs_mapping_for_all_companies(self):
         """Ensure all companies have BPJS mapping"""
