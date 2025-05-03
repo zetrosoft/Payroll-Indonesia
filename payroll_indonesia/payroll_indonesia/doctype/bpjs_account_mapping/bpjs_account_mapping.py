@@ -3,7 +3,7 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe import _
+from frappe import _ 
 from frappe.model.document import Document
 from frappe.utils import cint, flt, cstr
 
@@ -180,6 +180,11 @@ def create_parent_account_for_mapping(company, account_type):
                 f"Accounts Payable - {abbr}",
                 f"Current Liabilities - {abbr}"
             ]
+            
+            # Check if target account already exists in parent's descendants
+            if frappe.db.exists("Account", account_name):
+                # Just return the existing account to avoid circular references
+                return account_name
             
             parent_account_name = find_valid_parent(company, parent_candidates)
             

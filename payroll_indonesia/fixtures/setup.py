@@ -471,7 +471,7 @@ def setup_income_tax_slab():
         
         # Create tax slab
         tax_slab = frappe.new_doc("Income Tax Slab")
-        tax_slab.title = "Indonesia Income Tax"
+        tax_slab.title = "Indonesia Income Tax" 
         tax_slab.effective_from = getdate("2023-01-01")
         tax_slab.company = company
         tax_slab.currency = "IDR"
