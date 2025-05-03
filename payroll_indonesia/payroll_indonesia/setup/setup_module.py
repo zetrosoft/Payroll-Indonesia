@@ -6,79 +6,87 @@ from frappe.utils import flt
 
 # Constants for default values
 DEFAULT_CONFIG_PATH = "payroll_indonesia/payroll_indonesia/config/bpjs_defaults.json"
+DEFAULT_BPJS_VALUES = {
+    "kesehatan_employee_percent": 1.0,
+    "kesehatan_employer_percent": 4.0,
+    "kesehatan_max_salary": 12000000.0,
+    "jht_employee_percent": 2.0,
+    "jht_employer_percent": 3.7,
+    "jp_employee_percent": 1.0,
+    "jp_employer_percent": 2.0,
+    "jp_max_salary": 9077600.0,
+    "jkk_percent": 0.24,
+    "jkm_percent": 0.3
+}
 
 def get_default_bpjs_values():
-    """Load default BPJS values from config file or use fallback defaults"""
+    """
+    Load default BPJS values from config file or use fallback defaults
+    Returns dict of default values
+    """
     try:
-        # Try to load from config file
-        if os.path.exists(frappe.get_app_path("payroll_indonesia", DEFAULT_CONFIG_PATH)):
-            with open(frappe.get_app_path("payroll_indonesia", DEFAULT_CONFIG_PATH)) as f:
-                return json.load(f)
+        config_path = frappe.get_app_path("payroll_indonesia", DEFAULT_CONFIG_PATH)
+        if os.path.exists(config_path):
+            with open(config_path) as f:
+                values = json.load(f)
+                # Validate loaded values
+                for key in DEFAULT_BPJS_VALUES:
+                    if key not in values:
+                        values[key] = DEFAULT_BPJS_VALUES[key]
+                return values
     except Exception as e:
-        error_msg = str(e)[:100]
-        frappe.log_error(f"Error loading BPJS defaults: {error_msg}", "BPJS Setup")
+        frappe.log_error(f"Error loading BPJS defaults: {str(e)[:100]}", "BPJS Setup")
     
-    # Fallback defaults if config file is missing or invalid
-    return {
-        "kesehatan_employee_percent": 1.0,
-        "kesehatan_employer_percent": 4.0,
-        "kesehatan_max_salary": 12000000.0,
-        "jht_employee_percent": 2.0,
-        "jht_employer_percent": 3.7,
-        "jp_employee_percent": 1.0,
-        "jp_employer_percent": 2.0,
-        "jp_max_salary": 9077600.0,
-        "jkk_percent": 0.24,
-        "jkm_percent": 0.3
-    }
+    # Return hardcoded defaults if config file missing/invalid
+    return DEFAULT_BPJS_VALUES
 
 def after_sync():
-    """Run after app sync/migration"""
+    """
+    Run after app sync/migration
+    Registered in hooks.py under after_migrate
+    """
     try:
-        frappe.logger().info("Starting BPJS setup after sync", "BPJS Setup")
-        # Create required accounts and mappings
-        create_bpjs_accounts()
+        frappe.logger().info("Starting BPJS post-migration setup", tag="BPJS Setup")
+        success = create_bpjs_accounts()
+        if success:
+            frappe.logger().info("BPJS setup completed successfully", tag="BPJS Setup")
+        else:
+            frappe.logger().warning("BPJS setup completed with warnings", tag="BPJS Setup")
     except Exception as e:
-        # Limit error message length
-        error_msg = str(e)[:100]
-        frappe.log_error(f"After Sync Error: {error_msg}", "BPJS Setup")
+        frappe.log_error(f"BPJS Setup Error: {str(e)[:100]}", "BPJS Setup")
+        raise
 
 def create_bpjs_accounts():
-    """Create BPJS accounts for all companies"""
+    """
+    Create BPJS accounts for all companies
+    Returns bool indicating complete success
+    """
     try:
         # Get all companies
         companies = frappe.get_all("Company", pluck="name")
-        
         if not companies:
-            frappe.logger().warning("No companies found. Skipping BPJS account creation.", "BPJS Setup")
-            return
-        
-        # Check if BPJS Settings exists, create if not
-        bpjs_settings = None
-        if not frappe.db.exists("BPJS Settings", "BPJS Settings"):
-            # Create new BPJS Settings
-            bpjs_settings = create_new_bpjs_settings()
-        else:
-            bpjs_settings = frappe.get_doc("BPJS Settings", "BPJS Settings")
-        
+            frappe.logger().warning("No companies found, skipping BPJS setup", tag="BPJS Setup")
+            return False
+
+        # Create/get BPJS Settings
+        bpjs_settings = create_new_bpjs_settings()
         if not bpjs_settings:
-            frappe.logger().error("Failed to get or create BPJS Settings", "BPJS Setup")
-            return
-            
-        # Setup accounts after BPJS Settings is created
-        setup_bpjs_accounts(bpjs_settings)
-            
-        # Create Account Mapping for each company
-        create_company_mappings(companies)
-        
+            frappe.logger().error("Failed to create BPJS Settings", tag="BPJS Setup")
+            return False
+
+        # Setup accounts and mappings
+        success = True
+        for company in companies:
+            if not setup_company_bpjs(company, bpjs_settings):
+                success = False
+
         frappe.db.commit()
-        frappe.logger().info("BPJS accounts and mappings created successfully", "BPJS Setup")
-        
+        return success
+
     except Exception as e:
         frappe.db.rollback()
-        # Limit error message length
-        error_msg = str(e)[:100]
-        frappe.log_error(f"Error creating BPJS accounts: {error_msg}", "BPJS Setup")
+        frappe.log_error(f"Error in create_bpjs_accounts: {str(e)[:100]}", "BPJS Setup")
+        return False
 
 def setup_bpjs_accounts(bpjs_settings):
     """Setup BPJS accounts using the settings document"""
@@ -99,25 +107,36 @@ def setup_bpjs_accounts(bpjs_settings):
         error_msg = str(e)[:100]
         frappe.log_error(f"Error in setup_accounts: {error_msg}", "BPJS Setup")
 
-def create_company_mappings(companies):
-    """Create BPJS account mappings for all companies"""
-    failed_companies = []
-    
-    for company in companies:
-        mapping_created = check_or_create_bpjs_mapping(company)
-        if not mapping_created:
-            failed_companies.append(company)
-    
-    if failed_companies:
-        frappe.logger().warning(
-            f"Failed to create BPJS mappings for {len(failed_companies)} companies", 
-            "BPJS Setup"
-        )
-        # Schedule retry for failed companies
-        schedule_mapping_retry(failed_companies)
+def create_company_mapping(company):
+    """
+    Create BPJS Account Mapping for company
+    Returns bool indicating success
+    """
+    try:
+        if frappe.db.exists("BPJS Account Mapping", {"company": company}):
+            return True
+
+        try:
+            # Import here to avoid circular imports
+            from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
+        except ImportError:
+            frappe.log_error("Could not import create_default_mapping", "BPJS Setup")
+            return False
+
+        mapping_name = create_default_mapping(company)
+        if mapping_name:
+            frappe.logger().info(f"Created BPJS mapping for {company}", tag="BPJS Setup")
+            return True
+        else:
+            frappe.logger().warning(f"Failed to create BPJS mapping for {company}", tag="BPJS Setup")
+            return False
+
+    except Exception as e:
+        frappe.log_error(f"Error creating mapping for {company}: {str(e)[:100]}", "BPJS Setup")
+        return False
 
 def schedule_mapping_retry(companies):
-    """Schedule background job to retry mapping creation"""
+    """Schedule background job to retry failed mappings"""
     if not companies:
         return
         
@@ -128,45 +147,43 @@ def schedule_mapping_retry(companies):
             queue="long",
             timeout=1500
         )
-        frappe.logger().info(f"Scheduled retry for {len(companies)} companies", "BPJS Setup")
+        frappe.logger().info(f"Scheduled mapping retry for: {', '.join(companies)}", tag="BPJS Setup")
     except Exception as e:
-        # Limit error message length
-        error_msg = str(e)[:100]
-        frappe.log_error(
-            f"Failed to schedule retry for BPJS mappings: {error_msg}", 
-            "BPJS Setup"
-        )
+        frappe.log_error(f"Failed to schedule mapping retry: {str(e)[:100]}", "BPJS Setup")
 
 def create_new_bpjs_settings():
-    """Create default BPJS Settings if not exists"""
+    """
+    Create default BPJS Settings if not exists
+    Returns BPJS Settings doc or None if failed
+    """
     try:
+        # Check if settings already exist
         if frappe.db.exists("BPJS Settings", "BPJS Settings"):
-            return frappe.get_doc("BPJS Settings", "BPJS Settings")
-            
-        # Get default values
+            settings = frappe.get_doc("BPJS Settings", "BPJS Settings")
+            frappe.logger().info("Using existing BPJS Settings", tag="BPJS Setup")
+            return settings
+
+        # Create new settings
         defaults = get_default_bpjs_values()
-        
-        # Create new document
         settings = frappe.new_doc("BPJS Settings")
         
         # Set values from defaults
         for key, value in defaults.items():
             if hasattr(settings, key):
-                settings.set(key, value)
-        
-        # Set flags for bypass validation during setup
+                settings.set(key, flt(value))
+
+        # Bypass validation during setup
         settings.flags.ignore_validate = True
         settings.flags.ignore_mandatory = True
         settings.insert(ignore_permissions=True)
+        
         frappe.db.commit()
-        
-        frappe.logger().info("Created default BPJS Settings", "BPJS Setup")
+        frappe.logger().info("Created new BPJS Settings", tag="BPJS Setup")
         return settings
-        
+
     except Exception as e:
-        # Limit error message length
-        error_msg = str(e)[:100]
-        frappe.log_error(f"BPJS Settings Setup Error: {error_msg}", "BPJS Setup")
+        frappe.db.rollback()
+        frappe.log_error(f"Error creating BPJS Settings: {str(e)[:100]}", "BPJS Setup")
         return None
 
 def check_or_create_bpjs_mapping(company):
@@ -199,4 +216,33 @@ def check_or_create_bpjs_mapping(company):
         # Limit error message length
         error_msg = str(e)[:100]
         frappe.log_error(f"Error checking mapping for {company}: {error_msg}", "BPJS Setup")
+        return False
+
+def setup_company_bpjs(company, bpjs_settings):
+    """
+    Setup BPJS accounts and mapping for a single company
+    Returns bool indicating success
+    """
+    try:
+        # Setup accounts
+        if hasattr(bpjs_settings, "setup_accounts"):
+            try:
+                original_flags = getattr(bpjs_settings, "flags", {})
+                bpjs_settings.flags.ignore_validate = True
+                bpjs_settings.setup_accounts()
+                bpjs_settings.flags = original_flags
+            except Exception as e:
+                frappe.log_error(f"Error setting up accounts for {company}: {str(e)[:100]}", "BPJS Setup")
+                return False
+
+        # Create mapping
+        mapping_created = create_company_mapping(company)
+        if not mapping_created:
+            schedule_mapping_retry([company])
+            return False
+
+        return True
+
+    except Exception as e:
+        frappe.log_error(f"Error in setup_company_bpjs for {company}: {str(e)[:100]}", "BPJS Setup")
         return False

@@ -8,40 +8,42 @@ import os
 from frappe.model.document import Document
 from frappe.utils import flt, getdate
 
-# Module level functions for hooks.py
+# MODULE LEVEL FUNCTIONS - Used by hooks.py
 def validate(doc):
-    """Module level validation function for hooks"""
+    """Module level validation called by hooks"""
+    if getattr(doc, "flags", {}).get("ignore_validate"):
+        return
+        
     doc.validate_data_types()
-    doc.validate_percentages()
+    doc.validate_percentages() 
     doc.validate_max_salary()
     doc.validate_account_types()
-    
+
 def setup_accounts(doc):
-    """Module level setup_accounts function for hooks"""
+    """Module level setup_accounts called by hooks"""
+    if not doc:
+        return
     doc.setup_accounts()
     
 def on_update(doc):
-    """Module level on_update function for hooks"""
-    doc.update_salary_structures()
-    doc.ensure_bpjs_mapping_for_all_companies()
+    """Module level on_update called by hooks"""
+    if not doc:
+        return
+    try:
+        doc.update_salary_structures()
+        doc.ensure_bpjs_mapping_for_all_companies()
+    except Exception as e:
+        frappe.log_error(str(e)[:100], "BPJS Settings On Update Error")
 
-def debug_log(message, title=None):
-    """Log debug messages when DEBUG_BPJS environment variable is set"""
-    if os.environ.get("DEBUG_BPJS"):
-        if title:
-            frappe.logger().debug(f"[BPJS DEBUG] {title}: {message}")
-        else:
-            frappe.logger().debug(f"[BPJS DEBUG] {message}")
-
+# HELPER FUNCTIONS
 def create_account(company, account_name, account_type, parent):
-    """Create GL Account if not exists - Module level function"""
-    abbr = frappe.get_cached_value('Company', company, 'abbr')
-    # Ensure consistent naming
-    pure_account_name = account_name.replace(f" - {abbr}", "")
-    full_account_name = f"{pure_account_name} - {abbr}"
-    
-    if not frappe.db.exists("Account", full_account_name):
-        try:
+    """Create GL Account if not exists"""
+    try:
+        abbr = frappe.get_cached_value('Company', company, 'abbr')
+        pure_account_name = account_name.replace(f" - {abbr}", "")
+        full_account_name = f"{pure_account_name} - {abbr}"
+        
+        if not frappe.db.exists("Account", full_account_name):
             doc = frappe.get_doc({
                 "doctype": "Account",
                 "account_name": pure_account_name,
@@ -54,13 +56,44 @@ def create_account(company, account_name, account_type, parent):
             doc.insert(ignore_permissions=True)
             frappe.db.commit()
             
-            frappe.msgprint(f"Created account: {full_account_name}")
+            frappe.msgprint(_(f"Created account: {full_account_name}"))
             return full_account_name
-        except Exception as e:
-            frappe.log_error(f"Error creating account {full_account_name}: {str(e)[:100]}", "BPJS Account Creation Error")
-            return None
-    
+            
+    except Exception as e:
+        frappe.log_error(str(e)[:100], "BPJS Account Creation Error")
+        return None
+        
     return full_account_name
+
+def retry_bpjs_mapping(companies):
+    """
+    Background job to retry failed BPJS mapping creation
+    Called via frappe.enqueue() from ensure_bpjs_mapping_for_all_companies
+    """
+    if not companies:
+        return
+        
+    try:
+        from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
+        
+        for company in companies:
+            if not frappe.db.exists("BPJS Account Mapping", {"company": company}):
+                mapping_name = create_default_mapping(company)
+                if mapping_name:
+                    frappe.logger().info(_(f"Successfully created BPJS Account Mapping for {company} on retry"))
+                else:
+                    frappe.logger().warning(_(f"Failed again to create BPJS Account Mapping for {company}"))
+    except Exception as e:
+        frappe.log_error(str(e)[:100], "BPJS Mapping Retry Error")
+
+def debug_log(message, title=None):
+    """Debug logging helper - only active with DEBUG_BPJS env var"""
+    if os.environ.get("DEBUG_BPJS"):
+        message = str(message)[:500] # Limit message length
+        if title:
+            frappe.logger().debug(f"[BPJS DEBUG] {title}: {message}")
+        else:
+            frappe.logger().debug(f"[BPJS DEBUG] {message}")
 
 def create_parent_account(company):
     """Create or get parent account for BPJS accounts - Module level function"""
@@ -85,28 +118,6 @@ def create_parent_account(company):
     except Exception as e:
         frappe.log_error(f"Error creating parent account for {company}: {str(e)[:100]}", "BPJS Account Creation Error")
         return None
-
-def retry_bpjs_mapping(companies):
-    """Retry creating BPJS mappings for companies that failed initially"""
-    debug_log(f"Retrying BPJS mapping creation for: {companies}")
-    
-    try:
-        from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
-        
-        for company in companies:
-            try:
-                if not frappe.db.exists("BPJS Account Mapping", {"company": company}):
-                    mapping_name = create_default_mapping(company)
-                    if mapping_name:
-                        frappe.logger().info(f"Successfully created BPJS Account Mapping for {company} on retry")
-                    else:
-                        frappe.logger().warning(f"Failed again to create BPJS Account Mapping for {company}")
-            except Exception as e:
-                frappe.log_error(f"Error in mapping retry for {company}: {str(e)[:100]}", "BPJS Mapping Error")
-    except ImportError:
-        frappe.log_error("Could not import create_default_mapping", "BPJS Mapping Error")
-    except Exception as e:
-        frappe.log_error(f"Error in retry_bpjs_mapping: {str(e)[:100]}", "BPJS Mapping Error")
 
 class BPJSSettings(Document):
     def validate(self):

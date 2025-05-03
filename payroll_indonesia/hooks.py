@@ -79,8 +79,8 @@ doc_events = {
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
     "BPJS Account Mapping": {
-        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.BPJSAccountMapping.validate",
-        "on_update": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.BPJSAccountMapping.on_update"
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.validate",
+        "on_update": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.on_update"
     },
     "BPJS Payment Component": {
         "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.validate",
@@ -343,8 +343,8 @@ after_migrate = [
     "payroll_indonesia.fixtures.setup.check_system_readiness",
     "payroll_indonesia.utilities.tax_slab.create_income_tax_slab",
     "payroll_indonesia.override.salary_structure.create_default_salary_structure",
-    # Jalankan fix_all_doctypes dengan flag untuk skip jika tidak dibutuhkan
-        "payroll_indonesia.utilities.fix_doctype_structure.fix_all_doctypes",
+    "payroll_indonesia.utilities.fix_doctype_structure.fix_all_doctypes",
+    # Add BPJS setup to after_migrate hooks
     "payroll_indonesia.payroll_indonesia.setup.setup_module.after_sync"
 ]
 
