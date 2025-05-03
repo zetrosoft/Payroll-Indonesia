@@ -183,11 +183,11 @@ scheduler_events = {
     "daily": [
         "payroll_indonesia.utilities.tax_slab.create_income_tax_slab", 
         "payroll_indonesia.override.salary_structure.update_salary_structures",
-        "payroll_indonesia.payroll_indonesia.bpjs.daily_tasks.check_bpjs_settings"
+        "payroll_indonesia.bpjs.daily_tasks.check_bpjs_settings"  # Updated path
     ],
     "monthly": [
         "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries",
-        "payroll_indonesia.payroll_indonesia.bpjs.monthly_tasks.create_bpjs_summaries"
+        "payroll_indonesia.bpjs.monthly_tasks.create_bpjs_summaries"  # Updated path
     ],
     "yearly": [
         "payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"
@@ -287,7 +287,7 @@ after_migrate = [
     "payroll_indonesia.utilities.tax_slab.create_income_tax_slab",
     "payroll_indonesia.override.salary_structure.create_default_salary_structure",
     "payroll_indonesia.utilities.fix_doctype_structure.fix_all_doctypes",
-    "payroll_indonesia.payroll_indonesia.setup.create_bpjs_accounts"  # Add new setup function
+    "payroll_indonesia.setup.setup_module.after_sync"  # Updated path
 ]
 
 override_whitelisted_methods = {
