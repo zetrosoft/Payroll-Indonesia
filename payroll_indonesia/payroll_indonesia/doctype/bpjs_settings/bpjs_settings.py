@@ -81,70 +81,97 @@ class BPJSSettings(Document):
             frappe.throw("Batas maksimal gaji JP harus lebih dari 0")
     
     def setup_accounts(self):
-        """Setup GL accounts for BPJS components"""
-        company = frappe.defaults.get_defaults().company
-        if not company:
-            frappe.throw("Please set default company in Global Defaults")
+        """Setup GL accounts for BPJS components for all companies"""
+        # Jika company tidak disebutkan secara eksplisit, ambil default company
+        default_company = frappe.defaults.get_defaults().get("company")
+        if not default_company:
+            companies = frappe.get_all("Company", pluck="name")
+            if not companies:
+                frappe.throw("No company found. Please create a company before setting up BPJS accounts.")
+        else:
+            companies = [default_company]
+    
+        # Loop semua company dan buat account
+        for company in companies:
+            try:
+                # Parent account where BPJS accounts will be created
+                parent_name = create_parent_account(company)
             
-        # Parent account where BPJS accounts will be created
-        parent_name = create_parent_account(company)
-        
-        # Define BPJS accounts to be created
-        bpjs_accounts = {
-            "kesehatan_account": {
-                "account_name": "BPJS Kesehatan Payable",
-                "account_type": "Payable",
-                "field": "kesehatan_account"
-            },
-            "jht_account": {
-                "account_name": "BPJS JHT Payable",
-                "account_type": "Payable",
-                "field": "jht_account"
-            },
-            "jp_account": {
-                "account_name": "BPJS JP Payable",
-                "account_type": "Payable",
-                "field": "jp_account"
-            },
-            "jkk_account": {
-                "account_name": "BPJS JKK Payable",
-                "account_type": "Payable",
-                "field": "jkk_account"
-            },
-            "jkm_account": {
-                "account_name": "BPJS JKM Payable",
-                "account_type": "Payable",
-                "field": "jkm_account"
-            }
-        }
-        
-        # Create accounts and update settings
-        for key, account_info in bpjs_accounts.items():
-            account = self.get(account_info["field"])
-            if not account:
-                account = create_account(
-                    company=company,
-                    account_name=account_info["account_name"],
-                    account_type=account_info["account_type"],
-                    parent=parent_name
-                )
-                self.set(account_info["field"], account)
+                # Define BPJS accounts to be created
+                bpjs_accounts = {
+                    "kesehatan_account": {
+                        "account_name": "BPJS Kesehatan Payable",
+                        "account_type": "Payable",
+                        "field": "kesehatan_account"
+                    },
+                    "jht_account": {
+                        "account_name": "BPJS JHT Payable",
+                        "account_type": "Payable",
+                        "field": "jht_account"
+                    },
+                    "jp_account": {
+                        "account_name": "BPJS JP Payable",
+                        "account_type": "Payable",
+                        "field": "jp_account"
+                    },
+                    "jkk_account": {
+                        "account_name": "BPJS JKK Payable",
+                        "account_type": "Payable",
+                        "field": "jkk_account"
+                    },
+                    "jkm_account": {
+                        "account_name": "BPJS JKM Payable",
+                        "account_type": "Payable",
+                        "field": "jkm_account"
+                    }
+                }
+            
+                # Create accounts and update settings
+                for key, account_info in bpjs_accounts.items():
+                    account = self.get(account_info["field"])
+                    if not account:
+                        account = create_account(
+                            company=company,
+                            account_name=account_info["account_name"],
+                            account_type=account_info["account_type"],
+                            parent=parent_name
+                        )
+                        self.set(account_info["field"], account)
+            
+                # Trigger mapping creation
+                from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
+                create_default_mapping(company)
+            
+            except Exception as e:
+                frappe.log_error(f"Error setting up BPJS accounts for company {company}: {str(e)}", "BPJS Setup Error")
+                continue
     
     def on_update(self):
         """Update related documents when settings change"""
         # Update salary structure assignments if needed
         self.update_salary_structures()
     
-    def update_salary_structures(self):
-        """Update BPJS components in active salary structures"""
-        # Get list of active salary structures
-        salary_structures = frappe.get_all(
-            "Salary Structure",
-            filters={"docstatus": 1, "is_active": "Yes"},
-            pluck="name"
-        )
+        # Pastikan semua company memiliki BPJS mapping
+        self.ensure_bpjs_mapping_for_all_companies()
+
+    def ensure_bpjs_mapping_for_all_companies(self):
+        """Ensure all companies have BPJS mapping"""
+        try:
+            companies = frappe.get_all("Company", pluck="name")
         
-        for ss in salary_structures:
-            doc = frappe.get_doc("Salary Structure", ss)
-            # Logic to update BPJS components in salary structure
-            doc.save()
+            for company in companies:
+                # Cek apakah mapping sudah ada
+                mapping_exists = frappe.db.exists("BPJS Account Mapping", {"company": company})
+            
+                if not mapping_exists:
+                    # Import di sini untuk menghindari circular import
+                    from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
+                
+                    mapping_name = create_default_mapping(company)
+                    if mapping_name:
+                        frappe.logger().info(f"Created BPJS Account Mapping for {company} during BPJS Settings update")
+                    else:
+                        frappe.logger().warning(f"Failed to create BPJS Account Mapping for {company} during BPJS Settings update")
+    
+        except Exception as e:
+            frappe.log_error(f"Error ensuring BPJS mapping for all companies: {str(e)}", "BPJS Settings Update Error")

@@ -12,12 +12,39 @@ def create_bpjs_accounts():
         # Get all companies
         companies = frappe.get_all("Company", pluck="name")
         
-        for company in companies:
-            # Check BPJS Settings
-            if not frappe.db.exists("BPJS Settings", None):
-                create_default_bpjs_settings()
+        if not companies:
+            frappe.logger().warning("No companies found. Skipping BPJS account creation.")
+            return
+        
+        # Cek BPJS Settings, buat jika belum ada
+        bpjs_settings = None
+        if not frappe.db.exists("BPJS Settings", None):
+            # Buat BPJS Settings baru
+            try:
+                bpjs_settings = frappe.new_doc("BPJS Settings")
+                bpjs_settings.kesehatan_employee_percent = 1.0
+                bpjs_settings.kesehatan_employer_percent = 4.0
+                bpjs_settings.kesehatan_max_salary = 12000000
+                bpjs_settings.jht_employee_percent = 2.0
+                bpjs_settings.jht_employer_percent = 3.7
+                bpjs_settings.jp_employee_percent = 1.0
+                bpjs_settings.jp_employer_percent = 2.0
+                bpjs_settings.jp_max_salary = 9077600
+                bpjs_settings.jkk_percent = 0.24
+                bpjs_settings.jkm_percent = 0.3
+                bpjs_settings.insert(ignore_permissions=True)
+                frappe.logger().info("Created default BPJS Settings")
+            except Exception as e:
+                frappe.log_error(f"Failed to create BPJS Settings: {str(e)}", "BPJS Setup Error")
+        else:
+            bpjs_settings = frappe.get_doc("BPJS Settings")
+        
+        # Jalankan setup_accounts setelah BPJS Settings dibuat
+        if bpjs_settings:
+            bpjs_settings.setup_accounts()
             
-            # Create/check BPJS Account Mapping
+        # Buat Account Mapping untuk setiap company
+        for company in companies:
             check_or_create_bpjs_mapping(company)
             
         frappe.db.commit()
