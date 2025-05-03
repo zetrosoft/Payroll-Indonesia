@@ -10,6 +10,10 @@ from frappe.utils import cint, flt, cstr
 class BPJSAccountMapping(Document):
     def validate(self):
         """Validate required fields and account types"""
+        # Skip validasi jika dalam konteks setup awal (migrasi)
+        if getattr(self, "flags", {}).get("ignore_validate"):
+            return
+        
         self.validate_duplicate_mapping()
         self.validate_account_types()
         self.setup_missing_accounts()
@@ -556,44 +560,157 @@ def create_default_mapping(company):
         str: Name of created mapping or None if failed
     """
     try:
-        # Check if BPJS Settings exists
+        # Verifikasi apakah mapping sudah ada untuk company ini
+        existing_mapping = frappe.db.exists("BPJS Account Mapping", {"company": company})
+        if existing_mapping:
+            frappe.logger().info(f"BPJS Account Mapping already exists for {company}: {existing_mapping}")
+            return existing_mapping
+
+        # Verifikasi BPJS Settings, buat jika tidak ada
+        bpjs_settings = None
         if not frappe.db.exists("BPJS Settings", None):
+            frappe.logger().info(f"BPJS Settings not found, creating default...")
+            # Buat BPJS Settings baru
+            try:
+                bpjs_settings = frappe.new_doc("BPJS Settings")
+                bpjs_settings.kesehatan_employee_percent = 1.0
+                bpjs_settings.kesehatan_employer_percent = 4.0
+                bpjs_settings.kesehatan_max_salary = 12000000
+                bpjs_settings.jht_employee_percent = 2.0
+                bpjs_settings.jht_employer_percent = 3.7
+                bpjs_settings.jp_employee_percent = 1.0
+                bpjs_settings.jp_employer_percent = 2.0
+                bpjs_settings.jp_max_salary = 9077600
+                bpjs_settings.jkk_percent = 0.24
+                bpjs_settings.jkm_percent = 0.3
+                bpjs_settings.insert(ignore_permissions=True)
+                frappe.db.commit()
+            except Exception as e:
+                frappe.logger().error(f"Failed to create BPJS Settings: {str(e)}")
+        else:
+            bpjs_settings = frappe.get_doc("BPJS Settings")
+            
+        # Pastikan akun parent sudah dibuat terlebih dahulu
+        liability_parent = create_parent_account_for_mapping(company, "Liability")
+        expense_parent = create_parent_account_for_mapping(company, "Expense")
+            
+        if not liability_parent or not expense_parent:
+            frappe.logger().error(f"Failed to create parent accounts for company {company}")
             return None
             
-        # Get BPJS Settings
-        bpjs_settings = frappe.get_doc("BPJS Settings")
-        
-        # Create new mapping
+        # Buat mapping baru
         mapping = frappe.new_doc("BPJS Account Mapping")
         mapping.mapping_name = f"Default BPJS Mapping - {company}"
         mapping.company = company
         
-        # Set accounts from BPJS Settings where available
-        if hasattr(bpjs_settings, "kesehatan_account") and bpjs_settings.kesehatan_account:
-            mapping.kesehatan_employee_account = bpjs_settings.kesehatan_account
-            mapping.kesehatan_employer_credit_account = bpjs_settings.kesehatan_account
-            
-        if hasattr(bpjs_settings, "jht_account") and bpjs_settings.jht_account:
-            mapping.jht_employee_account = bpjs_settings.jht_account
-            mapping.jht_employer_credit_account = bpjs_settings.jht_account
-            
-        if hasattr(bpjs_settings, "jp_account") and bpjs_settings.jp_account:
-            mapping.jp_employee_account = bpjs_settings.jp_account
-            mapping.jp_employer_credit_account = bpjs_settings.jp_account
-            
-        if hasattr(bpjs_settings, "jkk_account") and bpjs_settings.jkk_account:
-            mapping.jkk_employer_credit_account = bpjs_settings.jkk_account
-            
-        if hasattr(bpjs_settings, "jkm_account") and bpjs_settings.jkm_account:
-            mapping.jkm_employer_credit_account = bpjs_settings.jkm_account
+        # Set accounts dari BPJS Settings jika tersedia
+        if bpjs_settings:
+            if hasattr(bpjs_settings, "kesehatan_account") and bpjs_settings.kesehatan_account:
+                mapping.kesehatan_employee_account = bpjs_settings.kesehatan_account
+                mapping.kesehatan_employer_credit_account = bpjs_settings.kesehatan_account
+                
+            if hasattr(bpjs_settings, "jht_account") and bpjs_settings.jht_account:
+                mapping.jht_employee_account = bpjs_settings.jht_account
+                mapping.jht_employer_credit_account = bpjs_settings.jht_account
+                
+            if hasattr(bpjs_settings, "jp_account") and bpjs_settings.jp_account:
+                mapping.jp_employee_account = bpjs_settings.jp_account
+                mapping.jp_employer_credit_account = bpjs_settings.jp_account
+                
+            if hasattr(bpjs_settings, "jkk_account") and bpjs_settings.jkk_account:
+                mapping.jkk_employer_credit_account = bpjs_settings.jkk_account
+                
+            if hasattr(bpjs_settings, "jkm_account") and bpjs_settings.jkm_account:
+                mapping.jkm_employer_credit_account = bpjs_settings.jkm_account
         
-        # Let the setup_missing_accounts method handle the rest
-        mapping.insert(ignore_permissions=True)
+        # Nonaktifkan validasi yang ketat saat migrasi/setup awal
+        mapping.flags.ignore_validate = True
+        mapping.insert(ignore_permissions=True, ignore_mandatory=True)
+        
+        # Sekarang jalankan setup akun yang hilang
+        try:
+            mapping.setup_missing_accounts()
+            mapping.save(ignore_permissions=True)
+        except Exception as e:
+            frappe.logger().error(f"Error during setup_missing_accounts: {str(e)}")
+            # Tetap lanjutkan dan simpan mapping meskipun ada error
+        
         frappe.db.commit()
         
-        frappe.msgprint(f"Created default BPJS Account Mapping for {company}")
+        frappe.logger().info(f"Created default BPJS Account Mapping for {company}: {mapping.name}")
         return mapping.name
         
     except Exception as e:
-        frappe.log_error(f"Error creating default BPJS account mapping for {company}: {str(e)}", "BPJS Mapping Error")
+        frappe.log_error(
+            f"Error creating default BPJS account mapping for {company}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}", 
+            "BPJS Mapping Error"
+        )
+        return None
+
+def create_parent_account_for_mapping(company, account_type):
+    """Create or get parent account for BPJS accounts - Module level helper function"""
+    try:
+        abbr = frappe.get_cached_value('Company', company, 'abbr')
+        
+        if account_type == "Liability":
+            root_parent = f"Accounts Payable - {abbr}" # Alternatif jika Duties and Taxes tidak ada
+            parent_account_name = f"Duties and Taxes - {abbr}"
+            account_name = f"BPJS Payable - {abbr}"
+            account_label = "BPJS Payable"
+            root_type = "Liability"
+        else:  # Expense
+            root_parent = f"Expenses - {abbr}" # Alternatif jika Indirect Expenses tidak ada
+            parent_account_name = f"Indirect Expenses - {abbr}"
+            account_name = f"BPJS Expenses - {abbr}"
+            account_label = "BPJS Expenses"
+            root_type = "Expense"
+        
+        # Verifikasi parent account atas (Duties and Taxes / Indirect Expenses)
+        if not frappe.db.exists("Account", parent_account_name):
+            # Coba gunakan parent alternatif
+            if frappe.db.exists("Account", root_parent):
+                parent_account_name = root_parent
+            else:
+                # Jika parent alternatif juga tidak ada, cari parent rekursif
+                parent_accounts = frappe.get_all(
+                    "Account",
+                    filters={
+                        "company": company,
+                        "is_group": 1,
+                        "root_type": root_type
+                    },
+                    fields=["name"],
+                    limit=1
+                )
+                
+                if not parent_accounts:
+                    frappe.logger().error(f"Cannot find suitable parent account for {account_type} in company {company}")
+                    return None
+                    
+                parent_account_name = parent_accounts[0].name
+        
+        # Cek apakah account sudah ada
+        if not frappe.db.exists("Account", account_name):
+            try:
+                frappe.get_doc({
+                    "doctype": "Account",
+                    "account_name": account_label,
+                    "parent_account": parent_account_name,
+                    "company": company,
+                    "account_type": account_type,
+                    "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
+                    "is_group": 1,
+                    "root_type": root_type
+                }).insert(ignore_permissions=True)
+                
+                frappe.db.commit()
+                frappe.logger().info(f"Created parent account: {account_name}")
+            except Exception as e:
+                frappe.logger().error(f"Error creating parent account {account_name}: {str(e)}")
+                return None
+        
+        return account_name
+    except Exception as e:
+        frappe.log_error(f"Error in create_parent_account_for_mapping: {str(e)}", "BPJS Account Creation Error")
         return None
