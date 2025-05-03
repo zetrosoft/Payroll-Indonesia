@@ -1,12 +1,72 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 11:52:36 by dannyaudian
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt, cstr
+
+# Define validate at module level
+def validate(doc):
+    """Validate required fields and account types"""
+    validate_duplicate_mapping(doc)
+    validate_account_types(doc)
+
+def validate_duplicate_mapping(doc):
+    """Ensure no duplicate mapping exists for the same company"""
+    if not doc.is_new():
+        # Skip validation when updating the same document
+        return
+        
+    existing = frappe.db.get_value(
+        "BPJS Account Mapping",
+        {
+            "company": doc.company,
+            "name": ["!=", doc.name]
+        },
+        "mapping_name"
+    )
+    
+    if existing:
+        frappe.throw(_("BPJS Account Mapping '{0}' already exists for company {1}").format(
+            existing, doc.company
+        ))
+
+def validate_account_types(doc):
+    """Validate that all accounts are of the correct type"""
+    # Employee contribution accounts should be liability accounts
+    validate_account_type(doc.kesehatan_employee_account, ["Liability"], "BPJS Kesehatan Employee")
+    validate_account_type(doc.jht_employee_account, ["Liability"], "BPJS JHT Employee")
+    validate_account_type(doc.jp_employee_account, ["Liability"], "BPJS JP Employee")
+    
+    # Employer expense accounts should be expense accounts
+    validate_account_type(doc.kesehatan_employer_debit_account, ["Expense"], "BPJS Kesehatan Employer Expense")
+    validate_account_type(doc.jht_employer_debit_account, ["Expense"], "BPJS JHT Employer Expense")
+    validate_account_type(doc.jp_employer_debit_account, ["Expense"], "BPJS JP Employer Expense")
+    validate_account_type(doc.jkk_employer_debit_account, ["Expense"], "BPJS JKK Employer Expense")
+    validate_account_type(doc.jkm_employer_debit_account, ["Expense"], "BPJS JKM Employer Expense")
+    
+    # Employer liability accounts should be liability accounts
+    validate_account_type(doc.kesehatan_employer_credit_account, ["Liability"], "BPJS Kesehatan Employer Liability")
+    validate_account_type(doc.jht_employer_credit_account, ["Liability"], "BPJS JHT Employer Liability")
+    validate_account_type(doc.jp_employer_credit_account, ["Liability"], "BPJS JP Employer Liability")
+    validate_account_type(doc.jkk_employer_credit_account, ["Liability"], "BPJS JKK Employer Liability")
+    validate_account_type(doc.jkm_employer_credit_account, ["Liability"], "BPJS JKM Employer Liability")
+
+def validate_account_type(account, allowed_types, account_description):
+    """Validate that an account is of the correct type"""
+    if not account:
+        # Skip validation if account is not provided
+        return
+        
+    account_type = frappe.db.get_value("Account", account, "account_type")
+    root_type = frappe.db.get_value("Account", account, "root_type")
+    
+    if root_type not in allowed_types:
+        frappe.throw(_("{0} account {1} must be a {2} account").format(
+            account_description, account, " or ".join(allowed_types)
+        ))
 
 class BPJSAccountMapping(Document):
     def validate(self):
