@@ -144,3 +144,92 @@ def hitung_bpjs(employee, gaji_pokok):
         # Log error but don't raise exception
         debug_log(f"Error calculating BPJS for {employee}: {str(e)}")
         return result
+
+@frappe.whitelist()
+def update_all_bpjs_components():
+    """Update all BPJS components for active salary structures"""
+    try:
+        # Get BPJS Settings
+        bpjs_settings = frappe.get_doc("BPJS Settings", "BPJS Settings")
+        if not bpjs_settings:
+            frappe.msgprint(_("Please configure BPJS Settings first"))
+            return
+            
+        # Update salary structures
+        bpjs_settings.update_salary_structures()
+        
+        frappe.msgprint(_("BPJS components updated successfully"))
+        
+    except Exception as e:
+        frappe.log_error(f"Error updating BPJS components: {str(e)[:100]}", "BPJS Update Error")
+        frappe.throw(_("Failed to update BPJS components. Please check error log."))
+
+def hitung_bpjs(base_salary, settings=None):
+    """
+    Calculate BPJS contributions for given salary
+    
+    Args:
+        base_salary (float): Base salary amount
+        settings (obj, optional): BPJS Settings doc
+        
+    Returns:
+        dict: Dictionary with calculated amounts
+    """
+    try:
+        if not settings:
+            settings = frappe.get_cached_doc("BPJS Settings", "BPJS Settings")
+            
+        if not settings:
+            frappe.throw(_("BPJS Settings not found"))
+            
+        # Calculate each component
+        results = {
+            "kesehatan": {
+                "employee": 0,
+                "employer": 0
+            },
+            "jht": {
+                "employee": 0,
+                "employer": 0
+            },
+            "jp": {
+                "employee": 0,
+                "employer": 0  
+            },
+            "jkk": {
+                "employer": 0
+            },
+            "jkm": {
+                "employer": 0
+            }
+        }
+        
+        # BPJS Kesehatan
+        max_kesehatan = flt(settings.kesehatan_max_salary)
+        salary_for_kesehatan = min(base_salary, max_kesehatan)
+        
+        results["kesehatan"]["employee"] = flt(salary_for_kesehatan * settings.kesehatan_employee_percent / 100)
+        results["kesehatan"]["employer"] = flt(salary_for_kesehatan * settings.kesehatan_employer_percent / 100)
+        
+        # BPJS JHT
+        results["jht"]["employee"] = flt(base_salary * settings.jht_employee_percent / 100)
+        results["jht"]["employer"] = flt(base_salary * settings.jht_employer_percent / 100)
+        
+        # BPJS JP
+        max_jp = flt(settings.jp_max_salary)
+        salary_for_jp = min(base_salary, max_jp)
+        
+        results["jp"]["employee"] = flt(salary_for_jp * settings.jp_employee_percent / 100)
+        results["jp"]["employer"] = flt(salary_for_jp * settings.jp_employer_percent / 100)
+        
+        # BPJS JKK
+        results["jkk"]["employer"] = flt(base_salary * settings.jkk_percent / 100)
+        
+        # BPJS JKM
+        results["jkm"]["employer"] = flt(base_salary * settings.jkm_percent / 100)
+        
+        return results
+        
+    except Exception as e:
+        frappe.log_error(f"Error calculating BPJS: {str(e)[:100]}", "BPJS Calculation Error")
+        frappe.throw(_("Error calculating BPJS contributions"))

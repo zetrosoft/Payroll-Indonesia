@@ -9,8 +9,8 @@ from frappe.model.document import Document
 from frappe.utils import flt, getdate
 
 # MODULE LEVEL FUNCTIONS - Used by hooks.py
-def validate(doc):
-    """Module level validation called by hooks"""
+def validate(doc, method=None):  # Add method parameter
+    """Module level validation function for hooks"""
     if getattr(doc, "flags", {}).get("ignore_validate"):
         return
         
