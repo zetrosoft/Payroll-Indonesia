@@ -6,6 +6,7 @@ from __future__ import unicode_literals
 import frappe
 from frappe.model.document import Document
 from frappe.utils import flt
+from . import create_account, create_parent_account
 
 class BPJSSettings(Document):
     def validate(self):
@@ -47,7 +48,7 @@ class BPJSSettings(Document):
             frappe.throw("Please set default company in Global Defaults")
             
         # Parent account where BPJS accounts will be created
-        parent_name = self.create_parent_account(company)
+        parent_name = create_parent_account(company)
         
         # Define BPJS accounts to be created
         bpjs_accounts = {
@@ -78,57 +79,17 @@ class BPJSSettings(Document):
             }
         }
         
-        # Create accounts and update settings
+        # Create accounts and update settings using module-level function
         for key, account_info in bpjs_accounts.items():
             account = self.get(account_info["field"])
             if not account:
-                account = self.create_account(
+                account = create_account(
                     company=company,
                     account_name=account_info["account_name"],
                     account_type=account_info["account_type"],
                     parent=parent_name
                 )
                 self.set(account_info["field"], account)
-    
-    def create_parent_account(self, company):
-        """Create or get parent account for BPJS accounts"""
-        parent_account = "Duties and Taxes - " + frappe.get_cached_value('Company',  company,  'abbr')
-        parent_name = "BPJS Payable - " + frappe.get_cached_value('Company',  company,  'abbr')
-        
-        if not frappe.db.exists("Account", parent_name):
-            frappe.get_doc({
-                "doctype": "Account",
-                "account_name": "BPJS Payable",
-                "parent_account": parent_account,
-                "company": company,
-                "account_type": "Payable",
-                "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
-                "is_group": 1
-            }).insert(ignore_permissions=True)
-        
-        return parent_name
-    
-    def create_account(self, company, account_name, account_type, parent):
-        """Create GL Account if not exists"""
-        abbr = frappe.get_cached_value('Company',  company,  'abbr')
-        account_name = f"{account_name} - {abbr}"
-        
-        if not frappe.db.exists("Account", account_name):
-            doc = frappe.get_doc({
-                "doctype": "Account",
-                "account_name": account_name.replace(f" - {abbr}", ""),
-                "company": company,
-                "parent_account": parent,
-                "account_type": account_type,
-                "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
-                "is_group": 0
-            })
-            doc.insert(ignore_permissions=True)
-            frappe.db.commit()
-            
-            frappe.msgprint(f"Created account: {account_name}")
-        
-        return account_name
     
     def on_update(self):
         """Update related documents when settings change"""
