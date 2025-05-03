@@ -273,10 +273,9 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.utils.get_bpjs_settings",
         "payroll_indonesia.payroll_indonesia.utils.calculate_bpjs_contributions",
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
-        "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.create_account",
-        "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.create_parent_account",
-        "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.debug_log"
-
+        "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation.hitung_bpjs",
+        # Remove debug_log as it's not needed in templates
+        
         # PPh 21 Settings & Functions
         "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings",
         "payroll_indonesia.payroll_indonesia.utils.get_ter_rate",
@@ -298,6 +297,7 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_employee_bpjs_details",
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.get_formatted_currency"
     ]
+
 }
 
 # Regional Settings
