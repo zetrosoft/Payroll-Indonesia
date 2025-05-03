@@ -57,11 +57,10 @@ doc_events = {
         "on_update": "payroll_indonesia.payroll_indonesia.tax.pph21_settings.on_update"
     },
     "BPJS Settings": {
-        # Perlu dibuat wrapper functions untuk method class
-        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils.validate_settings",
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.BPJSSettings.validate",
         "on_update": [
             "payroll_indonesia.payroll_indonesia.bpjs.bpjs_settings.on_update",
-            "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils.setup_accounts"
+            "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.BPJSSettings.setup_accounts"
         ]
     },
     "Payroll Entry": {
@@ -80,9 +79,8 @@ doc_events = {
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
     "BPJS Account Mapping": {
-        # Perlu dibuat wrapper functions untuk method class
-        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.utils.validate_mapping",
-        "on_update": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.utils.on_update_mapping"
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.BPJSAccountMapping.validate",
+        "on_update": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.BPJSAccountMapping.on_update"
     },
     "BPJS Payment Component": {
         "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.validate",
@@ -275,8 +273,10 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.utils.get_bpjs_settings",
         "payroll_indonesia.payroll_indonesia.utils.calculate_bpjs_contributions",
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
-        "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation.hitung_bpjs",
-        
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.create_account",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.create_parent_account",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.debug_log"
+
         # PPh 21 Settings & Functions
         "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings",
         "payroll_indonesia.payroll_indonesia.utils.get_ter_rate",
@@ -381,7 +381,7 @@ rest_export = {
 debug_tools = [
     "payroll_indonesia.override.salary_slip.diagnose_salary_slip_submission",
     "payroll_indonesia.override.salary_slip.manually_create_related_documents",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.debug_log",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.debug_log",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.diagnose_accounts"
 ]
 
@@ -393,6 +393,7 @@ module_info = {
     "payroll_indonesia.override.salary_slip.bpjs_calculator": "BPJS Calculator",
     "payroll_indonesia.override.salary_slip.ter_calculator": "TER Method Calculator",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping": "BPJS Account Mapping Controller",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings": "BPJS Settings Controller",
     "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation": "BPJS Calculation Module",
     "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table": "PPh TER Table Controller",
     "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary": "Employee Tax Summary Controller",
@@ -401,7 +402,6 @@ module_info = {
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_integration": "BPJS Payment Integration",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils": "BPJS Payment Utilities",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks": "BPJS Payment Hooks",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings": "BPJS Settings Controller",
     "payroll_indonesia.payroll_indonesia.setup": "BPJS Setup Module"
 }
 
