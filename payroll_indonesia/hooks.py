@@ -344,7 +344,7 @@ after_migrate = [
     "payroll_indonesia.utilities.tax_slab.create_income_tax_slab",
     "payroll_indonesia.override.salary_structure.create_default_salary_structure",
     # Jalankan fix_all_doctypes dengan flag untuk skip jika tidak dibutuhkan
-    "payroll_indonesia.utilities.fix_doctype_structure.fix_needed_doctypes",
+        "payroll_indonesia.utilities.fix_doctype_structure.fix_all_doctypes",
     "payroll_indonesia.payroll_indonesia.setup.setup_module.after_sync"
 ]
 
