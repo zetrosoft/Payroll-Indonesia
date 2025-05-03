@@ -57,10 +57,10 @@ doc_events = {
         "on_update": "payroll_indonesia.payroll_indonesia.tax.pph21_settings.on_update"
     },
     "BPJS Settings": {
-        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.BPJSSettings.validate",
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.validate",
         "on_update": [
             "payroll_indonesia.payroll_indonesia.bpjs.bpjs_settings.on_update",
-            "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.BPJSSettings.setup_accounts"
+            "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.setup_accounts"
         ]
     },
     "Payroll Entry": {
