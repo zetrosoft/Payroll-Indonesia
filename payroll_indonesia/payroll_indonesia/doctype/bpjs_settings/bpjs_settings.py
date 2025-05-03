@@ -6,7 +6,46 @@ from __future__ import unicode_literals
 import frappe
 from frappe.model.document import Document
 from frappe.utils import flt
-from . import create_account, create_parent_account
+
+def create_account(company, account_name, account_type, parent):
+    """Create GL Account if not exists - Module level function"""
+    abbr = frappe.get_cached_value('Company',  company,  'abbr')
+    account_name = f"{account_name} - {abbr}"
+    
+    if not frappe.db.exists("Account", account_name):
+        doc = frappe.get_doc({
+            "doctype": "Account",
+            "account_name": account_name.replace(f" - {abbr}", ""),
+            "company": company,
+            "parent_account": parent,
+            "account_type": account_type,
+            "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
+            "is_group": 0
+        })
+        doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+        
+        frappe.msgprint(f"Created account: {account_name}")
+    
+    return account_name
+
+def create_parent_account(company):
+    """Create or get parent account for BPJS accounts - Module level function"""
+    parent_account = "Duties and Taxes - " + frappe.get_cached_value('Company',  company,  'abbr')
+    parent_name = "BPJS Payable - " + frappe.get_cached_value('Company',  company,  'abbr')
+    
+    if not frappe.db.exists("Account", parent_name):
+        frappe.get_doc({
+            "doctype": "Account",
+            "account_name": "BPJS Payable",
+            "parent_account": parent_account,
+            "company": company,
+            "account_type": "Payable",
+            "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
+            "is_group": 1
+        }).insert(ignore_permissions=True)
+    
+    return parent_name
 
 class BPJSSettings(Document):
     def validate(self):
@@ -79,7 +118,7 @@ class BPJSSettings(Document):
             }
         }
         
-        # Create accounts and update settings using module-level function
+        # Create accounts and update settings
         for key, account_info in bpjs_accounts.items():
             account = self.get(account_info["field"])
             if not account:
@@ -108,5 +147,4 @@ class BPJSSettings(Document):
         for ss in salary_structures:
             doc = frappe.get_doc("Salary Structure", ss)
             # Logic to update BPJS components in salary structure
-            # This would depend on your salary structure setup
             doc.save()
