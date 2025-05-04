@@ -1,11 +1,32 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
+# Last modified: 2025-05-04 01:34:15 by dannyaudian
 
 import frappe
 from frappe import _ 
 from frappe.model.document import Document
+from frappe.utils import cint, flt, cstr, now_datetime
 from frappe.utils import cint, flt, cstr
+
+from frappe.utils import cint, flt, cstr
+# Import shared functions from setup.py to avoid duplication
+from payroll_indonesia.fixtures.setup import (
+    find_parent_account,
+    create_account,
+    DEFAULT_BPJS_VALUES,
+    get_default_bpjs_values,
+    debug_log
+)
+
+__all__ = [
+    'BPJSAccountMapping',
+    'get_mapping_for_company',
+    'create_default_mapping',
+    'validate',
+    'on_update_mapping',
+    'diagnose_accounts'
+]
 
 # Module level functions
 @frappe.whitelist()
@@ -102,6 +123,7 @@ def create_default_mapping(company):
         # Check if mapping already exists
         existing_mapping = frappe.db.exists("BPJS Account Mapping", {"company": company})
         if existing_mapping:
+            debug_log(f"BPJS Account Mapping already exists for {company}: {existing_mapping}", "BPJS Mapping")
             frappe.logger().info(f"BPJS Account Mapping already exists for {company}: {existing_mapping}")
             return existing_mapping
             
@@ -110,6 +132,7 @@ def create_default_mapping(company):
         expense_parent = create_parent_account_for_mapping(company, "Expense")
         
         if not liability_parent or not expense_parent:
+            debug_log(f"Failed to create parent accounts for {company}", "BPJS Mapping Error")
             frappe.logger().error(f"Failed to create parent accounts for {company}")
             return None
             
@@ -155,6 +178,7 @@ def create_default_mapping(company):
         # Clear cache for the company
         frappe.cache().delete_value(f"bpjs_mapping_{company}")
         
+        debug_log(f"Successfully created BPJS Account Mapping for {company}: {mapping.name}", "BPJS Mapping")
         frappe.logger().info(f"Successfully created BPJS Account Mapping for {company}: {mapping.name}")
         return mapping.name
         
@@ -169,6 +193,16 @@ def create_default_mapping(company):
 
 
 def create_parent_account_for_mapping(company, account_type):
+    """
+    Create or get parent account for BPJS accounts
+    
+    Args:
+        company: Company name
+        account_type: Account type (Liability or Expense)
+        
+    Returns:
+        str: Account name if created or found, None otherwise
+    """
     """Create or get parent account for BPJS accounts"""
     try:
         abbr = frappe.get_cached_value('Company', company, 'abbr')
@@ -180,11 +214,6 @@ def create_parent_account_for_mapping(company, account_type):
                 f"Accounts Payable - {abbr}",
                 f"Current Liabilities - {abbr}"
             ]
-            
-            # Check if target account already exists in parent's descendants
-            if frappe.db.exists("Account", account_name):
-                # Just return the existing account to avoid circular references
-                return account_name
             
             parent_account_name = find_valid_parent(company, parent_candidates)
             
@@ -208,6 +237,12 @@ def create_parent_account_for_mapping(company, account_type):
             account_label = "BPJS Payable"
             root_type = "Liability"
             
+            # Check if target account already exists
+            if frappe.db.exists("Account", account_name):
+                return account_name
+            
+            parent_account_name = find_valid_parent(company, parent_candidates)
+            
         else:  # Expense
             # Try several possible parent account candidates
             parent_candidates = [
@@ -216,27 +251,32 @@ def create_parent_account_for_mapping(company, account_type):
                 f"Expenses - {abbr}"
             ]
             
+            account_name = f"BPJS Expenses - {abbr}"
+            account_label = "BPJS Expenses"
+            root_type = "Expense"
             parent_account_name = find_valid_parent(company, parent_candidates)
             
             if not parent_account_name:
                 frappe.logger().warning(f"Could not find suitable parent account for Expense in {company}")
                 # Get root account for fallback
-                root_type_accounts = frappe.get_all(
-                    "Account", 
-                    filters={"company": company, "is_group": 1, "root_type": "Expense"},
-                    order_by="lft",
-                    limit=1
-                )
                 
-                if root_type_accounts:
-                    parent_account_name = root_type_accounts[0].name
-                else:
-                    frappe.logger().error(f"No Expense parent account found for {company}")
-                    return None
+            parent_account_name = find_valid_parent(company, parent_candidates)
             
-            account_name = f"BPJS Expenses - {abbr}"
-            account_label = "BPJS Expenses"
-            root_type = "Expense"
+        if not parent_account_name:
+            debug_log(f"Could not find suitable parent account for {account_type} in {company}", "Account Creation")
+            # Get root account for fallback
+            root_type_accounts = frappe.get_all(
+                "Account", 
+                filters={"company": company, "is_group": 1, "root_type": root_type},
+                order_by="lft",
+                limit=1
+            )
+            
+            if root_type_accounts:
+                parent_account_name = root_type_accounts[0].name
+            else:
+                debug_log(f"No {root_type} parent account found for {company}", "Account Creation Error")
+                return None
         
         # Check if BPJS parent account already exists
         if not frappe.db.exists("Account", account_name):
@@ -254,9 +294,9 @@ def create_parent_account_for_mapping(company, account_type):
                 doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
                 frappe.db.commit()
                 
-                frappe.logger().info(f"Created parent account: {account_name}")
+                debug_log(f"Created parent account: {account_name}", "Account Creation")
             except Exception as e:
-                frappe.logger().error(f"Error creating parent account {account_name}: {str(e)}")
+                debug_log(f"Error creating parent account {account_name}: {str(e)}", "Account Creation Error")
                 return None
         
         return account_name
@@ -266,7 +306,16 @@ def create_parent_account_for_mapping(company, account_type):
 
 
 def find_valid_parent(company, candidates):
-    """Find first valid parent account from candidates list"""
+    """
+    Find first valid parent account from candidates list
+    
+    Args:
+        company (str): Company name
+        candidates (list): List of potential parent account names
+        
+    Returns:
+        str: First valid parent account name or None if none found
+    """
     for candidate in candidates:
         if frappe.db.exists("Account", candidate):
             return candidate
@@ -274,10 +323,15 @@ def find_valid_parent(company, candidates):
 
 
 def setup_expense_accounts(mapping_doc, expense_parent):
-    """Setup expense accounts that don't already exist"""
+    """
+    Setup expense accounts that don't already exist
+    
+    Args:
+        mapping_doc: BPJS Account Mapping document
+        expense_parent: Parent expense account name
+    """
     try:
         company = mapping_doc.company
-        abbr = frappe.get_cached_value('Company', company, 'abbr')
         
         # List of expense accounts that need to be created
         expense_accounts = {
@@ -293,63 +347,52 @@ def setup_expense_accounts(mapping_doc, expense_parent):
             if mapping_doc.get(field):
                 continue
                 
-            # Create new account
-            full_account_name = f"{account_name} - {abbr}"
+            # Create new account using standardized function from setup.py
+            full_account_name = create_account(
+                company=company,
+                account_name=account_name,
+                account_type="Expense",
+                parent=expense_parent
+            )
             
-            if not frappe.db.exists("Account", full_account_name):
-                try:
-                    doc = frappe.get_doc({
-                        "doctype": "Account",
-                        "account_name": account_name,
-                        "parent_account": expense_parent,
-                        "company": company,
-                        "account_type": "Expense",
-                        "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
-                        "is_group": 0,
-                        "root_type": "Expense"
-                    })
-                    doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
-                    frappe.db.commit()
-                    
-                    frappe.logger().info(f"Created expense account: {full_account_name}")
-                except Exception as e:
-                    frappe.logger().error(f"Error creating expense account {full_account_name}: {str(e)}")
-                    continue
-            
-            # Set in mapping document
-            mapping_doc.set(field, full_account_name)
-            
+            if full_account_name:
+                # Set in mapping document
+                mapping_doc.set(field, full_account_name)
+                
     except Exception as e:
         frappe.log_error(f"Error setting up expense accounts: {str(e)}", "BPJS Account Setup Error")
 
 
 def create_bpjs_settings():
-    """Create default BPJS Settings if not exists"""
+    """
+    Create default BPJS Settings if not exists
+    
+    Returns:
+        object: BPJS Settings document if created or exists, None otherwise
+    """
     try:
-        # Use defaults from payroll_indonesia/config or constants module if exists
-        try:
-            from payroll_indonesia.payroll_indonesia.config.defaults import DEFAULT_BPJS_VALUES
-        except ImportError:
-            # Fallback default values
-            DEFAULT_BPJS_VALUES = {
-                "kesehatan_employee_percent": 1.0,
-                "kesehatan_employer_percent": 4.0,
-                "kesehatan_max_salary": 12000000,
-                "jht_employee_percent": 2.0,
-                "jht_employer_percent": 3.7,
-                "jp_employee_percent": 1.0,
-                "jp_employer_percent": 2.0,
-                "jp_max_salary": 9077600,
-                "jkk_percent": 0.24,
-                "jkm_percent": 0.3
-            }
+        # Check if already exists
+        if frappe.db.exists("BPJS Settings", "BPJS Settings"):
+            return frappe.get_doc("BPJS Settings", "BPJS Settings")
             
+        # Get default values using standardized function from setup.py
+        values = get_default_bpjs_values()
+            
+        # Create settings
         settings = frappe.new_doc("BPJS Settings")
-        settings.update(DEFAULT_BPJS_VALUES)
-        settings.insert(ignore_permissions=True)
+        
+        # Set values
+        for key, value in values.items():
+            if hasattr(settings, key):
+                settings.set(key, flt(value))
+                
+        # Bypass validation during setup
+        settings.flags.ignore_validate = True
+        settings.flags.ignore_permissions = True
+        settings.insert()
         frappe.db.commit()
         
-        frappe.logger().info("Created default BPJS Settings")
+        debug_log("Created default BPJS Settings", "BPJS Setup")
         return settings
         
     except Exception as e:
@@ -360,7 +403,12 @@ def create_bpjs_settings():
 # Function for diagnostic purposes
 @frappe.whitelist()
 def diagnose_accounts():
-    """Diagnose BPJS Account Mapping issues"""
+    """
+    Diagnose BPJS Account Mapping issues
+    
+    Returns:
+        dict: Diagnostic information about BPJS accounts and mappings
+    """
     results = {
         "settings_exists": False,
         "companies": [],
@@ -443,9 +491,15 @@ def diagnose_accounts():
 
 # Module level functions for document hooks
 def validate(doc, method=None):
-    """Module level validation function for hooks"""
+    """
+    Module level validation function for hooks
+    
+    Args:
+        doc: Document to validate
+        method: Method that called this function (not used)
+    """
     if getattr(doc, "flags", {}).get("ignore_validate"):
-        frappe.logger().info(f"Skipping validation for {doc.name} during initial setup/migration")
+        debug_log(f"Skipping validation for {doc.name} during initial setup/migration", "BPJS Mapping")
         return
     
     # Call instance methods
@@ -454,10 +508,16 @@ def validate(doc, method=None):
     doc.setup_missing_accounts()
 
 def on_update_mapping(doc, method=None):
-    """Module level on_update function for hooks"""
+    """
+    Module level on_update function for hooks
+    
+    Args:
+        doc: Document that was updated
+        method: Method that called this function (not used)
+    """
     # Clear cache for this mapping
     frappe.cache().delete_value(f"bpjs_mapping_{doc.company}")
-    frappe.logger().info(f"Cleared cache for BPJS mapping of company {doc.company}")
+    debug_log(f"Cleared cache for BPJS mapping of company {doc.company}", "BPJS Mapping Update")
 
 
 class BPJSAccountMapping(Document):
@@ -465,7 +525,7 @@ class BPJSAccountMapping(Document):
         """Validate required fields and account types"""
         # Skip validation if in migration/setup mode
         if getattr(self, "flags", {}).get("ignore_validate"):
-            frappe.logger().info(f"Skipping validation for {self.name} during initial setup/migration")
+            debug_log(f"Skipping validation for {self.name} during initial setup/migration", "BPJS Mapping")
             return
         
         self.validate_duplicate_mapping()
@@ -514,7 +574,14 @@ class BPJSAccountMapping(Document):
         self.validate_account_type(self.jkm_employer_credit_account, ["Liability"], "BPJS JKM Employer Liability")
     
     def validate_account_type(self, account, allowed_types, account_description):
-        """Validate that an account is of the correct type"""
+        """
+        Validate that an account is of the correct type
+        
+        Args:
+            account: Account name to validate
+            allowed_types: List of allowed account types
+            account_description: Description of the account for error messages
+        """
         if not account:
             # Skip validation if account is not provided
             return
@@ -602,7 +669,16 @@ class BPJSAccountMapping(Document):
             )
     
     def setup_account(self, field, description, account_type, parent, existing_account=None):
-        """Setup an account for a specific field if missing"""
+        """
+        Setup an account for a specific field if missing
+        
+        Args:
+            field: Field name to set
+            description: Account description
+            account_type: Account type
+            parent: Parent account name
+            existing_account: Existing account name from BPJS Settings
+        """
         # Skip if already set
         if self.get(field):
             return
@@ -612,8 +688,8 @@ class BPJSAccountMapping(Document):
             self.set(field, existing_account)
             return
         
-        # Create new account if needed
-        account_name = self.create_account(
+        # Create new account if needed using standardized function from setup.py
+        account_name = create_account(
             company=self.company,
             account_name=description,
             account_type=account_type,
@@ -624,7 +700,12 @@ class BPJSAccountMapping(Document):
             self.set(field, account_name)
     
     def get_accounts_from_bpjs_settings(self):
-        """Get already created accounts from BPJS Settings"""
+        """
+        Get already created accounts from BPJS Settings
+        
+        Returns:
+            dict: Dictionary of account fields and values
+        """
         accounts = {}
         
         # Try to get BPJS Settings
@@ -650,39 +731,18 @@ class BPJSAccountMapping(Document):
         return accounts
     
     def create_parent_account(self, company, account_type):
-        """Create or get parent account for BPJS accounts"""
+        """
+        Create or get parent account for BPJS accounts
+        
+        Args:
+            company: Company name
+            account_type: Account type (Liability or Expense)
+            
+        Returns:
+            str: Account name if created or found, None otherwise
+        """
+        # Use the standardized function
         return create_parent_account_for_mapping(company, account_type)
-    
-    def create_account(self, company, account_name, account_type, parent):
-        """Create GL Account if not exists"""
-        abbr = frappe.get_cached_value('Company', company, 'abbr')
-        full_account_name = f"{account_name} - {abbr}"
-        
-        if not frappe.db.exists("Account", full_account_name):
-            try:
-                # Determine root type from account type
-                root_type = "Liability" if account_type == "Liability" else "Expense"
-                
-                doc = frappe.get_doc({
-                    "doctype": "Account",
-                    "account_name": account_name.replace(f" - {abbr}", ""),
-                    "company": company,
-                    "parent_account": parent,
-                    "account_type": account_type,
-                    "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
-                    "is_group": 0,
-                    "root_type": root_type
-                })
-                doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
-                frappe.db.commit()
-                
-                frappe.logger().info(f"Created account: {full_account_name}")
-                return full_account_name
-            except Exception as e:
-                frappe.log_error(f"Error creating account {full_account_name}: {str(e)}", "BPJS Account Creation Error")
-                return None
-        
-        return full_account_name
     
     def get_accounts_for_component(self, component_type):
         """
@@ -720,4 +780,4 @@ class BPJSAccountMapping(Document):
     def on_update(self):
         """Refresh cache and perform additional operations after update"""
         frappe.cache().delete_value(f"bpjs_mapping_{self.company}")
-        frappe.logger().info(f"Cleared cache for BPJS mapping of company {self.company}")
+        debug_log(f"Cleared cache for BPJS mapping of company {self.company}", "BPJS Mapping Update")

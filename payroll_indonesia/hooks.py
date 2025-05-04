@@ -57,7 +57,7 @@ doc_events = {
     "BPJS Settings": {
         "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.validate",
         "on_update": [
-            "payroll_indonesia.payroll_indonesia.bpjs.bpjs_settings.on_update",
+            "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.on_update",
             "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.setup_accounts"
         ]
     },
