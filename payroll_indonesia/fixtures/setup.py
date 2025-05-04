@@ -984,7 +984,10 @@ def setup_income_tax_slab():
 
 def setup_bpjs():
     """
-    Setup BPJS configurations and accounts
+    Setup BPJS configurations and account mappings for all companies
+    
+    Creates BPJS Settings document and ensures BPJS Account Mapping for all companies
+    is automatically created during application installation.
     
     Returns:
         bool: True if successful, False otherwise
@@ -998,19 +1001,79 @@ def setup_bpjs():
         
         debug_log("Created BPJS Settings successfully", "BPJS Setup")
             
-        # Let BPJS Settings handle account and mapping creation
+        # Let BPJS Settings handle account setup
         settings.setup_accounts()
         
-        # Commit changes
+        # Get all companies
+        companies = frappe.get_all("Company", pluck="name")
+        if not companies:
+            debug_log("No companies found for BPJS account mapping", "BPJS Setup Warning")
+            return True  # Return True as settings were created successfully
+        
+        # Track success and failures
+        success_count = 0
+        failed_companies = []
+        
+        # Create mappings for each company
+        for company in companies:
+            try:
+                debug_log(f"Creating BPJS account mapping for company: {company}", "BPJS Setup")
+                
+                # Check if mapping already exists
+                existing_mapping = frappe.db.exists("BPJS Account Mapping", {"company": company})
+                if existing_mapping:
+                    debug_log(f"BPJS account mapping already exists for {company}", "BPJS Setup")
+                    success_count += 1
+                    continue
+                
+                # Create default mapping for this company
+                from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
+                mapping = create_default_mapping(company)
+                
+                if mapping:
+                    debug_log(f"Successfully created BPJS account mapping for {company}", "BPJS Setup")
+                    success_count += 1
+                else:
+                    debug_log(f"Failed to create BPJS account mapping for {company}", "BPJS Setup Error")
+                    failed_companies.append(company)
+                        
+            except Exception as e:
+                frappe.log_error(
+                    f"Error creating BPJS account mapping for {company}: {str(e)}\n\n"
+                    f"Traceback: {frappe.get_traceback()}",
+                    "BPJS Setup Error"
+                )
+                failed_companies.append(company)
+        
+        # Commit all changes
         frappe.db.commit()
         
-        # Verify settings were saved
-        if frappe.db.exists("BPJS Settings", settings.name):
-            debug_log("BPJS Settings setup completed successfully", "BPJS Setup")
-            return True
-        else:
-            debug_log("BPJS Settings wasn't properly saved", "BPJS Setup Error")
-            return False
+        # Log summary
+        if success_count > 0:
+            debug_log(f"Successfully created BPJS account mappings for {success_count} companies", "BPJS Setup")
+            
+        if failed_companies:
+            debug_log(f"Failed to create BPJS account mappings for {len(failed_companies)} companies: {', '.join(failed_companies)}", "BPJS Setup Warning")
+            
+            # Schedule background job to retry failed companies
+            try:
+                frappe.enqueue(
+                    method="payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.retry_bpjs_mapping",
+                    companies=failed_companies,
+                    queue="long",
+                    timeout=1500
+                )
+                debug_log(f"Scheduled background job to retry BPJS mapping creation for failed companies", "BPJS Setup")
+            except Exception as e:
+                frappe.log_error(
+                    f"Failed to schedule retry for BPJS mapping: {str(e)}\n\n"
+                    f"Traceback: {frappe.get_traceback()}", 
+                    "BPJS Mapping Error"
+                )
+        
+        # Return True if at least some mappings were created or if none were needed
+        return True
+        
     except Exception as e:
         frappe.log_error(
             f"Error setting up BPJS: {str(e)}\n\n"

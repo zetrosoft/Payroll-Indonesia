@@ -115,6 +115,7 @@ def get_mapping_for_company(company=None):
 def create_default_mapping(company):
     """
     Create a default BPJS Account Mapping based on BPJS Settings
+    with enhanced error handling and fallbacks
     
     Args:
         company (str): Company name
@@ -123,30 +124,45 @@ def create_default_mapping(company):
         str: Name of created mapping or None if failed
     """
     try:
+        # Verify company is valid
+        if not frappe.db.exists("Company", company):
+            frappe.throw(_("Company {0} does not exist").format(company))
+            
         # Check if mapping already exists
         existing_mapping = frappe.db.exists("BPJS Account Mapping", {"company": company})
         if existing_mapping:
             debug_log(f"BPJS Account Mapping already exists for {company}: {existing_mapping}", "BPJS Mapping")
             return existing_mapping
             
-        # Create parent accounts first for liabilities and expenses
+        # Create parent accounts first for liabilities and expenses with enhanced error handling
+        debug_log(f"Creating liability parent account for company {company}", "BPJS Mapping")
         liability_parent = create_parent_account_for_mapping(company, "Liability")
-        expense_parent = create_parent_account_for_mapping(company, "Expense")
-        
         if not liability_parent:
-            frappe.throw(_("Failed to create BPJS Payable parent account for company {0}").format(company))
+            error_msg = f"Failed to create BPJS Payable parent account for company {company}"
+            debug_log(error_msg, "BPJS Mapping Error", trace=True)
+            frappe.throw(_(error_msg))
             
+        debug_log(f"Creating expense parent account for company {company}", "BPJS Mapping")
+        expense_parent = create_parent_account_for_mapping(company, "Expense")
         if not expense_parent:
-            frappe.throw(_("Failed to create BPJS Expenses parent account for company {0}").format(company))
+            error_msg = f"Failed to create BPJS Expenses parent account for company {company}"
+            debug_log(error_msg, "BPJS Mapping Error", trace=True)
+            frappe.throw(_(error_msg))
             
         # Check BPJS Settings and create if not exists
         bpjs_settings = None
         if not frappe.db.exists("BPJS Settings", None):
+            debug_log(f"BPJS Settings not found, creating default settings", "BPJS Mapping")
             bpjs_settings = create_bpjs_settings()
+            if not bpjs_settings:
+                error_msg = f"Failed to create default BPJS Settings"
+                debug_log(error_msg, "BPJS Mapping Error", trace=True)
+                frappe.throw(_(error_msg))
         else:
             bpjs_settings = frappe.get_cached_doc("BPJS Settings")
             
         # Create new mapping with ignore_validate flag
+        debug_log(f"Creating new BPJS Account Mapping for company {company}", "BPJS Mapping")
         mapping = frappe.new_doc("BPJS Account Mapping")
         mapping.mapping_name = f"Default BPJS Mapping - {company}"
         mapping.company = company
@@ -164,26 +180,60 @@ def create_default_mapping(company):
             }
             
             for settings_field, mapping_fields in settings_to_mapping.items():
-                if hasattr(bpjs_settings, settings_field) and bpjs_settings.get(settings_field):
+                account = bpjs_settings.get(settings_field)
+                if account and frappe.db.exists("Account", account):
                     for mapping_field in mapping_fields:
-                        mapping.set(mapping_field, bpjs_settings.get(settings_field))
+                        mapping.set(mapping_field, account)
+                        debug_log(f"Set {mapping_field} to {account} from BPJS Settings", "BPJS Mapping")
+                else:
+                    debug_log(f"BPJS Settings has no valid account for {settings_field}", "BPJS Mapping")
         
         # Insert mapping without strict validation
-        mapping.insert(ignore_permissions=True, ignore_mandatory=True)
+        try:
+            debug_log(f"Attempting to insert BPJS Account Mapping document for {company}", "BPJS Mapping")
+            mapping.insert(ignore_permissions=True, ignore_mandatory=True)
+        except Exception as e:
+            frappe.db.rollback()
+            error_msg = f"Failed to insert BPJS Account Mapping for {company}: {str(e)}"
+            debug_log(error_msg, "BPJS Mapping Error", trace=True)
+            frappe.log_error(
+                f"{error_msg}\n\nTraceback: {frappe.get_traceback()}", 
+                "BPJS Mapping Creation Error"
+            )
+            frappe.throw(_(error_msg))
         
-        # Create missing expense accounts
-        setup_expense_accounts(mapping, expense_parent)
+        # Create missing expense accounts with fallback handling
+        try:
+            debug_log(f"Setting up expense accounts for BPJS Account Mapping for {company}", "BPJS Mapping")
+            setup_expense_accounts(mapping, expense_parent)
+        except Exception as e:
+            debug_log(f"Error in setup_expense_accounts: {str(e)}", "BPJS Mapping Error", trace=True)
+            frappe.log_error(
+                f"Error setting up expense accounts for {company}: {str(e)}\n\nTraceback: {frappe.get_traceback()}", 
+                "BPJS Mapping Error"
+            )
+            # Don't throw here, try to save what we have
         
         # Save changes after account setup
-        mapping.save(ignore_permissions=True)
-        frappe.db.commit()
-        
-        # Clear cache for the company
-        frappe.cache().delete_value(f"bpjs_mapping_{company}")
-        
-        debug_log(f"Successfully created BPJS Account Mapping for {company}: {mapping.name}", "BPJS Mapping")
-        return mapping.name
-        
+        try:
+            mapping.save(ignore_permissions=True)
+            frappe.db.commit()
+            
+            # Clear cache for the company
+            frappe.cache().delete_value(f"bpjs_mapping_{company}")
+            
+            debug_log(f"Successfully created BPJS Account Mapping for {company}: {mapping.name}", "BPJS Mapping")
+            return mapping.name
+        except Exception as e:
+            frappe.db.rollback()
+            error_msg = f"Failed to save BPJS Account Mapping for {company}: {str(e)}"
+            debug_log(error_msg, "BPJS Mapping Error", trace=True)
+            frappe.log_error(
+                f"{error_msg}\n\nTraceback: {frappe.get_traceback()}", 
+                "BPJS Mapping Creation Error"
+            )
+            frappe.throw(_(error_msg))
+            
     except Exception as e:
         frappe.db.rollback()
         frappe.log_error(
@@ -191,12 +241,17 @@ def create_default_mapping(company):
             f"Traceback: {frappe.get_traceback()}", 
             "BPJS Mapping Error"
         )
+        debug_log(f"Critical error in create_default_mapping: {str(e)}", "BPJS Mapping Error", trace=True)
+        # Re-raise with a clear message
+        frappe.throw(_("Could not create BPJS Account Mapping for {0}: {1}").format(
+            company, str(e)[:100]
+        ))
         return None
-
 
 def create_parent_account_for_mapping(company, account_type):
     """
     Create or get parent account for BPJS accounts with improved error handling
+    and smart fallback mechanisms.
     
     Args:
         company (str): Company name
@@ -231,8 +286,8 @@ def create_parent_account_for_mapping(company, account_type):
             root_type = "Expense"
             account_type_specific = "Expense"
             parent_candidates = [
-                f"Indirect Expenses - {abbr}",
                 f"Direct Expenses - {abbr}",
+                f"Indirect Expenses - {abbr}",
                 f"Expenses - {abbr}"
             ]
         else:
@@ -261,28 +316,91 @@ def create_parent_account_for_mapping(company, account_type):
             
             return account_name
         
-        # Find valid parent account with explicit logging
+        # STAGE 1: Try standard parent accounts with explicit logging
         parent_account_name = find_valid_parent(company, parent_candidates)
-        debug_log(f"Found parent account: {parent_account_name} for new account {account_name}", "Account Creation")
         
-        # If no parent found, try to find a root account as fallback
+        # STAGE 2: If no standard parent found, try to find ANY account with matching root_type
         if not parent_account_name:
-            debug_log(f"Could not find standard parent account for {account_type} in {company}, trying root accounts", "Account Creation")
+            debug_log(f"Could not find standard parent account for {account_type} in {company}, trying to find any {root_type} group account", "Account Creation")
             
+            # Get all group accounts with matching root_type
             root_type_accounts = frappe.get_all(
                 "Account", 
                 filters={"company": company, "is_group": 1, "root_type": root_type},
-                order_by="lft",
-                limit=1
+                fields=["name", "parent_account", "lft", "rgt"],
+                order_by="lft"  # Get accounts in tree order
             )
             
             if root_type_accounts:
-                parent_account_name = root_type_accounts[0].name
+                # Try to find an account that is not too deep in the hierarchy (lower lft-rgt gap means deeper)
+                for acct in root_type_accounts:
+                    # Skip accounts with very small lft-rgt gap (would be leaf nodes or deep nodes)
+                    if (acct.rgt - acct.lft) > 2:
+                        parent_account_name = acct.name
+                        debug_log(f"Found suitable group account {parent_account_name} for parent", "Account Creation")
+                        break
+                    
+                # If we didn't find a good middle-level node, just use the first one
+                if not parent_account_name and root_type_accounts:
+                    parent_account_name = root_type_accounts[0].name
+                    debug_log(f"Using first available group account {parent_account_name} as parent", "Account Creation")
+            
+        # STAGE 3: If still no parent found, try to find the root account for this type
+        if not parent_account_name:
+            debug_log(f"No suitable group account found, searching for {root_type} root account", "Account Creation")
+            
+            root_accounts = frappe.get_all(
+                "Account",
+                filters={
+                    "company": company, 
+                    "is_group": 1, 
+                    "root_type": root_type, 
+                    "parent_account": ["in", ["", None]]
+                },
+                pluck="name"
+            )
+            
+            if root_accounts:
+                parent_account_name = root_accounts[0]
                 debug_log(f"Using root account {parent_account_name} as parent", "Account Creation")
             else:
-                frappe.log_error(f"No {root_type} parent account found for {company}", "Account Creation Error")
-                return None
+                # STAGE 4: Final fallback - look for ANY root account that we can use
+                debug_log(f"No {root_type} root account found, searching for ANY root account", "Account Creation")
+                
+                any_root = frappe.get_all(
+                    "Account",
+                    filters={
+                        "company": company, 
+                        "is_group": 1,
+                        "parent_account": ["in", ["", None]]
+                    },
+                    pluck="name",
+                    limit=1
+                )
+                
+                if any_root:
+                    parent_account_name = any_root[0]
+                    debug_log(f"Using non-{root_type} root account {parent_account_name} as fallback parent", "Account Creation")
+                    frappe.log_error(
+                        f"Using inappropriate root account {parent_account_name} for {account_type} parent in company {company}. The chart of accounts might be incomplete.",
+                        "Account Structure Warning"
+                    )
+                else:
+                    # If we're here, the company has NO accounts at all - critical error
+                    error_message = f"No accounts found in company {company}. Cannot create BPJS accounts." 
+                    frappe.log_error(error_message, "Critical Account Structure Error")
+                    debug_log(error_message, "Account Creation Error", trace=True)
+                    frappe.throw(_(error_message))
+                    return None
         
+        # If we've reached here, we have a parent account to use
+        if not parent_account_name:
+            error_message = f"Could not find or establish any parent account for {account_type} in company {company}"
+            frappe.log_error(error_message, "Critical Account Structure Error")
+            debug_log(error_message, "Account Creation Error", trace=True)
+            frappe.throw(_(error_message))
+            return None
+            
         # Create parent account with explicit permission override
         try:
             debug_log(f"Creating parent account {account_name} under {parent_account_name}", "Account Creation")
