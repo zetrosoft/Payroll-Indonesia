@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 01:49:05 by dannyaudian
+# Last modified: 2025-05-04 02:42:41 by dannyaudian
 
 import frappe
 from frappe import _ 
@@ -205,44 +205,37 @@ def create_parent_account_for_mapping(company, account_type):
     try:
         abbr = frappe.get_cached_value('Company', company, 'abbr')
         
+        # Set account properties based on type
         if account_type == "Liability":
-            # Try several possible parent account candidates
+            account_name = f"BPJS Payable - {abbr}"
+            account_label = "BPJS Payable"
+            root_type = "Liability"
             parent_candidates = [
                 f"Duties and Taxes - {abbr}",
                 f"Accounts Payable - {abbr}",
                 f"Current Liabilities - {abbr}"
             ]
-            
-            account_name = f"BPJS Payable - {abbr}"
-            account_label = "BPJS Payable"
-            root_type = "Liability"
-            
-            # Check if target account already exists
-            if frappe.db.exists("Account", account_name):
-                return account_name
-                
         else:  # Expense
-            # Try several possible parent account candidates
+            account_name = f"BPJS Expenses - {abbr}"
+            account_label = "BPJS Expenses"
+            root_type = "Expense"
             parent_candidates = [
                 f"Indirect Expenses - {abbr}",
                 f"Direct Expenses - {abbr}",
                 f"Expenses - {abbr}"
             ]
-            
-            account_name = f"BPJS Expenses - {abbr}"
-            account_label = "BPJS Expenses"
-            root_type = "Expense"
-            
-            # Check if target account already exists
-            if frappe.db.exists("Account", account_name):
-                return account_name
+        
+        # Check if target account already exists
+        if frappe.db.exists("Account", account_name):
+            return account_name
         
         # Find valid parent account
         parent_account_name = find_valid_parent(company, parent_candidates)
         
+        # If no parent found, try to find a root account as fallback
         if not parent_account_name:
             debug_log(f"Could not find suitable parent account for {account_type} in {company}", "Account Creation")
-            # Get root account for fallback
+            
             root_type_accounts = frappe.get_all(
                 "Account", 
                 filters={"company": company, "is_group": 1, "root_type": root_type},
@@ -257,7 +250,7 @@ def create_parent_account_for_mapping(company, account_type):
                 return None
         
         # Create parent account if it doesn't exist
-        if not frappe.db.exists("Account", account_name):
+        if parent_account_name:
             try:
                 doc = frappe.get_doc({
                     "doctype": "Account",
@@ -273,11 +266,14 @@ def create_parent_account_for_mapping(company, account_type):
                 frappe.db.commit()
                 
                 debug_log(f"Created parent account: {account_name}", "Account Creation")
+                return account_name
             except Exception as e:
                 debug_log(f"Error creating parent account {account_name}: {str(e)}", "Account Creation Error")
                 return None
-        
-        return account_name
+        else:
+            debug_log(f"No valid parent account found for {account_type} in {company}", "Account Creation Error")
+            return None
+            
     except Exception as e:
         frappe.log_error(f"Error in create_parent_account_for_mapping: {str(e)}", "BPJS Account Creation Error")
         return None
@@ -309,9 +305,14 @@ def setup_expense_accounts(mapping_doc, expense_parent):
         expense_parent (str): Parent expense account name
     """
     try:
+        if not expense_parent:
+            debug_log(f"Cannot setup expense accounts: invalid parent account", "BPJS Account Setup")
+            return
+            
         company = mapping_doc.company
+        abbr = frappe.get_cached_value('Company', company, 'abbr')
         
-        # List of expense accounts that need to be created
+        # List of expense accounts that need to be created with standardized naming
         expense_accounts = {
             "kesehatan_employer_debit_account": "BPJS Kesehatan Employer Expense",
             "jht_employer_debit_account": "BPJS JHT Employer Expense",
@@ -336,6 +337,9 @@ def setup_expense_accounts(mapping_doc, expense_parent):
             if full_account_name:
                 # Set in mapping document
                 mapping_doc.set(field, full_account_name)
+                debug_log(f"Created expense account: {full_account_name}", "Account Creation")
+            else:
+                debug_log(f"Failed to create expense account: {account_name}", "Account Creation Error")
                 
     except Exception as e:
         frappe.log_error(f"Error setting up expense accounts: {str(e)}", "BPJS Account Setup Error")
@@ -388,6 +392,7 @@ def diagnose_accounts():
         dict: Diagnostic information about BPJS accounts and mappings
     """
     results = {
+        "timestamp": now_datetime().strftime('%Y-%m-%d %H:%M:%S'),
         "settings_exists": False,
         "companies": [],
         "mappings": [],
@@ -416,7 +421,8 @@ def diagnose_accounts():
             company_info = {
                 "name": company,
                 "has_mapping": False,
-                "issues": []
+                "issues": [],
+                "abbr": frappe.get_cached_value('Company', company, 'abbr')
             }
             
             mapping = frappe.db.exists("BPJS Account Mapping", {"company": company})
@@ -432,7 +438,7 @@ def diagnose_accounts():
                     "accounts": {}
                 }
                 
-                # Check all accounts in mapping
+                # Standardized account field list for consistency
                 account_fields = [
                     "kesehatan_employee_account", "jht_employee_account", "jp_employee_account",
                     "kesehatan_employer_debit_account", "jht_employer_debit_account", 
@@ -450,6 +456,17 @@ def diagnose_accounts():
                     elif not frappe.db.exists("Account", account):
                         company_info["issues"].append(f"Account {account} does not exist")
                 
+                # Check parent accounts exist
+                abbr = company_info["abbr"]
+                required_parent_accounts = [
+                    f"BPJS Payable - {abbr}",
+                    f"BPJS Expenses - {abbr}"
+                ]
+                
+                for parent in required_parent_accounts:
+                    if not frappe.db.exists("Account", parent):
+                        company_info["issues"].append(f"Parent account {parent} does not exist")
+                
                 results["mappings"].append(mapping_info)
             else:
                 company_info["issues"].append("No BPJS Account Mapping exists")
@@ -464,7 +481,7 @@ def diagnose_accounts():
         return results
     except Exception as e:
         frappe.log_error(f"Error in diagnose_accounts: {str(e)}", "BPJS Diagnostic Error")
-        return {"error": str(e), "traceback": frappe.get_traceback()}
+        return {"error": str(e), "timestamp": results["timestamp"]}
 
 
 # Module level functions for document hooks
@@ -589,11 +606,11 @@ class BPJSAccountMapping(Document):
         # Try to get accounts from BPJS Settings first
         bpjs_settings_accounts = self.get_accounts_from_bpjs_settings()
         
-        # Fields mapping: {field_name: account_description}
+        # Fields mapping: {field_name: account_description} - using standardized naming
         employee_accounts = {
-            "kesehatan_employee_account": "BPJS Kesehatan Employee Liability",
-            "jht_employee_account": "BPJS JHT Employee Liability",
-            "jp_employee_account": "BPJS JP Employee Liability"
+            "kesehatan_employee_account": "BPJS Kesehatan Payable",
+            "jht_employee_account": "BPJS JHT Payable",
+            "jp_employee_account": "BPJS JP Payable"
         }
         
         employer_expense_accounts = {
@@ -605,16 +622,19 @@ class BPJSAccountMapping(Document):
         }
         
         employer_liability_accounts = {
-            "kesehatan_employer_credit_account": "BPJS Kesehatan Employer Liability",
-            "jht_employer_credit_account": "BPJS JHT Employer Liability",
-            "jp_employer_credit_account": "BPJS JP Employer Liability",
-            "jkk_employer_credit_account": "BPJS JKK Employer Liability",
-            "jkm_employer_credit_account": "BPJS JKM Employer Liability"
+            "kesehatan_employer_credit_account": "BPJS Kesehatan Payable",
+            "jht_employer_credit_account": "BPJS JHT Payable",
+            "jp_employer_credit_account": "BPJS JP Payable",
+            "jkk_employer_credit_account": "BPJS JKK Payable",
+            "jkm_employer_credit_account": "BPJS JKM Payable"
         }
         
         # Create parent accounts for grouping
         liability_parent = self.create_parent_account(self.company, "Liability")
         expense_parent = self.create_parent_account(self.company, "Expense")
+        
+        if not liability_parent or not expense_parent:
+            frappe.throw(_("Failed to create parent accounts for BPJS. Please check the logs."))
         
         # Setup employee liability accounts
         for field, description in employee_accounts.items():
@@ -676,6 +696,8 @@ class BPJSAccountMapping(Document):
         
         if account_name:
             self.set(field, account_name)
+        else:
+            debug_log(f"Failed to create account {description} for {field}", "Account Creation Error")
     
     def get_accounts_from_bpjs_settings(self):
         """
@@ -689,7 +711,9 @@ class BPJSAccountMapping(Document):
         # Try to get BPJS Settings
         try:
             bpjs_settings = frappe.get_cached_doc("BPJS Settings")
-            
+            if not bpjs_settings:
+                return accounts
+                
             # Map from BPJS Settings to Account Mapping fields
             field_mappings = {
                 "kesehatan_account": ["kesehatan_employee_account", "kesehatan_employer_credit_account"],

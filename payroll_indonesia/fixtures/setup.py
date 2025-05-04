@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 01:53:39 by dannyaudian
+# Last modified: 2025-05-04 02:48:03 by dannyaudian
 
 import frappe
 from frappe import _
@@ -189,31 +189,36 @@ def check_system_readiness():
 
 def create_accounts():
     """
-    Create required Accounts for Indonesian payroll management
+    Create required Accounts for Indonesian payroll management with standardized naming
     
     Returns:
         bool: True if successful, False otherwise
     """
-    # Define accounts to create
+    # Define accounts to create with standardized names
     accounts = [
-        # Expense Accounts
+        # Basic expense accounts
         {"account_name": "Beban Gaji Pokok", "parent_account": "Direct Expenses", "account_type": "Expense"},
         {"account_name": "Beban Tunjangan Makan", "parent_account": "Direct Expenses", "account_type": "Expense"},
         {"account_name": "Beban Tunjangan Transport", "parent_account": "Direct Expenses", "account_type": "Expense"},
         {"account_name": "Beban Insentif", "parent_account": "Direct Expenses", "account_type": "Expense"},
         {"account_name": "Beban Bonus", "parent_account": "Direct Expenses", "account_type": "Expense"},
-        {"account_name": "Beban BPJS JHT", "parent_account": "Direct Expenses", "account_type": "Expense"},
-        {"account_name": "Beban BPJS JP", "parent_account": "Direct Expenses", "account_type": "Expense"},
-        {"account_name": "Beban BPJS JKK", "parent_account": "Direct Expenses", "account_type": "Expense"},
-        {"account_name": "Beban BPJS JKM", "parent_account": "Direct Expenses", "account_type": "Expense"},
-        {"account_name": "Beban BPJS Kesehatan", "parent_account": "Direct Expenses", "account_type": "Expense"},
-        # Liability Accounts
+        
+        # BPJS expense accounts - using standardized naming
+        {"account_name": "BPJS JHT Employer Expense", "parent_account": "Direct Expenses", "account_type": "Expense"},
+        {"account_name": "BPJS JP Employer Expense", "parent_account": "Direct Expenses", "account_type": "Expense"},
+        {"account_name": "BPJS JKK Employer Expense", "parent_account": "Direct Expenses", "account_type": "Expense"},
+        {"account_name": "BPJS JKM Employer Expense", "parent_account": "Direct Expenses", "account_type": "Expense"},
+        {"account_name": "BPJS Kesehatan Employer Expense", "parent_account": "Direct Expenses", "account_type": "Expense"},
+        
+        # Liability accounts
         {"account_name": "Hutang PPh 21", "parent_account": "Duties and Taxes", "account_type": "Tax"},
-        {"account_name": "Hutang BPJS JHT", "parent_account": "Duties and Taxes", "account_type": "Payable"},
-        {"account_name": "Hutang BPJS JP", "parent_account": "Duties and Taxes", "account_type": "Payable"},
-        {"account_name": "Hutang BPJS Kesehatan", "parent_account": "Duties and Taxes", "account_type": "Payable"},
-        {"account_name": "Hutang BPJS JKK", "parent_account": "Duties and Taxes", "account_type": "Payable"},
-        {"account_name": "Hutang BPJS JKM", "parent_account": "Duties and Taxes", "account_type": "Payable"}
+        
+        # BPJS liability accounts - using standardized naming
+        {"account_name": "BPJS JHT Payable", "parent_account": "Duties and Taxes", "account_type": "Payable"},
+        {"account_name": "BPJS JP Payable", "parent_account": "Duties and Taxes", "account_type": "Payable"},
+        {"account_name": "BPJS Kesehatan Payable", "parent_account": "Duties and Taxes", "account_type": "Payable"},
+        {"account_name": "BPJS JKK Payable", "parent_account": "Duties and Taxes", "account_type": "Payable"},
+        {"account_name": "BPJS JKM Payable", "parent_account": "Duties and Taxes", "account_type": "Payable"}
     ]
     
     # Get default company
@@ -231,6 +236,39 @@ def create_accounts():
     if not company_abbr:
         debug_log(f"Company {company} has no abbreviation", "Account Setup")
         return False
+    
+    # Create parent accounts for BPJS
+    parent_accounts = [
+        {"account_name": "BPJS Payable", "parent_account": "Duties and Taxes", "account_type": "Payable", "is_group": 1},
+        {"account_name": "BPJS Expenses", "parent_account": "Direct Expenses", "account_type": "Expense", "is_group": 1}
+    ]
+    
+    # Create BPJS parent accounts first
+    for parent_account in parent_accounts:
+        try:
+            parent_name = create_parent_group_account(
+                company=company,
+                account_name=parent_account["account_name"],
+                account_type=parent_account["account_type"],
+                parent=parent_account["parent_account"]
+            )
+            
+            if parent_name:
+                debug_log(f"Created parent account: {parent_name}", "Account Setup")
+                
+                # Update parent account in accounts list for corresponding child accounts
+                if parent_account["account_name"] == "BPJS Payable":
+                    for account in accounts:
+                        if "BPJS" in account["account_name"] and account["account_type"] == "Payable":
+                            account["parent_account"] = parent_name
+                elif parent_account["account_name"] == "BPJS Expenses":
+                    for account in accounts:
+                        if "BPJS" in account["account_name"] and account["account_type"] == "Expense":
+                            account["parent_account"] = parent_name
+            
+        except Exception as e:
+            frappe.log_error(f"Error creating parent account {parent_account['account_name']}: {str(e)[:100]}", 
+                            "Account Creation Error")
     
     # Track accounts
     created_accounts = []
@@ -270,6 +308,54 @@ def create_accounts():
         frappe.log_error(f"Failed to create {len(failed_accounts)} accounts", "Account Creation Summary")
         
     return len(failed_accounts) < len(accounts) // 2  # Success if less than half failed
+
+def create_parent_group_account(company, account_name, account_type, parent):
+    """
+    Create parent group account for organizing accounts
+    
+    Args:
+        company (str): Company name
+        account_name (str): Account name without company abbreviation
+        account_type (str): Account type (Payable, Expense, etc.)
+        parent (str): Parent account name
+        
+    Returns:
+        str: Full account name if created or already exists, None otherwise
+    """
+    try:
+        abbr = frappe.get_cached_value('Company', company, 'abbr')
+        pure_account_name = account_name.replace(f" - {abbr}", "")
+        full_account_name = f"{pure_account_name} - {abbr}"
+        
+        # Skip if already exists
+        if frappe.db.exists("Account", full_account_name):
+            return full_account_name
+            
+        # Find parent account
+        parent_account = find_parent_account(company, parent, abbr, account_type)
+        if not parent_account:
+            debug_log(f"Could not find parent account '{parent}' for '{account_name}'", "Account Creation")
+            return None
+            
+        # Create new account
+        debug_log(f"Creating parent group account: {full_account_name}", "Account Creation")
+        
+        doc = frappe.get_doc({
+            "doctype": "Account",
+            "account_name": pure_account_name,
+            "company": company,
+            "parent_account": parent_account,
+            "account_type": account_type,
+            "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
+            "is_group": 1
+        })
+        doc.insert(ignore_permissions=True)
+        
+        return full_account_name
+        
+    except Exception as e:
+        frappe.log_error(f"Error creating parent group account {account_name}: {str(e)[:100]}", "Account Creation Error")
+        return None
 
 def create_account(company, account_name, account_type, parent):
     """
@@ -335,8 +421,29 @@ def find_parent_account(company, parent_name, company_abbr, account_type):
     parent = frappe.db.get_value("Account", {"name": f"{parent_name} - {company_abbr}"}, "name")
     if parent:
         return parent
+    
+    # Handle BPJS parent account names
+    if parent_name == "BPJS Payable" or parent_name == "BPJS Expenses":
+        # Get parent account based on account type
+        if "Payable" in parent_name:
+            parent_candidates = ["Duties and Taxes", "Current Liabilities", "Accounts Payable"]
+        else:
+            parent_candidates = ["Direct Expenses", "Indirect Expenses", "Expenses"]
+            
+        for candidate in parent_candidates:
+            candidate_account = frappe.db.get_value("Account", 
+                {"account_name": candidate, "company": company}, "name")
+            
+            if candidate_account:
+                return candidate_account
+                
+            candidate_account = frappe.db.get_value("Account", 
+                {"name": f"{candidate} - {company_abbr}"}, "name")
+                
+            if candidate_account:
+                return candidate_account
         
-    # Try any group account of correct type
+    # Try any group account of correct type as fallback
     root_type = "Expense" if account_type == "Expense" else "Liability"
     parents = frappe.get_all(
         "Account", 

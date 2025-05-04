@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 00:45:10 by dannyaudian
+# Last modified: 2025-05-04 02:59:00 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -78,7 +78,7 @@ doc_events = {
     },
     "BPJS Account Mapping": {
         "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.validate",
-        "on_update": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.on_update"
+        "on_update": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.on_update_mapping"
     },
     "BPJS Payment Component": {
         "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.validate",
@@ -395,48 +395,85 @@ whitelist_methods = [
     "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation.hitung_bpjs"
 ]
 
-# Account templates for BPJS integration
+# Account templates for BPJS integration - Updated with standardized naming
 boot_info = {
     "bpjs_account_templates": [
+        # Parent Accounts
+        {
+            "account_name": "BPJS Payable",
+            "account_type": "Liability",
+            "is_group": 1,
+            "root_type": "Liability"
+        },
+        {
+            "account_name": "BPJS Expenses",
+            "account_type": "Expense",
+            "is_group": 1,
+            "root_type": "Expense"
+        },
+        
+        # Liability Accounts
         {
             "account_name": "BPJS Kesehatan Payable",
-            "account_type": "Payable"
+            "account_type": "Payable",
+            "is_group": 0,
+            "root_type": "Liability"
         },
         {
             "account_name": "BPJS JHT Payable",
-            "account_type": "Payable"
+            "account_type": "Payable",
+            "is_group": 0,
+            "root_type": "Liability"
         },
         {
             "account_name": "BPJS JP Payable",
-            "account_type": "Payable"
+            "account_type": "Payable",
+            "is_group": 0,
+            "root_type": "Liability"
         },
         {
             "account_name": "BPJS JKK Payable",
-            "account_type": "Payable"
+            "account_type": "Payable",
+            "is_group": 0,
+            "root_type": "Liability"
         },
         {
             "account_name": "BPJS JKM Payable",
-            "account_type": "Payable"
+            "account_type": "Payable",
+            "is_group": 0,
+            "root_type": "Liability"
+        },
+        
+        # Expense Accounts
+        {
+            "account_name": "BPJS Kesehatan Employer Expense",
+            "account_type": "Expense",
+            "is_group": 0,
+            "root_type": "Expense"
         },
         {
-            "account_name": "BPJS Kesehatan Expense",
-            "account_type": "Expense"
+            "account_name": "BPJS JHT Employer Expense",
+            "account_type": "Expense",
+            "is_group": 0,
+            "root_type": "Expense"
         },
         {
-            "account_name": "BPJS JHT Expense",
-            "account_type": "Expense"
+            "account_name": "BPJS JP Employer Expense",
+            "account_type": "Expense",
+            "is_group": 0,
+            "root_type": "Expense"
         },
         {
-            "account_name": "BPJS JP Expense",
-            "account_type": "Expense"
+            "account_name": "BPJS JKK Employer Expense",
+            "account_type": "Expense",
+            "is_group": 0,
+            "root_type": "Expense"
         },
         {
-            "account_name": "BPJS JKK Expense",
-            "account_type": "Expense"
-        },
-        {
-            "account_name": "BPJS JKM Expense",
-            "account_type": "Expense"
+            "account_name": "BPJS JKM Employer Expense",
+            "account_type": "Expense",
+            "is_group": 0,
+            "root_type": "Expense"
         }
     ]
 }
