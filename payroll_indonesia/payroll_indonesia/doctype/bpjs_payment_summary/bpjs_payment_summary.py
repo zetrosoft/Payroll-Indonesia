@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
+# Last modified: 2025-05-04 03:06:25 by dannyaudian
 
 import frappe
 from frappe import _
@@ -11,29 +12,29 @@ from .bpjs_payment_integration import recalculate_bpjs_totals
 
 class BPJSPaymentSummary(Document):
     def validate(self):
-        self.set_missing_values()  # Pastikan nilai wajib terisi
+        self.set_missing_values()  # Ensure required values are set
         self.validate_company()
         self.validate_month_year()
-        self.check_and_generate_components()  # Ganti validate_components dengan metode yang lebih robust
+        self.check_and_generate_components()  # More robust component validation
         self.calculate_total()
         self.validate_total()
         self.validate_supplier()
         self.set_account_details()
     
     def set_missing_values(self):
-        """Set nilai default untuk field wajib"""
-        # Set posting_date jika kosong
+        """Set default values for required fields"""
+        # Set posting_date if empty
         if not self.posting_date:
             self.posting_date = today()
             
-        # Pastikan amount selalu terisi
+        # Ensure amount is always populated
         if not hasattr(self, 'amount') or not self.amount or flt(self.amount) <= 0:
-            # Coba hitung dari komponen dulu
+            # Try to calculate from components first
             if hasattr(self, 'komponen') and self.komponen:
                 self.amount = sum(flt(d.amount) for d in self.komponen)
-            # Jika masih kosong atau nol, set nilai default
+            # If still empty or zero, set default value
             if not hasattr(self, 'amount') or not self.amount or flt(self.amount) <= 0:
-                self.amount = 1.0  # Set nilai minimal untuk lewati validasi
+                self.amount = 1.0  # Set minimum value to pass validation
     
     def validate_company(self):
         """Validate company and its default accounts"""
@@ -46,6 +47,9 @@ class BPJSPaymentSummary(Document):
             frappe.throw(_("Default Bank Account not set for Company {0}").format(self.company))
         if not company_doc.default_payable_account:
             frappe.throw(_("Default Payable Account not set for Company {0}").format(self.company))
+            
+        # Store company abbreviation for later use
+        self._company_abbr = frappe.get_cached_value('Company', self.company, 'abbr')
     
     def validate_month_year(self):
         """Ensure month and year are valid"""
@@ -58,20 +62,20 @@ class BPJSPaymentSummary(Document):
     
     def check_and_generate_components(self):
         """Validate BPJS components and auto-generate if needed"""
-        # Jika komponen kosong tapi employee_details ada, generate komponen otomatis
+        # If components are empty but employee_details exist, auto-generate components
         if (not self.komponen or len(self.komponen) == 0) and hasattr(self, 'employee_details') and self.employee_details:
             self.populate_from_employee_details()
         
-        # Jika masih kosong, tambahkan komponen default
+        # If still empty, add default component
         if not self.komponen or len(self.komponen) == 0:
             self.append("komponen", {
                 "component": "BPJS JHT",
-                "component_type": "JHT",  # Tambahkan component_type
+                "component_type": "JHT",  # Add component_type
                 "amount": flt(self.amount) if hasattr(self, 'amount') and self.amount else 1.0
             })
             debug_log(f"Added default component for BPJS Payment Summary {self.name}")
         else:
-            # Pastikan semua komponen memiliki component_type
+            # Ensure all components have component_type
             for comp in self.komponen:
                 if not comp.component_type:
                     comp.component_type = comp.component.replace("BPJS ", "")
@@ -86,7 +90,7 @@ class BPJSPaymentSummary(Document):
         # Reset existing komponen child table
         self.komponen = []
         
-        # Hitung total untuk setiap jenis BPJS
+        # Calculate totals for each BPJS type
         bpjs_totals = {
             "Kesehatan": 0,
             "JHT": 0,
@@ -95,7 +99,7 @@ class BPJSPaymentSummary(Document):
             "JKM": 0
         }
         
-        # Hitung dari employee_details
+        # Calculate from employee_details
         for emp in self.employee_details:
             bpjs_totals["Kesehatan"] += flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer)
             bpjs_totals["JHT"] += flt(emp.jht_employee) + flt(emp.jht_employer)
@@ -103,7 +107,7 @@ class BPJSPaymentSummary(Document):
             bpjs_totals["JKK"] += flt(emp.jkk)
             bpjs_totals["JKM"] += flt(emp.jkm)
         
-        # Map jenis BPJS ke nama komponen
+        # Map BPJS types to component names
         component_name_map = {
             "Kesehatan": "BPJS Kesehatan",
             "JHT": "BPJS JHT",
@@ -112,7 +116,7 @@ class BPJSPaymentSummary(Document):
             "JKM": "BPJS JKM"
         }
         
-        # Tambahkan komponen
+        # Add components
         has_components = False
         for bpjs_type, amount in bpjs_totals.items():
             amount = flt(amount)
@@ -121,12 +125,12 @@ class BPJSPaymentSummary(Document):
                 if component_name:
                     self.append("komponen", {
                         "component": component_name,
-                        "component_type": bpjs_type,  # Tambahkan component_type
+                        "component_type": bpjs_type,  # Add component_type
                         "amount": amount
                     })
                     has_components = True
         
-        # Jika tidak ada komponen yang valid, buat komponen default
+        # If no valid components, create default component
         if not has_components:
             self.append("komponen", {
                 "component": "BPJS JHT",
@@ -140,14 +144,14 @@ class BPJSPaymentSummary(Document):
         """Calculate total from components and set amount field"""
         self.total = sum(flt(d.amount) for d in self.komponen)
         
-        # PENTING: Pastikan amount juga diisi dengan nilai total
-        # Ini memastikan amount selalu sama dengan total
+        # IMPORTANT: Ensure amount field is also set to total
+        # This ensures amount is always equal to total
         self.amount = flt(self.total) or 1.0
     
     def validate_total(self):
         """Validate total amount is greater than 0"""
         if not self.total or self.total <= 0:
-            # Set nilai default untuk lewati validasi
+            # Set default value to pass validation
             self.total = 1.0
             self.amount = 1.0
     
@@ -158,96 +162,100 @@ class BPJSPaymentSummary(Document):
             create_bpjs_supplier()
     
     def set_account_details(self):
-        """Set account details dari BPJS Settings dan Account Mapping"""
+        """Set account details from BPJS Settings and Account Mapping with dynamic account generation"""
         if self.docstatus == 1:
             frappe.throw(_("Cannot modify account details after submission"))
             
-        # Hapus account_details yang sudah ada
+        # Store company abbreviation for use in this method
+        company_abbr = getattr(self, '_company_abbr', None) or frappe.get_cached_value('Company', self.company, 'abbr')
+            
+        # Clear existing account_details
         self.account_details = []
         
         try:
-            # Cari BPJS Account Mapping khusus untuk perusahaan
-            account_mapping = frappe.get_all(
-                "BPJS Account Mapping",
-                filters={"company": self.company},
-                limit=1
-            )
+            # Find BPJS Account Mapping for this company
+            account_mapping = get_company_bpjs_account_mapping(self.company)
             
             if account_mapping:
-                # Gunakan mapping perusahaan spesifik
-                mapping_doc = frappe.get_doc("BPJS Account Mapping", account_mapping[0].name)
-                
-                # Hitung total untuk setiap jenis BPJS dari employee_details
-                bpjs_totals = {
-                    "Kesehatan": 0,
-                    "JHT": 0,
-                    "JP": 0,
-                    "JKK": 0,
-                    "JKM": 0
-                }
-                
-                # Hitung total dari employee_details jika ada
-                if hasattr(self, 'employee_details') and self.employee_details:
-                    for emp in self.employee_details:
-                        bpjs_totals["Kesehatan"] += flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer)
-                        bpjs_totals["JHT"] += flt(emp.jht_employee) + flt(emp.jht_employer)
-                        bpjs_totals["JP"] += flt(emp.jp_employee) + flt(emp.jp_employer)
-                        bpjs_totals["JKK"] += flt(emp.jkk)
-                        bpjs_totals["JKM"] += flt(emp.jkm)
-                else:
-                    # Jika tidak ada employee_details, gunakan data dari komponen
-                    component_type_map = {
-                        "BPJS Kesehatan": "Kesehatan",
-                        "BPJS JHT": "JHT",
-                        "BPJS JP": "JP",
-                        "BPJS JKK": "JKK",
-                        "BPJS JKM": "JKM"
-                    }
-                    
-                    for comp in self.komponen:
-                        bpjs_type = component_type_map.get(comp.component)
-                        if bpjs_type:
-                            bpjs_totals[bpjs_type] += flt(comp.amount)
+                # Use company-specific mapping
+                # Calculate totals for each BPJS type from employee_details
+                bpjs_totals = self.calculate_bpjs_type_totals()
                 
                 # Add account details using helper function
-                self._add_account_details_from_mapping(mapping_doc, bpjs_totals)
+                self._add_account_details_from_mapping(account_mapping, bpjs_totals)
                     
             else:
-                # Jika tidak ada mapping khusus perusahaan, gunakan BPJS Settings global
+                # If no company-specific mapping, use global BPJS Settings
                 bpjs_settings = frappe.get_single("BPJS Settings")
                 
-                # Mapping komponen dengan tipe dan field GL account di settings
+                # Use standardized account names if settings accounts don't exist
                 component_mapping = {
-                    "BPJS Kesehatan": {"type": "Kesehatan", "account_field": "kesehatan_account"},
-                    "BPJS JHT": {"type": "JHT", "account_field": "jht_account"},
-                    "BPJS JP": {"type": "JP", "account_field": "jp_account"},
-                    "BPJS JKK": {"type": "JKK", "account_field": "jkk_account"},
-                    "BPJS JKM": {"type": "JKM", "account_field": "jkm_account"}
+                    "BPJS Kesehatan": {"type": "Kesehatan", "account_field": "kesehatan_account", 
+                                     "default_account": f"BPJS Kesehatan Payable - {company_abbr}"},
+                    "BPJS JHT": {"type": "JHT", "account_field": "jht_account", 
+                               "default_account": f"BPJS JHT Payable - {company_abbr}"},
+                    "BPJS JP": {"type": "JP", "account_field": "jp_account", 
+                              "default_account": f"BPJS JP Payable - {company_abbr}"},
+                    "BPJS JKK": {"type": "JKK", "account_field": "jkk_account", 
+                               "default_account": f"BPJS JKK Payable - {company_abbr}"},
+                    "BPJS JKM": {"type": "JKM", "account_field": "jkm_account", 
+                               "default_account": f"BPJS JKM Payable - {company_abbr}"}
                 }
                 
-                # Loop komponen BPJS dan tambahkan account details
+                # Loop through BPJS components and add account details
                 for comp in self.komponen:
                     if comp.component in component_mapping:
                         mapping = component_mapping[comp.component]
                         account_type = mapping["type"]
                         account_field = mapping["account_field"]
+                        default_account = mapping["default_account"]
                         
-                        # Skip jika tidak ada GL account yang sesuai di BPJS Settings
-                        if not hasattr(bpjs_settings, account_field) or not getattr(bpjs_settings, account_field):
+                        # First try to get account from BPJS Settings
+                        account = None
+                        if hasattr(bpjs_settings, account_field) and getattr(bpjs_settings, account_field):
+                            account = getattr(bpjs_settings, account_field)
+                        
+                        # If not found in settings, try to find standardized account
+                        if not account:
+                            if frappe.db.exists("Account", default_account):
+                                account = default_account
+                            else:
+                                # Try to find any account with the right name pattern
+                                accounts = frappe.get_all(
+                                    "Account", 
+                                    filters={
+                                        "account_name": f"BPJS {account_type} Payable", 
+                                        "company": self.company
+                                    }, 
+                                    fields=["name"]
+                                )
+                                if accounts:
+                                    account = accounts[0].name
+                                    
+                        # If we found an account, add it
+                        if account:
+                            self._add_account_detail(account_type, account, comp.amount)
+                        else:
                             frappe.msgprint(
-                                _("No account defined for {0} in BPJS Settings").format(account_type),
+                                _("No account defined for {0}. Using default Payable account.").format(account_type),
                                 indicator='orange'
                             )
-                            continue
-                        
-                        # Add account detail using helper function
-                        self._add_account_detail(account_type, getattr(bpjs_settings, account_field), comp.amount)
                 
-                # Jika tidak ada account details, buat default account detail
+                # If no account details, create default account detail
                 if not self.account_details:
-                    default_account = frappe.db.get_value("Account", {"account_type": "Payable", "company": self.company}, "name")
-                    if default_account:
-                        self._add_account_detail("JHT", default_account, self.amount or 1.0)
+                    # Try to use BPJS Payable parent account
+                    parent_account = f"BPJS Payable - {company_abbr}"
+                    if frappe.db.exists("Account", parent_account):
+                        self._add_account_detail("JHT", parent_account, self.amount or 1.0)
+                    else:
+                        # Fallback to any payable account
+                        default_account = frappe.db.get_value(
+                            "Account", 
+                            {"account_type": "Payable", "company": self.company}, 
+                            "name"
+                        )
+                        if default_account:
+                            self._add_account_detail("JHT", default_account, self.amount or 1.0)
                         
         except Exception as e:
             frappe.log_error(
@@ -259,33 +267,99 @@ class BPJSPaymentSummary(Document):
                 _("Error setting account details: {0}").format(str(e)),
                 indicator='red'
             )
+    
+    def calculate_bpjs_type_totals(self):
+        """Calculate totals for each BPJS type from components or employee details"""
+        bpjs_totals = {
+            "Kesehatan": 0,
+            "JHT": 0,
+            "JP": 0,
+            "JKK": 0,
+            "JKM": 0
+        }
+        
+        # Calculate from employee_details if available
+        if hasattr(self, 'employee_details') and self.employee_details:
+            for emp in self.employee_details:
+                bpjs_totals["Kesehatan"] += flt(emp.kesehatan_employee) + flt(emp.kesehatan_employer)
+                bpjs_totals["JHT"] += flt(emp.jht_employee) + flt(emp.jht_employer)
+                bpjs_totals["JP"] += flt(emp.jp_employee) + flt(emp.jp_employer)
+                bpjs_totals["JKK"] += flt(emp.jkk)
+                bpjs_totals["JKM"] += flt(emp.jkm)
+        else:
+            # If no employee_details, use data from components
+            component_type_map = {
+                "BPJS Kesehatan": "Kesehatan",
+                "BPJS JHT": "JHT",
+                "BPJS JP": "JP",
+                "BPJS JKK": "JKK",
+                "BPJS JKM": "JKM"
+            }
+            
+            for comp in self.komponen:
+                bpjs_type = comp.component_type or component_type_map.get(comp.component)
+                if bpjs_type:
+                    bpjs_totals[bpjs_type] += flt(comp.amount)
+        
+        return bpjs_totals
             
     def _add_account_details_from_mapping(self, mapping_doc, bpjs_totals):
-        """Helper function to add account details from mapping"""
-        # Mapping field nama dengan properti account dan tipe BPJS
-        account_fields = [
-            {"field": "kesehatan_account", "type": "Kesehatan"},
-            {"field": "jht_account", "type": "JHT"},
-            {"field": "jp_account", "type": "JP"},
-            {"field": "jkk_account", "type": "JKK"},
-            {"field": "jkm_account", "type": "JKM"}
-        ]
+        """Helper function to add account details from mapping using standardized account names"""
+        # Mapping component types to account fields
+        account_mappings = {
+            "Kesehatan": {
+                "employee_account": "kesehatan_employee_account", 
+                "employer_credit_account": "kesehatan_employer_credit_account"
+            },
+            "JHT": {
+                "employee_account": "jht_employee_account", 
+                "employer_credit_account": "jht_employer_credit_account"
+            },
+            "JP": {
+                "employee_account": "jp_employee_account", 
+                "employer_credit_account": "jp_employer_credit_account"
+            },
+            "JKK": {
+                "employer_credit_account": "jkk_employer_credit_account"
+            },
+            "JKM": {
+                "employer_credit_account": "jkm_employer_credit_account"
+            }
+        }
         
-        # Tambahkan account details berdasarkan mapping
-        for field_info in account_fields:
-            field = field_info["field"]
-            bpjs_type = field_info["type"]
+        # Use dynamic account retrieval for each BPJS type
+        company_abbr = getattr(self, '_company_abbr', None) or frappe.get_cached_value('Company', self.company, 'abbr')
+        
+        # Add account details for each BPJS type
+        for bpjs_type, amount in bpjs_totals.items():
+            if amount <= 0:
+                continue
+                
+            mapping = account_mappings.get(bpjs_type)
+            if not mapping:
+                continue
+                
+            # Try to use employee account for employee contributions
+            account = None
             
-            # Ambil akun dari mapping
-            account = getattr(mapping_doc, field, None)
-            amount = bpjs_totals[bpjs_type]
+            # Try employer account first (all types have this)
+            employer_field = mapping.get("employer_credit_account")
+            if employer_field and hasattr(mapping_doc, employer_field) and getattr(mapping_doc, employer_field):
+                account = getattr(mapping_doc, employer_field)
             
-            if account and amount > 0:
+            # If no account found in mapping, try standardized account names
+            if not account:
+                standard_account = f"BPJS {bpjs_type} Payable - {company_abbr}"
+                if frappe.db.exists("Account", standard_account):
+                    account = standard_account
+            
+            # If account found, add to details
+            if account:
                 self._add_account_detail(bpjs_type, account, amount)
                 
-        # Validasi total account_details sesuai dengan total dokumen
+        # Validate total account_details match document total
         account_total = sum(flt(acc.amount) for acc in self.account_details)
-        if abs(account_total - self.total) > 0.1:  # Toleransi 0.1 untuk pembulatan
+        if abs(account_total - self.total) > 0.1:  # 0.1 tolerance for rounding
             frappe.msgprint(
                 _("Warning: Total from account details ({0}) doesn't match document total ({1})").format(
                     account_total, self.total
@@ -298,7 +372,7 @@ class BPJSPaymentSummary(Document):
         if not account or amount <= 0:
             return
             
-        # Format penamaan referensi sesuai standar
+        # Format reference naming according to standard
         month_names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
                       'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
         month_name = month_names[self.month - 1] if self.month >= 1 and self.month <= 12 else str(self.month)
@@ -368,6 +442,9 @@ class BPJSPaymentSummary(Document):
             # Calculate totals from employee_details
             employee_total, employer_total = self._calculate_contribution_totals()
             
+            # Use dynamic account names for expense accounts
+            company_abbr = getattr(self, '_company_abbr', None) or frappe.get_cached_value('Company', self.company, 'abbr')
+            
             # Add expense entries (debit)
             # First for employee contributions - expense to Salary Payable
             if employee_total > 0:
@@ -379,8 +456,21 @@ class BPJSPaymentSummary(Document):
                     "cost_center": company_default_accounts.cost_center
                 })
                 
-            # For employer contributions - expense to BPJS Expense account
-            expense_account = bpjs_settings.expense_account if hasattr(bpjs_settings, 'expense_account') and bpjs_settings.expense_account else company_default_accounts.default_expense_account
+            # For employer contributions - expense to BPJS Expense parent account or fallback
+            expense_account = None
+            
+            # Try to find BPJS Expenses parent account
+            bpjs_expense_parent = f"BPJS Expenses - {company_abbr}" 
+            if frappe.db.exists("Account", bpjs_expense_parent):
+                expense_account = bpjs_expense_parent
+            
+            # If not found, try settings or default
+            if not expense_account:
+                expense_account = (
+                    bpjs_settings.expense_account 
+                    if hasattr(bpjs_settings, 'expense_account') and bpjs_settings.expense_account 
+                    else company_default_accounts.default_expense_account
+                )
             
             if employer_total > 0:
                 je.append("accounts", {
@@ -452,20 +542,21 @@ class BPJSPaymentSummary(Document):
         if self.docstatus != 1:
             frappe.throw(_("Document must be submitted first"))
         
-        # Validasi account details
+        # Validate account details
         if not self.account_details or len(self.account_details) == 0:
             frappe.throw(_("No account details found. Please set account details first."))
         
         try:
             # Get BPJS supplier
-            if not frappe.db.exists("Supplier", "BPJS"):
+            supplier_name = "BPJS"
+            if not frappe.db.exists("Supplier", supplier_name):
                 frappe.throw(_("BPJS supplier not found"))
             
             # Create payment entry
             pe = frappe.new_doc("Payment Entry")
             pe.payment_type = "Pay"
             pe.party_type = "Supplier"
-            pe.party = "BPJS"
+            pe.party = supplier_name
             pe.posting_date = today()
             pe.paid_amount = self.total
             pe.received_amount = self.total
@@ -509,7 +600,7 @@ class BPJSPaymentSummary(Document):
             ])
             pe.remarks = (
                 f"BPJS Payment for {self.name}\n"
-                f"Periode: {month_name} {self.year}\n"
+                f"Period: {month_name} {self.year}\n"
                 f"Components:\n{components_text}"
             )
             
@@ -534,6 +625,41 @@ class BPJSPaymentSummary(Document):
             )
             frappe.msgprint(_("Error creating Payment Entry"))
             frappe.throw(str(e))
+
+def get_company_bpjs_account_mapping(company):
+    """
+    Get BPJS Account Mapping for a specific company with caching
+    
+    Args:
+        company (str): Company name
+        
+    Returns:
+        obj: BPJS Account Mapping document or None if not found
+    """
+    try:
+        # Try to use cached mapping
+        cache_key = f"bpjs_mapping_{company}"
+        mapping_dict = frappe.cache().get_value(cache_key)
+        
+        if mapping_dict and mapping_dict.get("name"):
+            mapping = frappe.get_doc("BPJS Account Mapping", mapping_dict.get("name"))
+            if mapping:
+                return mapping
+        
+        # If no cache hit, query directly
+        mapping = frappe.get_all(
+            "BPJS Account Mapping",
+            filters={"company": company},
+            limit=1
+        )
+        
+        if mapping:
+            return frappe.get_doc("BPJS Account Mapping", mapping[0].name)
+            
+        return None
+    except Exception as e:
+        frappe.logger().error(f"Error getting BPJS Account Mapping for {company}: {str(e)}")
+        return None
 
 @frappe.whitelist()
 def get_bpjs_suppliers():
@@ -577,13 +703,17 @@ def validate(doc, method=None):
         if isinstance(doc, str):
             doc = frappe.get_doc("BPJS Payment Summary", doc)
         
-        # Set amount field if missing (penting untuk menghindari error validasi)
+        # Set amount field if missing (important to avoid validation errors)
         if not hasattr(doc, 'amount') or not doc.amount or flt(doc.amount) <= 0:
             total = 0
             if hasattr(doc, 'komponen') and doc.komponen:
                 total = sum(flt(d.amount) for d in doc.komponen)
             doc.amount = total or 1.0
             debug_log(f"Module validate: set amount to {doc.amount} for {doc.name}")
+        
+        # Store company abbreviation for use throughout the document
+        if hasattr(doc, 'company') and doc.company:
+            doc._company_abbr = frappe.get_cached_value('Company', doc.company, 'abbr')
         
         # Ensure we have a document instance with a validate method
         if hasattr(doc, "validate") and callable(doc.validate):
