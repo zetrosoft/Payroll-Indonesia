@@ -1231,28 +1231,18 @@ def update_bpjs_mappings(account_doc):
         )
         return False
 
-def debug_log(message, title=None, max_length=500):
+def debug_log(message, title="Debug", trace=False):
     """
-    Debug logging helper with consistent format
+    Utility to log debug messages with optional traceback
     
     Args:
         message (str): Message to log
-        title (str, optional): Optional title/context for the log
-        max_length (int, optional): Maximum message length (default: 500)
+        title (str): Title for grouping
+        trace (bool): Whether to include frappe.get_traceback()
     """
-    timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
-    
-    # Truncate if message is too long to avoid memory issues
-    message = str(message)[:max_length]
-    
-    if title:
-        log_message = f"[{timestamp}] [{title}] {message}"
-    else:
-        log_message = f"[{timestamp}] {message}"
-        
-    # Log to both debug logger and application logs
-    frappe.logger().debug(f"[SETUP] {log_message}")
-    
-    # Create application log for important messages
-    if title and title.endswith("Error"):
-        frappe.log_error(message, f"Setup {title}")
+    try:
+        if trace:
+            message += "\n\n" + frappe.get_traceback()
+        print(f"[{title}] {message}")
+    except Exception:
+        pass
