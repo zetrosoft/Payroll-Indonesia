@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 02:42:41 by dannyaudian
+# Last modified: 2025-05-04 03:27:14 by dannyaudian
 
 import frappe
 from frappe import _ 
@@ -104,7 +104,8 @@ def get_mapping_for_company(company=None):
         return mapping_dict
     except Exception as e:
         frappe.log_error(
-            f"Error getting BPJS account mapping for company {company}: {str(e)}", 
+            f"Error getting BPJS account mapping for company {company}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}", 
             "BPJS Mapping Error"
         )
         return None
@@ -132,9 +133,11 @@ def create_default_mapping(company):
         liability_parent = create_parent_account_for_mapping(company, "Liability")
         expense_parent = create_parent_account_for_mapping(company, "Expense")
         
-        if not liability_parent or not expense_parent:
-            debug_log(f"Failed to create parent accounts for {company}", "BPJS Mapping Error")
-            return None
+        if not liability_parent:
+            frappe.throw(_("Failed to create BPJS Payable parent account for company {0}").format(company))
+            
+        if not expense_parent:
+            frappe.throw(_("Failed to create BPJS Expenses parent account for company {0}").format(company))
             
         # Check BPJS Settings and create if not exists
         bpjs_settings = None
@@ -193,7 +196,7 @@ def create_default_mapping(company):
 
 def create_parent_account_for_mapping(company, account_type):
     """
-    Create or get parent account for BPJS accounts
+    Create or get parent account for BPJS accounts with improved error handling
     
     Args:
         company (str): Company name
@@ -203,38 +206,68 @@ def create_parent_account_for_mapping(company, account_type):
         str: Account name if created or found, None otherwise
     """
     try:
+        # Validate company and get abbreviation
+        if not company:
+            frappe.throw(_("Company is required to create parent account"))
+            
         abbr = frappe.get_cached_value('Company', company, 'abbr')
+        if not abbr:
+            frappe.throw(_("Company {0} must have an abbreviation").format(company))
         
-        # Set account properties based on type
+        # Define account properties based on account type
         if account_type == "Liability":
             account_name = f"BPJS Payable - {abbr}"
             account_label = "BPJS Payable"
             root_type = "Liability"
+            account_type_specific = "Payable"
             parent_candidates = [
                 f"Duties and Taxes - {abbr}",
                 f"Accounts Payable - {abbr}",
                 f"Current Liabilities - {abbr}"
             ]
-        else:  # Expense
+        elif account_type == "Expense":
             account_name = f"BPJS Expenses - {abbr}"
             account_label = "BPJS Expenses"
             root_type = "Expense"
+            account_type_specific = "Expense"
             parent_candidates = [
                 f"Indirect Expenses - {abbr}",
                 f"Direct Expenses - {abbr}",
                 f"Expenses - {abbr}"
             ]
+        else:
+            frappe.throw(_("Invalid account type: {0}. Must be 'Liability' or 'Expense'").format(account_type))
+            return None
         
         # Check if target account already exists
-        if frappe.db.exists("Account", account_name):
+        existing_account = frappe.db.exists("Account", account_name)
+        if existing_account:
+            debug_log(f"Parent account {account_name} already exists", "Account Creation")
+            
+            # Verify account properties are correct
+            account_doc = frappe.get_doc("Account", account_name)
+            if not account_doc.is_group:
+                # Fix account - convert to group account if needed
+                try:
+                    account_doc.is_group = 1
+                    account_doc.save(ignore_permissions=True)
+                    frappe.db.commit()
+                    debug_log(f"Updated {account_name} to be a group account", "Account Fix")
+                except Exception as e:
+                    frappe.log_error(
+                        f"Failed to convert {account_name} to group account: {str(e)}", 
+                        "Account Creation Error"
+                    )
+            
             return account_name
         
-        # Find valid parent account
+        # Find valid parent account with explicit logging
         parent_account_name = find_valid_parent(company, parent_candidates)
+        debug_log(f"Found parent account: {parent_account_name} for new account {account_name}", "Account Creation")
         
         # If no parent found, try to find a root account as fallback
         if not parent_account_name:
-            debug_log(f"Could not find suitable parent account for {account_type} in {company}", "Account Creation")
+            debug_log(f"Could not find standard parent account for {account_type} in {company}, trying root accounts", "Account Creation")
             
             root_type_accounts = frappe.get_all(
                 "Account", 
@@ -245,43 +278,63 @@ def create_parent_account_for_mapping(company, account_type):
             
             if root_type_accounts:
                 parent_account_name = root_type_accounts[0].name
+                debug_log(f"Using root account {parent_account_name} as parent", "Account Creation")
             else:
-                debug_log(f"No {root_type} parent account found for {company}", "Account Creation Error")
+                frappe.log_error(f"No {root_type} parent account found for {company}", "Account Creation Error")
                 return None
         
-        # Create parent account if it doesn't exist
-        if parent_account_name:
-            try:
-                doc = frappe.get_doc({
-                    "doctype": "Account",
-                    "account_name": account_label,
-                    "parent_account": parent_account_name,
-                    "company": company,
-                    "account_type": account_type,
-                    "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
-                    "is_group": 1,
-                    "root_type": root_type
-                })
-                doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
-                frappe.db.commit()
-                
-                debug_log(f"Created parent account: {account_name}", "Account Creation")
+        # Create parent account with explicit permission override
+        try:
+            debug_log(f"Creating parent account {account_name} under {parent_account_name}", "Account Creation")
+            
+            doc = frappe.get_doc({
+                "doctype": "Account",
+                "account_name": account_label,
+                "parent_account": parent_account_name,
+                "company": company,
+                "account_type": account_type_specific,
+                "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
+                "is_group": 1,
+                "root_type": root_type
+            })
+            
+            # Force ignore permissions and insert
+            doc.flags.ignore_permissions = True
+            doc.flags.ignore_mandatory = True
+            doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
+            
+            # Commit immediately to ensure account is saved
+            frappe.db.commit()
+            
+            # Double check account was created
+            if frappe.db.exists("Account", account_name):
+                debug_log(f"Successfully created parent account: {account_name}", "Account Creation")
                 return account_name
-            except Exception as e:
-                debug_log(f"Error creating parent account {account_name}: {str(e)}", "Account Creation Error")
-                return None
-        else:
-            debug_log(f"No valid parent account found for {account_type} in {company}", "Account Creation Error")
+            else:
+                frappe.throw(_("Failed to create parent account {0} despite no errors").format(account_name))
+                
+        except Exception as e:
+            frappe.db.rollback()
+            frappe.log_error(
+                f"Error creating parent account {account_name}: {str(e)}\n\n"
+                f"Traceback: {frappe.get_traceback()}", 
+                "Account Creation Error"
+            )
+            frappe.throw(_("Error creating parent account {0}: {1}").format(account_name, str(e)[:100]))
             return None
             
     except Exception as e:
-        frappe.log_error(f"Error in create_parent_account_for_mapping: {str(e)}", "BPJS Account Creation Error")
+        frappe.log_error(
+            f"Critical error in create_parent_account_for_mapping: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}", 
+            "BPJS Account Creation Error"
+        )
         return None
 
 
 def find_valid_parent(company, candidates):
     """
-    Find first valid parent account from candidates list
+    Find first valid parent account from candidates list with improved diagnostics
     
     Args:
         company (str): Company name
@@ -290,15 +343,47 @@ def find_valid_parent(company, candidates):
     Returns:
         str: First valid parent account name or None if none found
     """
+    if not candidates:
+        debug_log("No parent candidates provided", "Account Lookup")
+        return None
+        
+    # Log all candidates for debugging
+    debug_log(f"Searching for parent accounts among: {', '.join(candidates)}", "Account Lookup")
+    
+    # Try exact matches
     for candidate in candidates:
         if frappe.db.exists("Account", candidate):
+            debug_log(f"Found parent account: {candidate}", "Account Lookup")
             return candidate
+    
+    # If no exact match, try without company suffix
+    company_data = frappe.get_doc("Company", company)
+    if company_data and company_data.abbr:
+        abbr = company_data.abbr
+        for candidate in candidates:
+            # Try matching just the account name without the company suffix
+            base_name = candidate
+            if f" - {abbr}" in candidate:
+                base_name = candidate.replace(f" - {abbr}", "")
+                
+            matches = frappe.get_all(
+                "Account", 
+                filters={"account_name": base_name, "company": company},
+                fields=["name"]
+            )
+            
+            if matches:
+                debug_log(f"Found parent account by name match: {matches[0].name}", "Account Lookup")
+                return matches[0].name
+    
+    # No valid parent found
+    debug_log(f"No valid parent account found among candidates for company {company}", "Account Lookup Error")
     return None
 
 
 def setup_expense_accounts(mapping_doc, expense_parent):
     """
-    Setup expense accounts that don't already exist
+    Setup expense accounts that don't already exist with improved error handling
     
     Args:
         mapping_doc (obj): BPJS Account Mapping document
@@ -306,8 +391,10 @@ def setup_expense_accounts(mapping_doc, expense_parent):
     """
     try:
         if not expense_parent:
-            debug_log(f"Cannot setup expense accounts: invalid parent account", "BPJS Account Setup")
-            return
+            frappe.throw(_("Cannot setup expense accounts: invalid parent account"))
+            
+        if not mapping_doc or not mapping_doc.company:
+            frappe.throw(_("Invalid mapping document or missing company"))
             
         company = mapping_doc.company
         abbr = frappe.get_cached_value('Company', company, 'abbr')
@@ -321,28 +408,58 @@ def setup_expense_accounts(mapping_doc, expense_parent):
             "jkm_employer_debit_account": "BPJS JKM Employer Expense"
         }
         
+        # Track created accounts for reporting
+        created_accounts = []
+        failed_accounts = []
+        
         for field, account_name in expense_accounts.items():
-            # Skip if already filled
-            if mapping_doc.get(field):
-                continue
+            try:
+                # Skip if already filled with valid account
+                current_account = mapping_doc.get(field)
+                if current_account and frappe.db.exists("Account", current_account):
+                    debug_log(f"Account {field} already set to {current_account}", "Account Setup")
+                    continue
+                    
+                # Create new account using standardized function
+                full_account_name = create_account(
+                    company=company,
+                    account_name=account_name,
+                    account_type="Expense",
+                    parent=expense_parent
+                )
                 
-            # Create new account using standardized function from setup.py
-            full_account_name = create_account(
-                company=company,
-                account_name=account_name,
-                account_type="Expense",
-                parent=expense_parent
-            )
+                if full_account_name:
+                    # Set in mapping document and track
+                    mapping_doc.set(field, full_account_name)
+                    created_accounts.append(f"{field}:{full_account_name}")
+                    debug_log(f"Created expense account: {full_account_name} for field {field}", "Account Creation")
+                else:
+                    failed_accounts.append(account_name)
+                    debug_log(f"Failed to create expense account: {account_name}", "Account Creation Error")
+            except Exception as e:
+                frappe.log_error(
+                    f"Error setting up expense account {account_name}: {str(e)}\n\n"
+                    f"Traceback: {frappe.get_traceback()}", 
+                    "Account Creation Error"
+                )
+                failed_accounts.append(account_name)
+        
+        # Log summary
+        if created_accounts:
+            debug_log(f"Created {len(created_accounts)} expense accounts: {', '.join(created_accounts)}", "Account Setup")
             
-            if full_account_name:
-                # Set in mapping document
-                mapping_doc.set(field, full_account_name)
-                debug_log(f"Created expense account: {full_account_name}", "Account Creation")
-            else:
-                debug_log(f"Failed to create expense account: {account_name}", "Account Creation Error")
+        if failed_accounts:
+            frappe.log_error(
+                f"Failed to create {len(failed_accounts)} accounts: {', '.join(failed_accounts)}",
+                "Account Setup Error"
+            )
                 
     except Exception as e:
-        frappe.log_error(f"Error setting up expense accounts: {str(e)}", "BPJS Account Setup Error")
+        frappe.log_error(
+            f"Error in setup_expense_accounts: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}", 
+            "BPJS Account Setup Error"
+        )
 
 
 def create_bpjs_settings():
@@ -378,7 +495,11 @@ def create_bpjs_settings():
         return settings
         
     except Exception as e:
-        frappe.log_error(f"Error creating default BPJS Settings: {str(e)}", "BPJS Setup Error")
+        frappe.log_error(
+            f"Error creating default BPJS Settings: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}", 
+            "BPJS Setup Error"
+        )
         return None
 
 
@@ -386,7 +507,7 @@ def create_bpjs_settings():
 @frappe.whitelist()
 def diagnose_accounts():
     """
-    Diagnose BPJS Account Mapping issues
+    Diagnose BPJS Account Mapping issues with enhanced diagnostics
     
     Returns:
         dict: Diagnostic information about BPJS accounts and mappings
@@ -396,7 +517,11 @@ def diagnose_accounts():
         "settings_exists": False,
         "companies": [],
         "mappings": [],
-        "issues": []
+        "issues": [],
+        "system_info": {
+            "frappe_version": frappe.__version__,
+            "user": frappe.session.user
+        }
     }
     
     try:
@@ -455,6 +580,12 @@ def diagnose_accounts():
                         company_info["issues"].append(f"Missing account: {field}")
                     elif not frappe.db.exists("Account", account):
                         company_info["issues"].append(f"Account {account} does not exist")
+                    else:
+                        # Verify account type is correct
+                        account_doc = frappe.get_doc("Account", account)
+                        expected_type = "Expense" if "debit_account" in field else "Liability" 
+                        if account_doc.root_type != expected_type:
+                            company_info["issues"].append(f"Account {account} has wrong type: {account_doc.root_type} (expected {expected_type})")
                 
                 # Check parent accounts exist
                 abbr = company_info["abbr"]
@@ -466,10 +597,21 @@ def diagnose_accounts():
                 for parent in required_parent_accounts:
                     if not frappe.db.exists("Account", parent):
                         company_info["issues"].append(f"Parent account {parent} does not exist")
+                    else:
+                        # Verify parent account is a group
+                        is_group = frappe.db.get_value("Account", parent, "is_group")
+                        if not is_group:
+                            company_info["issues"].append(f"Account {parent} is not a group account")
                 
                 results["mappings"].append(mapping_info)
             else:
                 company_info["issues"].append("No BPJS Account Mapping exists")
+                
+                # Check if parent accounts exist even without mapping
+                abbr = company_info["abbr"]
+                for parent_name in [f"BPJS Payable - {abbr}", f"BPJS Expenses - {abbr}"]:
+                    if frappe.db.exists("Account", parent_name):
+                        company_info["issues"].append(f"Parent account {parent_name} exists but has no mapping")
             
             results["companies"].append(company_info)
             
@@ -480,7 +622,11 @@ def diagnose_accounts():
         
         return results
     except Exception as e:
-        frappe.log_error(f"Error in diagnose_accounts: {str(e)}", "BPJS Diagnostic Error")
+        frappe.log_error(
+            f"Error in diagnose_accounts: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}", 
+            "BPJS Diagnostic Error"
+        )
         return {"error": str(e), "timestamp": results["timestamp"]}
 
 
@@ -636,6 +782,8 @@ class BPJSAccountMapping(Document):
         if not liability_parent or not expense_parent:
             frappe.throw(_("Failed to create parent accounts for BPJS. Please check the logs."))
         
+        debug_log(f"Using parent accounts: Liability={liability_parent}, Expense={expense_parent}", "Account Setup")
+        
         # Setup employee liability accounts
         for field, description in employee_accounts.items():
             self.setup_account(
@@ -677,27 +825,39 @@ class BPJSAccountMapping(Document):
             parent (str): Parent account name
             existing_account (str, optional): Existing account name from BPJS Settings
         """
-        # Skip if already set
-        if self.get(field):
+        # Skip if already set to a valid account
+        current_account = self.get(field)
+        if current_account and frappe.db.exists("Account", current_account):
+            debug_log(f"Account {field} already set to {current_account}", "Account Setup")
             return
         
-        # Use existing account from BPJS Settings if available
-        if existing_account:
+        # Use existing account from BPJS Settings if available and valid
+        if existing_account and frappe.db.exists("Account", existing_account):
+            debug_log(f"Using existing account {existing_account} for {field}", "Account Setup")
             self.set(field, existing_account)
             return
         
         # Create new account if needed using standardized function from setup.py
-        account_name = create_account(
-            company=self.company,
-            account_name=description,
-            account_type=account_type,
-            parent=parent
-        )
-        
-        if account_name:
-            self.set(field, account_name)
-        else:
-            debug_log(f"Failed to create account {description} for {field}", "Account Creation Error")
+        try:
+            account_name = create_account(
+                company=self.company,
+                account_name=description,
+                account_type=account_type,
+                parent=parent
+            )
+            
+            if account_name:
+                self.set(field, account_name)
+                debug_log(f"Created new account {account_name} for {field}", "Account Setup")
+                return
+        except Exception as e:
+            frappe.log_error(
+                f"Failed to create account {description} for {field}: {str(e)}\n\n"
+                f"Traceback: {frappe.get_traceback()}", 
+                "Account Creation Error"
+            )
+            
+        debug_log(f"Could not set up account for {field}", "Account Creation Error")
     
     def get_accounts_from_bpjs_settings(self):
         """
@@ -725,10 +885,18 @@ class BPJSAccountMapping(Document):
             
             for settings_field, mapping_fields in field_mappings.items():
                 if hasattr(bpjs_settings, settings_field) and bpjs_settings.get(settings_field):
-                    for mapping_field in mapping_fields:
-                        accounts[mapping_field] = bpjs_settings.get(settings_field)
+                    account = bpjs_settings.get(settings_field)
+                    if account and frappe.db.exists("Account", account):
+                        for mapping_field in mapping_fields:
+                            accounts[mapping_field] = account
+                    else:
+                        debug_log(f"BPJS Settings has invalid account {account} for {settings_field}", "Account Setup")
         except Exception as e:
-            frappe.log_error(f"Error getting accounts from BPJS Settings: {str(e)}", "BPJS Mapping Error")
+            frappe.log_error(
+                f"Error getting accounts from BPJS Settings: {str(e)}\n\n"
+                f"Traceback: {frappe.get_traceback()}", 
+                "BPJS Mapping Error"
+            )
         
         return accounts
     
@@ -743,8 +911,19 @@ class BPJSAccountMapping(Document):
         Returns:
             str: Account name if created or found, None otherwise
         """
-        # Use the standardized function
-        return create_parent_account_for_mapping(company, account_type)
+        # Use the standardized function with error handling
+        try:
+            account_name = create_parent_account_for_mapping(company, account_type)
+            if not account_name:
+                frappe.throw(_("Failed to create parent account for {0}").format(account_type))
+            return account_name
+        except Exception as e:
+            frappe.log_error(
+                f"Error creating parent account for {account_type}: {str(e)}\n\n"
+                f"Traceback: {frappe.get_traceback()}", 
+                "Account Creation Error"
+            )
+            return None
     
     def get_accounts_for_component(self, component_type):
         """
