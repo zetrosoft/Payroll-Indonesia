@@ -401,35 +401,136 @@ def create_parent_account_for_mapping(company, account_type):
             frappe.throw(_(error_message))
             return None
             
-        # Create parent account with explicit permission override
+        # Create parent account with explicit permission override and better error handling
         try:
             debug_log(f"Creating parent account {account_name} under {parent_account_name}", "Account Creation")
             
-            doc = frappe.get_doc({
-                "doctype": "Account",
-                "account_name": account_label,
-                "parent_account": parent_account_name,
-                "company": company,
-                "account_type": account_type_specific,
-                "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
-                "is_group": 1,
-                "root_type": root_type
-            })
+            # Check if parent account actually exists before trying to create child
+            if not frappe.db.exists("Account", parent_account_name):
+                error_message = f"Parent account {parent_account_name} doesn't exist despite being found in query"
+                frappe.log_error(error_message, "Account Structure Error")
+                debug_log(error_message, "Account Creation Error")
+                frappe.throw(_(error_message))
+                return None
+                
+            # Get currency from company, with fallback to INR or USD
+            currency = frappe.get_cached_value('Company', company, 'default_currency')
+            if not currency:
+                currency = "IDR"  # Default to IDR for Indonesian application
+                debug_log(f"Company has no default currency, using {currency} as fallback", "Account Creation")
             
-            # Force ignore permissions and insert
-            doc.flags.ignore_permissions = True
-            doc.flags.ignore_mandatory = True
-            doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
-            
-            # Commit immediately to ensure account is saved
-            frappe.db.commit()
-            
+            # Create new account with robust error handling
+            try:
+                doc = frappe.new_doc("Account")
+                doc.account_name = account_label
+                doc.parent_account = parent_account_name
+                doc.company = company
+                doc.account_type = account_type_specific
+                doc.account_currency = currency
+                doc.is_group = 1
+                doc.root_type = root_type
+                
+                # Double check the doc is valid
+                doc.validate_account_number()
+                
+                # Force ignore permissions and insert
+                doc.flags.ignore_permissions = True
+                doc.flags.ignore_mandatory = True
+                doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
+                
+                # Commit immediately to ensure account is saved
+                frappe.db.commit()
+                
+                debug_log(f"Successfully created parent account: {account_name}", "Account Creation")
+                
+            except frappe.DuplicateEntryError:
+                # If duplicate error, the account might have been created but not detected earlier
+                debug_log(f"Account {account_name} already exists (duplicate entry)", "Account Creation")
+                frappe.db.rollback()  # Roll back the failed insert
+                
+                # Try to fetch the existing account
+                if frappe.db.exists("Account", account_name):
+                    return account_name
+            except Exception as e:
+                # Handle specific errors for better diagnostics
+                error_details = str(e)
+                if "duplicate key" in error_details.lower():
+                    # Another duplicate error case
+                    debug_log(f"Possible duplicate account {account_name}: {error_details}", "Account Creation Error")
+                    if frappe.db.exists("Account", account_name):
+                        return account_name
+                elif "foreign key constraint" in error_details.lower():
+                    # Parent account issue
+                    debug_log(f"Foreign key constraint error. Parent account {parent_account_name} may be invalid: {error_details}", "Account Creation Error", trace=True)
+                    
+                    # Try to find another parent as fallback
+                    debug_log(f"Attempting with a different parent account as fallback", "Account Creation")
+                    other_parents = frappe.get_all(
+                        "Account",
+                        filters={"company": company, "is_group": 1, "name": ["!=", parent_account_name]},
+                        pluck="name",
+                        limit=1
+                    )
+                    
+                    if other_parents:
+                        # Try with this other parent instead
+                        fallback_parent = other_parents[0]
+                        debug_log(f"Using fallback parent {fallback_parent} for {account_name}", "Account Creation")
+                        
+                        doc = frappe.new_doc("Account")
+                        doc.account_name = account_label
+                        doc.parent_account = fallback_parent
+                        doc.company = company
+                        doc.account_type = account_type_specific
+                        doc.account_currency = currency
+                        doc.is_group = 1
+                        doc.root_type = root_type
+                        
+                        # Force ignore permissions and insert
+                        doc.flags.ignore_permissions = True
+                        doc.flags.ignore_mandatory = True
+                        doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
+                        
+                        # Commit immediately
+                        frappe.db.commit()
+                        
+                        if frappe.db.exists("Account", account_name):
+                            debug_log(f"Successfully created account {account_name} with fallback parent", "Account Creation")
+                            return account_name
+                else:
+                    # Other general errors
+                    frappe.log_error(
+                        f"Error creating account {account_name}: {error_details}\n\n"
+                        f"Traceback: {frappe.get_traceback()}", 
+                        "Account Creation Error"
+                    )
+                    debug_log(f"Error creating account {account_name}: {error_details}", "Account Creation Error", trace=True)
+                    
+                    # Try a final approach - direct SQL creation (dangerous but last resort)
+                    try:
+                        debug_log(f"Attempting direct account creation as last resort for {account_name}", "Account Creation")
+                        # Using frappe.db.set_value can sometimes work when doc.insert fails
+                        is_success = direct_account_creation(company, account_label, root_type, parent_account_name, account_type_specific)
+                        if is_success and frappe.db.exists("Account", account_name):
+                            debug_log(f"Successfully created account {account_name} via direct creation", "Account Creation")
+                            return account_name
+                    except:
+                        # If this fails too, we're out of options
+                        pass
+                
+                # If we get here, all attempts have failed
+                frappe.throw(_("Failed to create account {0} despite multiple attempts").format(account_name))
+                
             # Double check account was created
             if frappe.db.exists("Account", account_name):
-                debug_log(f"Successfully created parent account: {account_name}", "Account Creation")
                 return account_name
             else:
-                frappe.throw(_("Failed to create parent account {0} despite no errors").format(account_name))
+                # This is strange - insert succeeded but account doesn't exist
+                frappe.log_error(
+                    f"Account {account_name} insert succeeded but account can't be found afterwards. This is unusual.",
+                    "Account Creation Error"
+                )
+                frappe.throw(_("Account creation completed but account {0} cannot be found").format(account_name))
                 
         except Exception as e:
             frappe.db.rollback()
@@ -438,6 +539,7 @@ def create_parent_account_for_mapping(company, account_type):
                 f"Traceback: {frappe.get_traceback()}", 
                 "Account Creation Error"
             )
+            debug_log(f"Failed to create parent account {account_name}: {str(e)}", "Account Creation Error", trace=True)
             frappe.throw(_("Error creating parent account {0}: {1}").format(account_name, str(e)[:100]))
             return None
             
@@ -447,8 +549,80 @@ def create_parent_account_for_mapping(company, account_type):
             f"Traceback: {frappe.get_traceback()}", 
             "BPJS Account Creation Error"
         )
+        debug_log(f"Critical error in create_parent_account_for_mapping: {str(e)}", "Account Creation Error", trace=True)
         return None
 
+# Helper function for last-resort direct account creation
+def direct_account_creation(company, account_name, root_type, parent_account, account_type):
+    """
+    Last resort method to create an account directly
+    
+    Args:
+        company (str): Company name
+        account_name (str): Account name
+        root_type (str): Root type (Asset, Liability, Income, Expense, Equity)
+        parent_account (str): Parent account name
+        account_type (str): Account type
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        abbr = frappe.get_cached_value('Company', company, 'abbr')
+        if not abbr:
+            return False
+            
+        full_account_name = f"{account_name} - {abbr}"
+        if frappe.db.exists("Account", full_account_name):
+            return True
+            
+        # Get parent details
+        parent_data = frappe.db.get_value(
+            "Account",
+            parent_account,
+            ["lft", "rgt"],
+            as_dict=1
+        )
+        
+        if not parent_data:
+            return False
+            
+        # Get company's default currency
+        currency = frappe.get_cached_value('Company', company, 'default_currency') or "IDR"
+        
+        # Create a unique new account name with timestamp to avoid conflicts
+        import time
+        timestamp = int(time.time())
+        
+        # Create new account with direct SQL (last resort)
+        from frappe.model.naming import make_autoname
+        new_name = make_autoname(f"{account_name} - {abbr}")
+        
+        # Try to use frappe's set_value which has better error handling than direct SQL
+        frappe.db.set_value({
+            "doctype": "Account",
+            "name": new_name,
+            "account_name": account_name,
+            "company": company,
+            "parent_account": parent_account,
+            "root_type": root_type,
+            "report_type": "Balance Sheet",
+            "account_type": account_type,
+            "account_currency": currency,
+            "is_group": 1
+        })
+        
+        frappe.db.commit()
+        
+        # Check if successful
+        return frappe.db.exists("Account", full_account_name)
+    except Exception as e:
+        frappe.log_error(
+            f"Error in direct_account_creation: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Direct Account Creation Error"
+        )
+        return False
 
 def find_valid_parent(company, candidates):
     """
