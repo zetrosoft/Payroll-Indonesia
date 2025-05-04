@@ -920,22 +920,10 @@ def get_ter_rates():
     }
 
 def setup_income_tax_slab():
-    """
-    Create Income Tax Slab for Indonesia
-    
-    Returns:
-        bool: True if successful, False otherwise
-    """
+    """Create Income Tax Slab for Indonesia"""
     try:
         # Skip if already exists
-        existing_slabs = frappe.get_all(
-            "Income Tax Slab",
-            filters={"currency": "IDR", "is_default": 1, "disabled": 0},
-            fields=["name"]
-        )
-        
-        if existing_slabs:
-            debug_log(f"Default Income Tax Slab already exists: {existing_slabs[0].name}", "Tax Slab Setup")
+        if frappe.db.exists("Income Tax Slab", {"currency": "IDR", "is_default": 1}):
             return True
         
         # Get company
@@ -945,12 +933,12 @@ def setup_income_tax_slab():
             if companies:
                 company = companies[0]
             else:
-                debug_log("No company found for Income Tax Slab", "Tax Slab Setup Error")
                 return False
         
         # Create tax slab
         tax_slab = frappe.new_doc("Income Tax Slab")
-        tax_slab.title = "Indonesia Income Tax" 
+        tax_slab.name = "Indonesia Income Tax"  # Add this line
+        tax_slab.title = "Indonesia Income Tax"
         tax_slab.effective_from = getdate("2023-01-01")
         tax_slab.company = company
         tax_slab.currency = "IDR"
@@ -964,22 +952,17 @@ def setup_income_tax_slab():
         tax_slab.append("slabs", {"from_amount": 500000000, "to_amount": 5000000000, "percent_deduction": 30})
         tax_slab.append("slabs", {"from_amount": 5000000000, "to_amount": 0, "percent_deduction": 35})
             
-        # Save with permissions
+        # Save with flags
         tax_slab.flags.ignore_permissions = True
-        tax_slab.insert(ignore_permissions=True)
-        
-        # Commit immediately
+        tax_slab.flags.ignore_mandatory = True
+        tax_slab.insert()
         frappe.db.commit()
         
-        debug_log(f"Created Income Tax Slab: {tax_slab.name}", "Tax Slab Setup")
+        frappe.logger().info("Created Income Tax Slab for Indonesia")
         return True
         
     except Exception as e:
-        frappe.log_error(
-            f"Error creating Income Tax Slab: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Tax Slab Setup Error"
-        )
+        frappe.log_error(f"Error creating Income Tax Slab: {str(e)}", "Tax Slab Setup Error")
         return False
 
 def setup_bpjs():
