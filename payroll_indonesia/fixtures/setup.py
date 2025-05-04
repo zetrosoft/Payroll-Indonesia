@@ -1,13 +1,34 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 00:35:28 by dannyaudian
+# Last modified: 2025-05-04 01:53:39 by dannyaudian
 
 import frappe
 from frappe import _
 from frappe.utils import getdate, flt, now_datetime
 import json
 import os
+
+__all__ = [
+    'before_install',
+    'after_install',
+    'check_system_readiness',
+    'create_accounts',
+    'create_account',
+    'find_parent_account',
+    'create_supplier_group',
+    'setup_pph21_defaults',
+    'setup_pph21_ter',
+    'get_ter_rates',
+    'setup_income_tax_slab',
+    'setup_bpjs',
+    'create_bpjs_settings',
+    'get_default_bpjs_values',
+    'create_account_hooks',
+    'debug_log',
+    'display_installation_summary',
+    'DEFAULT_BPJS_VALUES'
+]
 
 # Constants for default values
 DEFAULT_CONFIG_PATH = "payroll_indonesia/payroll_indonesia/config/defaults.json"
@@ -25,7 +46,11 @@ DEFAULT_BPJS_VALUES = {
 }
 
 def before_install():
-    """Setup requirements before installing the app"""
+    """
+    Setup requirements before installing the app
+    
+    Performs system readiness checks to ensure proper installation.
+    """
     try:
         # Check if system is ready for installation
         check_system_readiness()
@@ -33,8 +58,12 @@ def before_install():
         frappe.log_error(str(e)[:100], "Payroll Indonesia Installation Error")
 
 def after_install():
-    """Setup requirements after installing the app with improved error handling"""
-    frappe.logger().info("Starting Payroll Indonesia after_install process")
+    """
+    Setup requirements after installing the app with improved error handling
+    
+    Creates accounts, sets up tax configuration, configures BPJS and more.
+    """
+    debug_log("Starting Payroll Indonesia after_install process", "Installation")
     
     # Track setup results
     results = {
@@ -49,14 +78,14 @@ def after_install():
     try:
         # Create accounts first (required for salary components)
         results["accounts"] = create_accounts()
-        frappe.logger().info("Account setup completed")
+        debug_log("Account setup completed", "Installation")
     except Exception as e:
         frappe.log_error(str(e)[:100], "Account Setup Error")
         
     try:
         # Setup suppliers
         results["suppliers"] = create_supplier_group()
-        frappe.logger().info("Supplier group setup completed")
+        debug_log("Supplier group setup completed", "Installation")
     except Exception as e:
         frappe.log_error(str(e)[:100], "Supplier Setup Error")
         
@@ -64,28 +93,28 @@ def after_install():
         # Setup tax configuration
         pph21_settings = setup_pph21_defaults()
         results["pph21_settings"] = bool(pph21_settings)
-        frappe.logger().info("PPh 21 setup completed")
+        debug_log("PPh 21 setup completed", "Installation")
     except Exception as e:
         frappe.log_error(str(e)[:100], "PPh 21 Setup Error")
         
     try:
         # Setup TER rates
         results["ter_rates"] = setup_pph21_ter()
-        frappe.logger().info("TER rates setup completed")
+        debug_log("TER rates setup completed", "Installation")
     except Exception as e:
         frappe.log_error(str(e)[:100], "TER Setup Error")
         
     try:
         # Setup tax slab
         results["tax_slab"] = setup_income_tax_slab()
-        frappe.logger().info("Tax slab setup completed")
+        debug_log("Tax slab setup completed", "Installation")
     except Exception as e:
         frappe.log_error(str(e)[:100], "Tax Slab Setup Error")
     
     try:
         # Setup BPJS
         results["bpjs_setup"] = setup_bpjs()
-        frappe.logger().info("BPJS setup completed")
+        debug_log("BPJS setup completed", "Installation")
     except Exception as e:
         frappe.log_error(str(e)[:100], "BPJS Setup Error")
         
@@ -96,7 +125,13 @@ def after_install():
     display_installation_summary(results)
 
 def display_installation_summary(results):
-    """Display summary of installation results"""
+    """
+    Display summary of installation results
+    
+    Args:
+        results (dict): Dictionary of setup results with component names as keys
+                        and success status (True/False) as values
+    """
     success_items = []
     failed_items = []
     
@@ -138,16 +173,16 @@ def check_system_readiness():
             missing_doctypes.append(doctype)
             
     if missing_doctypes:
+        debug_log(f"Required DocTypes missing: {', '.join(missing_doctypes)}", "System Readiness Check")
         frappe.log_error(
             f"Required DocTypes missing: {', '.join(missing_doctypes)}",
             "System Readiness Check"
         )
-        frappe.logger().warning(f"Missing DocTypes: {', '.join(missing_doctypes)}")
         
     # Check if company exists
     if not frappe.get_all("Company"):
+        debug_log("No company found. Some setup steps may fail.", "System Readiness Check")
         frappe.log_error("No company found", "System Readiness Check")
-        frappe.logger().warning("No company found. Some setup steps may fail.")
         
     # Return True so installation can continue with warnings
     return True
@@ -188,13 +223,13 @@ def create_accounts():
         if companies:
             company = companies[0]
         else:
-            frappe.logger().warning("No company found. Cannot create accounts.")
+            debug_log("No company found. Cannot create accounts.", "Account Setup")
             return False
         
     # Get company abbreviation
     company_abbr = frappe.db.get_value("Company", company, "abbr")
     if not company_abbr:
-        frappe.logger().warning(f"Company {company} has no abbreviation")
+        debug_log(f"Company {company} has no abbreviation", "Account Setup")
         return False
     
     # Track accounts
@@ -229,7 +264,7 @@ def create_accounts():
     
     # Log summary
     if created_accounts:
-        frappe.logger().info(f"Created {len(created_accounts)} accounts")
+        debug_log(f"Created {len(created_accounts)} accounts", "Account Setup")
         
     if failed_accounts:
         frappe.log_error(f"Failed to create {len(failed_accounts)} accounts", "Account Creation Summary")
@@ -241,10 +276,10 @@ def create_account(company, account_name, account_type, parent):
     Create GL Account if not exists
     
     Args:
-        company: Company name
-        account_name: Account name without company abbreviation
-        account_type: Account type (Payable, Receivable, etc.)
-        parent: Parent account name
+        company (str): Company name
+        account_name (str): Account name without company abbreviation
+        account_type (str): Account type (Payable, Receivable, etc.)
+        parent (str): Parent account name
         
     Returns:
         str: Full account name if created or already exists, None otherwise
@@ -259,8 +294,7 @@ def create_account(company, account_name, account_type, parent):
             return full_account_name
             
         # Create new account
-        timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
-        frappe.logger().info(f"[{timestamp}] Creating account: {full_account_name}")
+        debug_log(f"Creating account: {full_account_name}", "Account Creation")
         
         doc = frappe.get_doc({
             "doctype": "Account",
@@ -284,10 +318,10 @@ def find_parent_account(company, parent_name, company_abbr, account_type):
     Find parent account with multiple fallback options
     
     Args:
-        company: Company name
-        parent_name: Parent account name
-        company_abbr: Company abbreviation
-        account_type: Account type to find appropriate parent
+        company (str): Company name
+        parent_name (str): Parent account name
+        company_abbr (str): Company abbreviation
+        account_type (str): Account type to find appropriate parent
         
     Returns:
         str: Parent account name if found, None otherwise
@@ -334,7 +368,7 @@ def create_supplier_group():
         group.is_group = 0
         group.insert(ignore_permissions=True)
         
-        frappe.logger().info("Created Government supplier group")
+        debug_log("Created Government supplier group", "Supplier Setup")
         return True
         
     except Exception as e:
@@ -422,7 +456,7 @@ def setup_pph21_defaults():
         else:
             settings.save()
             
-        frappe.logger().info("PPh 21 Settings configured successfully")
+        debug_log("PPh 21 Settings configured successfully", "PPh 21 Setup")
         return settings
         
     except Exception as e:
@@ -482,7 +516,7 @@ def setup_pph21_ter():
                     frappe.log_error(f"Error creating TER rate: {str(e)[:100]}", "TER Rate Error")
         
         frappe.db.commit()
-        frappe.logger().info(f"Created {count} TER rates")
+        debug_log(f"Created {count} TER rates", "TER Setup")
         return count > 0
             
     except Exception as e:
@@ -576,7 +610,7 @@ def setup_income_tax_slab():
         tax_slab.insert(ignore_permissions=True)
         frappe.db.commit()
         
-        frappe.logger().info("Created Income Tax Slab for Indonesia")
+        debug_log("Created Income Tax Slab for Indonesia", "Tax Slab Setup")
         return True
         
     except Exception as e:
@@ -633,7 +667,7 @@ def create_bpjs_settings():
             settings.flags.ignore_permissions = True
             settings.insert()
         
-        frappe.logger().info("BPJS Settings configured")
+        debug_log("BPJS Settings configured", "BPJS Setup")
         return settings
         
     except Exception as e:
@@ -730,9 +764,9 @@ def debug_log(message, title=None, max_length=500):
     Debug logging helper with consistent format
     
     Args:
-        message: Message to log
-        title: Optional title/context for the log
-        max_length: Maximum message length (default: 500)
+        message (str): Message to log
+        title (str, optional): Optional title/context for the log
+        max_length (int, optional): Maximum message length (default: 500)
     """
     timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
     

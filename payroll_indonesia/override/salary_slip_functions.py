@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 00:40:01 by dannyaudian
+# Last modified: 2025-05-04 02:01:26 by dannyaudian
 
 import frappe
 from frappe import _
@@ -14,12 +14,36 @@ from payroll_indonesia.override.salary_slip.bpjs_calculator import debug_log
 from payroll_indonesia.override.salary_slip.controller import IndonesiaPayrollSalarySlip
 from payroll_indonesia.override.salary_slip import setup_fiscal_year_if_missing
 
+__all__ = [
+    'validate_salary_slip',
+    'validate_dependent_doctypes',
+    'validate_required_components',
+    'on_submit_salary_slip',
+    'on_cancel_salary_slip',
+    'after_insert_salary_slip',
+    'wrapper_create_from_salary_slip',
+    'wrapper_create_from_employee_tax_summary',
+    'wrapper_update_on_salary_slip_cancel',
+    'wrapper_update_on_salary_slip_cancel_employee_tax_summary',
+    'log_error',
+    'log_and_raise_error',
+    'truncate_message',
+    'check_ter_method_enabled',
+    'add_to_payroll_notifications'
+]
+
 # Constants
 MAX_ERROR_MESSAGE_LENGTH = 140
 
 # Validation functions for salary slip
 def validate_salary_slip(doc, method=None):
-    """Additional validation for salary slip with improved error handling"""
+    """
+    Additional validation for salary slip with improved error handling
+    
+    Args:
+        doc (obj): Salary Slip document
+        method (str, optional): Method that called this function
+    """
     try:
         # Validate employee is specified
         if not doc.employee:
@@ -54,7 +78,12 @@ def validate_salary_slip(doc, method=None):
         frappe.throw(_("Error validating salary slip: {0}").format(str(e)))
 
 def validate_dependent_doctypes():
-    """Check if all dependent DocTypes and settings exist"""
+    """
+    Check if all dependent DocTypes and settings exist
+    
+    Raises:
+        ValidationError: If any required DocType is missing
+    """
     try:
         # Check BPJS Settings
         if not frappe.db.exists("DocType", "BPJS Settings"):
@@ -92,7 +121,15 @@ def validate_dependent_doctypes():
         frappe.throw(_("Error validating dependent DocTypes: {0}").format(str(e)))
 
 def validate_required_components(doc):
-    """Check if all required components exist in the salary slip"""
+    """
+    Check if all required components exist in the salary slip
+    
+    Args:
+        doc (obj): Salary Slip document
+        
+    Raises:
+        ValidationError: If required components are missing and can't be added
+    """
     try:
         required_components = {
             "earnings": ["Gaji Pokok"],
@@ -152,11 +189,17 @@ def validate_required_components(doc):
         frappe.throw(_("Error validating required salary components: {0}").format(str(e)))
 
 def on_submit_salary_slip(doc, method=None):
-    """Actions after salary slip is submitted"""
+    """
+    Actions after salary slip is submitted
+    
+    Args:
+        doc (obj): Salary Slip document
+        method (str, optional): Method that called this function
+    """
     try:
         # Updates will be handled in salary_slip.py IndonesiaPayrollSalarySlip.on_submit
         # Just log the event
-        debug_log(f"on_submit_salary_slip hook triggered for {doc.name}", employee=getattr(doc, 'employee', 'unknown'))
+        debug_log(f"on_submit_salary_slip hook triggered for {doc.name}", "Salary Slip Submit")
         
         # Add note to the doc's payroll_note field if it exists
         if hasattr(doc, 'payroll_note'):
@@ -172,10 +215,16 @@ def on_submit_salary_slip(doc, method=None):
         frappe.throw(_("Error processing salary slip submission: {0}").format(str(e)))
 
 def on_cancel_salary_slip(doc, method=None):
-    """Actions to take when a salary slip is cancelled"""
+    """
+    Actions to take when a salary slip is cancelled
+    
+    Args:
+        doc (obj): Salary Slip document
+        method (str, optional): Method that called this function
+    """
     try:
         # Log event that salary slip was cancelled
-        debug_log(f"Salary Slip {doc.name} cancelled for employee {getattr(doc, 'employee', 'unknown')}")
+        debug_log(f"Salary Slip {doc.name} cancelled for employee {getattr(doc, 'employee', 'unknown')}", "Salary Slip Cancel")
         
         # Use queue_document_updates_on_cancel from IndonesiaPayrollSalarySlip if possible
         if isinstance(doc, IndonesiaPayrollSalarySlip):
@@ -204,8 +253,8 @@ def after_insert_salary_slip(doc, method=None):
     Hook that runs after Salary Slip is created with better validation
     
     Args:
-        doc: Object of the newly created Salary Slip
-        method: Method that called the hook (not used)
+        doc (obj): Object of the newly created Salary Slip
+        method (str, optional): Method that called the hook (not used)
     """
     try:
         # Validate required fields
@@ -232,13 +281,10 @@ def after_insert_salary_slip(doc, method=None):
                     setattr(doc, field, getattr(temp, field))
         
         # Log salary slip creation with more information
-        try:
-            debug_log(
-                f"Salary Slip {doc.name} created for employee {doc.employee} ({getattr(doc, 'employee_name', 'unnamed')})"
-            )
-        except Exception:
-            # If logger fails, continue anyway
-            pass
+        debug_log(
+            f"Salary Slip {doc.name} created for employee {doc.employee} ({getattr(doc, 'employee_name', 'unnamed')})",
+            "Salary Slip Created"
+        )
         
         # Add to payroll notifications if feature is available
         add_to_payroll_notifications(doc)
@@ -251,9 +297,15 @@ def after_insert_salary_slip(doc, method=None):
         # Don't throw here to prevent blocking salary slip creation
         frappe.msgprint(_("Warning: Error in post-creation processing: {0}").format(str(e)))
 
-# Wrapper functions for compatibility with hooks - updated to align with modified files
+# Wrapper functions for compatibility with hooks - confirmed alignment with actual implementations
 def wrapper_create_from_salary_slip(doc, method=None):
-    """Wrapper to call create_from_salary_slip from bpjs_payment_api"""
+    """
+    Wrapper to call create_from_salary_slip from bpjs_payment_api
+    
+    Args:
+        doc (obj): Salary Slip document
+        method (str, optional): Method that called this function (not used)
+    """
     try:
         from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import create_from_salary_slip
         # Call the original function with only doc.name parameter
@@ -272,7 +324,13 @@ def wrapper_create_from_salary_slip(doc, method=None):
         frappe.msgprint(_("Warning: Error creating BPJS Payment Summary: {0}").format(str(e)))
 
 def wrapper_create_from_employee_tax_summary(doc, method=None):
-    """Wrapper to call create_from_salary_slip from employee_tax_summary"""
+    """
+    Wrapper to call create_from_salary_slip from employee_tax_summary
+    
+    Args:
+        doc (obj): Salary Slip document
+        method (str, optional): Method that called this function (not used)
+    """
     try:
         from payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary import create_from_salary_slip
         # Call the original function with only doc.name parameter
@@ -291,7 +349,13 @@ def wrapper_create_from_employee_tax_summary(doc, method=None):
         frappe.msgprint(_("Warning: Error creating Employee Tax Summary: {0}").format(str(e)))
 
 def wrapper_update_on_salary_slip_cancel(doc, method=None):
-    """Wrapper to call update_on_salary_slip_cancel from bpjs_payment_api"""
+    """
+    Wrapper to call update_on_salary_slip_cancel from bpjs_payment_api
+    
+    Args:
+        doc (obj): Salary Slip document
+        method (str, optional): Method that called this function (not used)
+    """
     try:
         from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import update_on_salary_slip_cancel
         
@@ -317,7 +381,13 @@ def wrapper_update_on_salary_slip_cancel(doc, method=None):
         )
 
 def wrapper_update_on_salary_slip_cancel_employee_tax_summary(doc, method=None):
-    """Wrapper to call update_on_salary_slip_cancel from employee_tax_summary"""
+    """
+    Wrapper to call update_on_salary_slip_cancel from employee_tax_summary
+    
+    Args:
+        doc (obj): Salary Slip document
+        method (str, optional): Method that called this function (not used)
+    """
     try:
         from payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary import update_on_salary_slip_cancel
         
@@ -345,9 +415,10 @@ def wrapper_update_on_salary_slip_cancel_employee_tax_summary(doc, method=None):
 def log_error(message, title):
     """
     Log error to system log
+    
     Args:
-        message: Error message
-        title: Error title
+        message (str): Error message
+        title (str): Error title
     """
     full_traceback = f"{message}\n\nTraceback: {frappe.get_traceback()}"
     frappe.log_error(full_traceback, title)
@@ -355,10 +426,12 @@ def log_error(message, title):
 def log_and_raise_error(message, log_title, user_message):
     """
     Log error and raise user-friendly message
+    
     Args:
-        message: Full error message for log
-        log_title: Error log title
-        user_message: User-friendly message to display
+        message (str): Full error message for log
+        log_title (str): Error log title
+        user_message (str): User-friendly message to display
+        
     Raises:
         ValidationError: With user-friendly message
     """
@@ -368,9 +441,11 @@ def log_and_raise_error(message, log_title, user_message):
 def truncate_message(message, max_length=140):
     """
     Truncate message to prevent CharacterLengthExceededError
+    
     Args:
-        message: Message to truncate
-        max_length: Maximum length
+        message (str): Message to truncate
+        max_length (int, optional): Maximum length. Defaults to 140.
+        
     Returns:
         str: Truncated message
     """
@@ -411,7 +486,12 @@ def check_ter_method_enabled():
         return False
 
 def add_to_payroll_notifications(doc):
-    """Add entry to payroll notifications if available with error handling"""
+    """
+    Add entry to payroll notifications if available with error handling
+    
+    Args:
+        doc (obj): Salary Slip document
+    """
     try:
         # Check if doctype Payroll Notification exists
         if not frappe.db.exists('DocType', 'Payroll Notification'):

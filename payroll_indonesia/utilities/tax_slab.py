@@ -1,19 +1,37 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
+# Last modified: 2025-05-04 01:59:00 by dannyaudian
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, cstr, add_days, today
+from frappe.utils import getdate, cstr, add_days, today, now_datetime
+from payroll_indonesia.fixtures.setup import debug_log
+
+__all__ = [
+    'create_default_tax_slab',
+    'create_income_tax_slab',
+    'get_default_tax_slab',
+    'update_salary_structures',
+    'update_existing_assignments'
+]
 
 def create_default_tax_slab():
     """
     Function for compatibility - calls create_income_tax_slab()
+    
+    Returns:
+        str: Name of the Income Tax Slab or None if creation failed
     """
     return create_income_tax_slab()
 
 def create_income_tax_slab():
-    """Buat Income Tax Slab untuk Indonesia"""
+    """
+    Create Income Tax Slab for Indonesia
+    
+    Returns:
+        str: Name of the created or existing Income Tax Slab, None if failed
+    """
     try:
         # Check if already exists
         existing_slabs = frappe.get_all(
@@ -22,7 +40,7 @@ def create_income_tax_slab():
             fields=["name"]
         )
         if existing_slabs:
-            frappe.logger().info(f"Income Tax Slab untuk IDR sudah ada: {existing_slabs[0].name}")
+            debug_log(f"Income Tax Slab for IDR already exists: {existing_slabs[0].name}", "Tax Slab")
             return existing_slabs[0].name
             
         # Get company
@@ -32,7 +50,7 @@ def create_income_tax_slab():
             if companies:
                 company = companies[0].name
             else:
-                frappe.logger().error("No company found, cannot create Income Tax Slab")
+                debug_log("No company found, cannot create Income Tax Slab", "Tax Slab Error")
                 return None
                 
         # Create slab with unique title
@@ -99,17 +117,22 @@ def create_income_tax_slab():
         tax_slab.insert(ignore_permissions=True)
         frappe.db.commit()
         
-        frappe.logger().info(f"Successfully created Income Tax Slab: {tax_slab.name}")
+        debug_log(f"Successfully created Income Tax Slab: {tax_slab.name}", "Tax Slab")
         return tax_slab.name
         
     except Exception as e:
         frappe.db.rollback()
-        frappe.logger().error(f"Error membuat Income Tax Slab: {str(e)}")
-        frappe.log_error(f"Error membuat Income Tax Slab: {str(e)}", "Tax Slab Error")
+        debug_log(f"Error creating Income Tax Slab: {str(e)}", "Tax Slab Error")
+        frappe.log_error(f"Error creating Income Tax Slab: {str(e)}", "Tax Slab Error")
         return None
 
 def get_default_tax_slab():
-    """Mendapatkan nama Income Tax Slab default"""
+    """
+    Get default Income Tax Slab for Indonesia
+    
+    Returns:
+        str: Name of the default Income Tax Slab, None if not found or creation failed
+    """
     try:
         # Check if we have a default slab
         default_slab = None
@@ -150,7 +173,12 @@ def get_default_tax_slab():
         return None
 
 def update_salary_structures():
-    """Update semua Salary Structure untuk bypass validasi Income Tax Slab"""
+    """
+    Update all Salary Structures to bypass Income Tax Slab validation
+    
+    Returns:
+        int: Number of successfully updated Salary Structures
+    """
     success_count = 0
     error_count = 0
     
@@ -158,7 +186,7 @@ def update_salary_structures():
         # Get default tax slab
         default_tax_slab = get_default_tax_slab()
         if not default_tax_slab:
-            frappe.logger().error("Failed to get default tax slab")
+            debug_log("Failed to get default tax slab", "Tax Slab Error")
             return 0
             
         # Get active salary structures
@@ -178,12 +206,12 @@ def update_salary_structures():
                 success_count += 1
             except Exception as e:
                 error_count += 1
-                frappe.logger().error(f"Error updating structure {structure.name}: {str(e)}")
+                debug_log(f"Error updating structure {structure.name}: {str(e)}", "Tax Slab Error")
                 
         frappe.db.commit()
         
         # Log result
-        frappe.logger().info(f"Updated {success_count} salary structures, {error_count} errors")
+        debug_log(f"Updated {success_count} salary structures, {error_count} errors", "Tax Slab")
         return success_count
         
     except Exception as e:
@@ -191,7 +219,12 @@ def update_salary_structures():
         return 0
 
 def update_existing_assignments():
-    """Update existing Salary Structure Assignments with default Income Tax Slab"""
+    """
+    Update existing Salary Structure Assignments with default Income Tax Slab
+    
+    Returns:
+        int: Number of successfully updated Salary Structure Assignments
+    """
     success_count = 0
     error_count = 0
     
@@ -199,7 +232,7 @@ def update_existing_assignments():
         # Get default tax slab
         default_tax_slab = get_default_tax_slab()
         if not default_tax_slab:
-            frappe.logger().error("Failed to get default tax slab")
+            debug_log("Failed to get default tax slab", "Tax Slab Error")
             return 0
             
         # Get assignments needing update
@@ -225,12 +258,12 @@ def update_existing_assignments():
                 success_count += 1
             except Exception as e:
                 error_count += 1
-                frappe.logger().error(f"Error updating assignment {assignment.name}: {str(e)}")
+                debug_log(f"Error updating assignment {assignment.name}: {str(e)}", "Tax Slab Error")
                 
         frappe.db.commit()
         
         # Log result
-        frappe.logger().info(f"Updated {success_count} salary structure assignments, {error_count} errors")
+        debug_log(f"Updated {success_count} salary structure assignments, {error_count} errors", "Tax Slab")
         return success_count
         
     except Exception as e:
