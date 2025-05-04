@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 03:15:12 by dannyaudian
+# Last modified: 2025-05-04 00:35:28 by dannyaudian
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, flt
+from frappe.utils import getdate, flt, now_datetime
 import json
 import os
 
@@ -120,7 +120,12 @@ def display_installation_summary(results):
         frappe.msgprint(failed_msg, indicator="red", title=_("Setup Issues"))
 
 def check_system_readiness():
-    """Check if system is ready for Payroll Indonesia installation"""
+    """
+    Check if system is ready for Payroll Indonesia installation
+    
+    Returns:
+        bool: True if ready, False otherwise
+    """
     # Check if required DocTypes exist
     required_core_doctypes = [
         "Salary Component", "Salary Structure", "Salary Slip", 
@@ -143,9 +148,17 @@ def check_system_readiness():
     if not frappe.get_all("Company"):
         frappe.log_error("No company found", "System Readiness Check")
         frappe.logger().warning("No company found. Some setup steps may fail.")
+        
+    # Return True so installation can continue with warnings
+    return True
 
 def create_accounts():
-    """Create required Accounts for Indonesian payroll management"""
+    """
+    Create required Accounts for Indonesian payroll management
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     # Define accounts to create
     accounts = [
         # Expense Accounts
@@ -197,23 +210,18 @@ def create_accounts():
                 failed_accounts.append(account["account_name"])
                 continue
                 
-            # Create account name with company abbreviation
-            account_name = f"{account['account_name']} - {company_abbr}"
+            # Create account using standardized function
+            account_name = create_account(
+                company=company,
+                account_name=account["account_name"],
+                account_type=account["account_type"],
+                parent=parent_account
+            )
             
-            # Skip if account already exists
-            if frappe.db.exists("Account", account_name):
-                continue
-                
-            # Create the account
-            doc = frappe.new_doc("Account")
-            doc.account_name = account["account_name"]
-            doc.parent_account = parent_account
-            doc.account_type = account["account_type"]
-            doc.company = company
-            doc.is_group = 0
-            doc.insert(ignore_permissions=True)
-            
-            created_accounts.append(account["account_name"])
+            if account_name:
+                created_accounts.append(account["account_name"])
+            else:
+                failed_accounts.append(account["account_name"])
             
         except Exception as e:
             frappe.log_error(f"Error creating account {account['account_name']}: {str(e)[:100]}", "Account Creation Error")
@@ -228,8 +236,62 @@ def create_accounts():
         
     return len(failed_accounts) < len(accounts) // 2  # Success if less than half failed
 
+def create_account(company, account_name, account_type, parent):
+    """
+    Create GL Account if not exists
+    
+    Args:
+        company: Company name
+        account_name: Account name without company abbreviation
+        account_type: Account type (Payable, Receivable, etc.)
+        parent: Parent account name
+        
+    Returns:
+        str: Full account name if created or already exists, None otherwise
+    """
+    try:
+        abbr = frappe.get_cached_value('Company', company, 'abbr')
+        pure_account_name = account_name.replace(f" - {abbr}", "")
+        full_account_name = f"{pure_account_name} - {abbr}"
+        
+        # Skip if already exists
+        if frappe.db.exists("Account", full_account_name):
+            return full_account_name
+            
+        # Create new account
+        timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
+        frappe.logger().info(f"[{timestamp}] Creating account: {full_account_name}")
+        
+        doc = frappe.get_doc({
+            "doctype": "Account",
+            "account_name": pure_account_name,
+            "company": company,
+            "parent_account": parent,
+            "account_type": account_type,
+            "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
+            "is_group": 0
+        })
+        doc.insert(ignore_permissions=True)
+        
+        return full_account_name
+        
+    except Exception as e:
+        frappe.log_error(f"Error creating account {account_name}: {str(e)[:100]}", "Account Creation Error")
+        return None
+
 def find_parent_account(company, parent_name, company_abbr, account_type):
-    """Find parent account with multiple fallback options"""
+    """
+    Find parent account with multiple fallback options
+    
+    Args:
+        company: Company name
+        parent_name: Parent account name
+        company_abbr: Company abbreviation
+        account_type: Account type to find appropriate parent
+        
+    Returns:
+        str: Parent account name if found, None otherwise
+    """
     # Try exact name
     parent = frappe.db.get_value("Account", {"account_name": parent_name, "company": company}, "name")
     if parent:
@@ -254,7 +316,12 @@ def find_parent_account(company, parent_name, company_abbr, account_type):
     return None
 
 def create_supplier_group():
-    """Create Government supplier group for tax and BPJS entities"""
+    """
+    Create Government supplier group for tax and BPJS entities
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
         # Skip if already exists
         if frappe.db.exists("Supplier Group", "Government"):
@@ -275,7 +342,12 @@ def create_supplier_group():
         return False
 
 def setup_pph21_defaults():
-    """Setup default PPh 21 configuration with TER method"""
+    """
+    Setup default PPh 21 configuration with TER method
+    
+    Returns:
+        object: PPh 21 Settings document if successful, None otherwise
+    """
     try:
         # Check if already exists
         settings = None
@@ -358,7 +430,12 @@ def setup_pph21_defaults():
         return None
 
 def setup_pph21_ter():
-    """Setup default TER rates based on PMK-168/PMK.010/2023"""
+    """
+    Setup default TER rates based on PMK-168/PMK.010/2023
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
         # Skip if DocType doesn't exist
         if not frappe.db.exists("DocType", "PPh 21 TER Table"):
@@ -413,7 +490,12 @@ def setup_pph21_ter():
         return False
 
 def get_ter_rates():
-    """Get TER rates either from file or hardcoded defaults"""
+    """
+    Get TER rates either from file or hardcoded defaults
+    
+    Returns:
+        dict: TER rates by status
+    """
     try:
         # Check if file exists
         ter_path = frappe.get_app_path("payroll_indonesia", "payroll_indonesia", "config", "ter_rates.json")
@@ -454,7 +536,12 @@ def get_ter_rates():
     }
 
 def setup_income_tax_slab():
-    """Create Income Tax Slab for Indonesia"""
+    """
+    Create Income Tax Slab for Indonesia
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
         # Skip if already exists
         if frappe.db.exists("Income Tax Slab", {"currency": "IDR", "is_default": 1}):
@@ -497,48 +584,56 @@ def setup_income_tax_slab():
         return False
 
 def setup_bpjs():
-    """Setup BPJS configurations and accounts"""
+    """
+    Setup BPJS configurations and accounts
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
         # Create BPJS Settings
         settings = create_bpjs_settings()
         if not settings:
             return False
             
-        # Setup BPJS accounts for each company
-        companies = frappe.get_all("Company", pluck="name")
-        for company in companies:
-            create_bpjs_mapping(company, settings)
-            
+        # Let BPJS Settings handle account and mapping creation
+        settings.setup_accounts()
         frappe.db.commit()
+        
         return True
     except Exception as e:
         frappe.log_error(f"Error setting up BPJS: {str(e)[:100]}", "BPJS Setup Error")
         return False
 
 def create_bpjs_settings():
-    """Create and configure BPJS Settings"""
+    """
+    Create and configure BPJS Settings
+    
+    Returns:
+        object: BPJS Settings document if successful, None otherwise
+    """
     try:
         # Check if already exists
         if frappe.db.exists("BPJS Settings", "BPJS Settings"):
-            return frappe.get_doc("BPJS Settings", "BPJS Settings")
-            
-        # Load defaults from config or use hardcoded values
-        values = get_default_bpjs_values()
-            
-        # Create settings
-        settings = frappe.new_doc("BPJS Settings")
-        
-        # Set values
-        for key, value in values.items():
-            if hasattr(settings, key):
-                settings.set(key, flt(value))
+            settings = frappe.get_doc("BPJS Settings", "BPJS Settings")
+        else:
+            # Load defaults from config or use hardcoded values
+            values = get_default_bpjs_values()
                 
-        # Bypass validation during setup
-        settings.flags.ignore_validate = True
-        settings.flags.ignore_permissions = True
-        settings.insert()
+            # Create settings
+            settings = frappe.new_doc("BPJS Settings")
+            
+            # Set values
+            for key, value in values.items():
+                if hasattr(settings, key):
+                    settings.set(key, flt(value))
+                    
+            # Bypass validation during setup
+            settings.flags.ignore_validate = True
+            settings.flags.ignore_permissions = True
+            settings.insert()
         
-        frappe.logger().info("Created BPJS Settings")
+        frappe.logger().info("BPJS Settings configured")
         return settings
         
     except Exception as e:
@@ -546,7 +641,12 @@ def create_bpjs_settings():
         return None
 
 def get_default_bpjs_values():
-    """Get default BPJS values from config file or use defaults"""
+    """
+    Get default BPJS values from config file or use defaults
+    
+    Returns:
+        dict: Default BPJS values
+    """
     try:
         # Try to load from file
         config_path = frappe.get_app_path("payroll_indonesia", DEFAULT_CONFIG_PATH)
@@ -566,40 +666,19 @@ def get_default_bpjs_values():
     # Return hardcoded defaults
     return DEFAULT_BPJS_VALUES
 
-def create_bpjs_mapping(company, settings):
-    """Create BPJS Account Mapping for company"""
-    try:
-        # Skip if already exists
-        if frappe.db.exists("BPJS Account Mapping", {"company": company}):
-            return True
-            
-        # Import create_default_mapping
-        try:
-            from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
-        except ImportError:
-            frappe.log_error(f"Could not import create_default_mapping for {company}", "BPJS Setup Error")
-            return False
-            
-        # Create mapping
-        mapping_name = create_default_mapping(company)
-        if mapping_name:
-            frappe.logger().info(f"Created BPJS Account Mapping for {company}")
-            return True
-        else:
-            frappe.log_error(f"Failed to create BPJS mapping for {company}", "BPJS Setup Error")
-            return False
-            
-    except Exception as e:
-        frappe.log_error(f"Error creating BPJS mapping for {company}: {str(e)[:100]}", "BPJS Setup Error")
-        return False
-
 def create_account_hooks():
-    """Create hooks for account updates"""
+    """
+    Create hooks for account updates
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     account_hooks_path = frappe.get_app_path("payroll_indonesia", "payroll_indonesia", "account_hooks.py")
     
     try:
         with open(account_hooks_path, "w") as f:
             f.write("""import frappe
+from frappe.utils import now_datetime
 
 def account_on_update(doc, method=None):
     \"\"\"Hook when accounts are updated\"\"\"
@@ -615,6 +694,8 @@ def update_bpjs_mappings(account_doc):
         filters={"company": account_doc.company},
         pluck="name"
     )
+    
+    timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
     
     for mapping_name in mappings:
         mapping = frappe.get_doc("BPJS Account Mapping", mapping_name)
@@ -637,9 +718,30 @@ def update_bpjs_mappings(account_doc):
         if updated:
             # Clear cache for this mapping
             frappe.cache().delete_value(f"bpjs_mapping_{mapping.company}")
-            frappe.logger().info(f"Cleared cache for BPJS mapping {mapping_name} due to account update")
+            frappe.logger().info(f"[{timestamp}] Cleared cache for BPJS mapping {mapping_name} due to account update")
 """)
         return True
     except Exception as e:
         frappe.log_error(f"Error creating account_hooks.py: {str(e)[:100]}", "Setup Error")
         return False
+
+def debug_log(message, title=None, max_length=500):
+    """
+    Debug logging helper with consistent format
+    
+    Args:
+        message: Message to log
+        title: Optional title/context for the log
+        max_length: Maximum message length (default: 500)
+    """
+    timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Truncate if message is too long to avoid memory issues
+    message = str(message)[:max_length]
+    
+    if title:
+        log_message = f"[{timestamp}] [{title}] {message}"
+    else:
+        log_message = f"[{timestamp}] {message}"
+        
+    frappe.logger().debug(f"[SETUP] {log_message}")

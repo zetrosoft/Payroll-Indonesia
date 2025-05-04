@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-30 07:45:00 by dannyaudian
+# Last modified: 2025-05-04 00:21:05 by dannyaudian
 
 import frappe
 from frappe import _
@@ -70,7 +70,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     Key features for Indonesian payroll:
     - BPJS calculations (Kesehatan, JHT, JP, JKK, JKM)
     - PPh 21 tax calculations with gross or gross-up methods
-    - TER (Tax Equal Rate) method support
+    - TER (Tax Equal Rate) method support per PMK-168/PMK.010/2023
     - Integration with BPJS Payment Summary
     - Integration with Employee Tax Summary
     """
@@ -251,7 +251,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         Queue creation of related documents after salary slip submission:
         - Employee Tax Summary
         - BPJS Payment Summary (if BPJS components exist)
-        - PPh TER Table (if using TER method)
         
         Optimized version with job_name parameters to avoid duplicates.
         """
@@ -304,22 +303,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                         is_async=True, 
                         job_name=job_id,
                         now=is_test,
-                        salary_slip=self.name
-                    )
-        
-            # 3. Queue PPh TER Table creation if using TER
-            if is_using_ter:
-                job_id = f"pph_ter_{job_prefix}_{self.name}"
-                queued_docs.append(f"PPh TER Table (rate: {ter_rate}%)")
-                
-                if not self._job_exists(job_id):
-                    enqueue(
-                        method="payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.create_from_salary_slip",
-                        queue="long",
-                        timeout=600,
-                        is_async=True,
-                        job_name=job_id,
-                        now=is_test, 
                         salary_slip=self.name
                     )
             
@@ -457,19 +440,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 now=is_test,
                 **{"salary_slip": self.name, "month": month, "year": year}
             )
-            
-            # Schedule update for PPh TER Table if using TER
-            if getattr(self, 'is_using_ter', 0) == 1:
-                job_id = f"ter_cancel_{job_prefix}_{self.name}"
-                enqueue(
-                    method="payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table.update_on_salary_slip_cancel",
-                    queue="long",
-                    timeout=600,
-                    is_async=True,
-                    job_name=job_id,
-                    now=is_test,
-                    **{"salary_slip": self.name, "month": month, "year": year}
-                )
             
             # Schedule update for Employee Tax Summary
             job_id = f"tax_cancel_{job_prefix}_{self.name}"
@@ -1072,37 +1042,3 @@ def diagnose_system_resources():
 def override_salary_slip_gl_entries(doc, method=None):
     frappe.msgprint("Override GL entries function called")
     # Rest of the function
-
-def get_base_salary_for_bpjs(self):
-    """
-    Get standardized base salary for BPJS calculations.
-    
-    Following Indonesian regulations, this uses Gaji Pokok as the primary
-    component for BPJS calculation base.
-    
-    Returns:
-        float: Base salary amount for BPJS calculations
-    """
-    # In Indonesia, BPJS is typically calculated based on Gaji Pokok
-    base_component = "Gaji Pokok"
-    
-    # Try to get from earnings first (component-based approach)
-    base_salary = 0
-    if self.earnings:
-        for earning in self.earnings:
-            if earning.salary_component == base_component:
-                base_salary = flt(earning.amount)
-                break
-    
-    # If no Gaji Pokok found, try basic_pay field
-    if base_salary <= 0 and hasattr(self, 'basic_pay') and self.basic_pay:
-        base_salary = flt(self.basic_pay)
-    
-    # Final fallback to gross_pay if needed
-    if base_salary <= 0 and hasattr(self, 'gross_pay') and self.gross_pay:
-        base_salary = flt(self.gross_pay)
-        
-    # Log the source of base salary for debugging
-    frappe.logger().debug(f"BPJS base salary for {self.name}: {base_salary}")
-    
-    return base_salary

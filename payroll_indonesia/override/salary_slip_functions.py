@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-30 08:09:40 by dannyaudian
+# Last modified: 2025-05-04 00:40:01 by dannyaudian
 
 import frappe
 from frappe import _
@@ -14,10 +14,10 @@ from payroll_indonesia.override.salary_slip.bpjs_calculator import debug_log
 from payroll_indonesia.override.salary_slip.controller import IndonesiaPayrollSalarySlip
 from payroll_indonesia.override.salary_slip import setup_fiscal_year_if_missing
 
-# Konstanta
+# Constants
 MAX_ERROR_MESSAGE_LENGTH = 140
 
-# Fungsi validasi untuk salary slip
+# Validation functions for salary slip
 def validate_salary_slip(doc, method=None):
     """Additional validation for salary slip with improved error handling"""
     try:
@@ -26,7 +26,6 @@ def validate_salary_slip(doc, method=None):
             frappe.throw(_("Employee is mandatory for Salary Slip"))
         
         # Initialize custom fields - use the function from salary_slip.py
-        # Previously: initialize_custom_fields(doc)
         if isinstance(doc, IndonesiaPayrollSalarySlip):
             doc.initialize_payroll_fields()
         else:
@@ -76,8 +75,7 @@ def validate_dependent_doctypes():
         # Check required dependent DocTypes
         required_doctypes = [
             "Employee Tax Summary",
-            "BPJS Payment Summary",
-            "PPh TER Table"
+            "BPJS Payment Summary"
         ]
         
         for doctype in required_doctypes:
@@ -176,7 +174,7 @@ def on_submit_salary_slip(doc, method=None):
 def on_cancel_salary_slip(doc, method=None):
     """Actions to take when a salary slip is cancelled"""
     try:
-        # Log event bahwa salary slip dibatalkan
+        # Log event that salary slip was cancelled
         debug_log(f"Salary Slip {doc.name} cancelled for employee {getattr(doc, 'employee', 'unknown')}")
         
         # Use queue_document_updates_on_cancel from IndonesiaPayrollSalarySlip if possible
@@ -187,7 +185,7 @@ def on_cancel_salary_slip(doc, method=None):
             temp = IndonesiaPayrollSalarySlip(doc.as_dict())
             temp.queue_document_updates_on_cancel()
         
-        # Tambahkan notifikasi ke payroll_note jika field tersebut ada
+        # Add notification to payroll_note if the field exists
         if hasattr(doc, 'payroll_note'):
             timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
             doc.payroll_note += f"\n[{timestamp}] Salary slip cancelled."
@@ -203,11 +201,11 @@ def on_cancel_salary_slip(doc, method=None):
 
 def after_insert_salary_slip(doc, method=None):
     """
-    Hook yang dijalankan setelah Salary Slip dibuat dengan validasi yang lebih baik
+    Hook that runs after Salary Slip is created with better validation
     
     Args:
-        doc: Object dari Salary Slip yang baru dibuat
-        method: Metode yang memanggil hook (tidak digunakan)
+        doc: Object of the newly created Salary Slip
+        method: Method that called the hook (not used)
     """
     try:
         # Validate required fields
@@ -253,70 +251,97 @@ def after_insert_salary_slip(doc, method=None):
         # Don't throw here to prevent blocking salary slip creation
         frappe.msgprint(_("Warning: Error in post-creation processing: {0}").format(str(e)))
 
-# Wrapper functions for compatibility with hooks
+# Wrapper functions for compatibility with hooks - updated to align with modified files
 def wrapper_create_from_salary_slip(doc, method=None):
     """Wrapper to call create_from_salary_slip from bpjs_payment_api"""
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import create_from_salary_slip
-    # Call the original function with only doc.name parameter
-    create_from_salary_slip(doc.name)
-
-def wrapper_create_from_pph_ter_table(doc, method=None):
-    """Wrapper to call create_from_salary_slip from pph_ter_table"""
-    from payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table import create_from_salary_slip
-    # Call the original function with only doc.name parameter
-    create_from_salary_slip(doc.name)
+    try:
+        from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import create_from_salary_slip
+        # Call the original function with only doc.name parameter
+        create_from_salary_slip(doc.name)
+    except ImportError:
+        log_error(
+            f"Could not import create_from_salary_slip from bpjs_payment_api for {doc.name}",
+            "Import Error"
+        )
+        frappe.msgprint(_("Warning: Could not create BPJS Payment Summary."))
+    except Exception as e:
+        log_error(
+            f"Error in wrapper_create_from_salary_slip for {doc.name}: {str(e)}",
+            "Wrapper Function Error"
+        )
+        frappe.msgprint(_("Warning: Error creating BPJS Payment Summary: {0}").format(str(e)))
 
 def wrapper_create_from_employee_tax_summary(doc, method=None):
     """Wrapper to call create_from_salary_slip from employee_tax_summary"""
-    from payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary import create_from_salary_slip
-    # Call the original function with only doc.name parameter
-    create_from_salary_slip(doc.name)
+    try:
+        from payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary import create_from_salary_slip
+        # Call the original function with only doc.name parameter
+        create_from_salary_slip(doc.name)
+    except ImportError:
+        log_error(
+            f"Could not import create_from_salary_slip from employee_tax_summary for {doc.name}",
+            "Import Error"
+        )
+        frappe.msgprint(_("Warning: Could not create Employee Tax Summary."))
+    except Exception as e:
+        log_error(
+            f"Error in wrapper_create_from_employee_tax_summary for {doc.name}: {str(e)}",
+            "Wrapper Function Error"
+        )
+        frappe.msgprint(_("Warning: Error creating Employee Tax Summary: {0}").format(str(e)))
 
 def wrapper_update_on_salary_slip_cancel(doc, method=None):
     """Wrapper to call update_on_salary_slip_cancel from bpjs_payment_api"""
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import update_on_salary_slip_cancel
-    
-    if not hasattr(doc, 'end_date') or not doc.end_date:
-        frappe.msgprint(_("Salary slip end date missing, cannot update BPJS Payment Summary on cancel"))
-        return
+    try:
+        from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import update_on_salary_slip_cancel
         
-    # Extract month and year from doc
-    month = getdate(doc.end_date).month
-    year = getdate(doc.end_date).year
-    
-    # Call the original function with the correct parameters
-    update_on_salary_slip_cancel(doc.name, month, year)
-
-def wrapper_update_on_salary_slip_cancel_pph_ter_table(doc, method=None):
-    """Wrapper to call update_on_salary_slip_cancel from pph_ter_table"""
-    from payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table import update_on_salary_slip_cancel
-    
-    if not hasattr(doc, 'end_date') or not doc.end_date:
-        frappe.msgprint(_("Salary slip end date missing, cannot update PPh TER Table on cancel"))
-        return
+        if not hasattr(doc, 'end_date') or not doc.end_date:
+            frappe.msgprint(_("Salary slip end date missing, cannot update BPJS Payment Summary on cancel"))
+            return
+            
+        # Extract month and year from doc
+        month = getdate(doc.end_date).month
+        year = getdate(doc.end_date).year
         
-    # Extract month and year from doc
-    month = getdate(doc.end_date).month
-    year = getdate(doc.end_date).year
-    
-    # Call the original function with the correct parameters
-    update_on_salary_slip_cancel(doc.name, month, year)
+        # Call the original function with the correct parameters
+        update_on_salary_slip_cancel(doc.name, month, year)
+    except ImportError:
+        log_error(
+            f"Could not import update_on_salary_slip_cancel from bpjs_payment_api for {doc.name}",
+            "Import Error"
+        )
+    except Exception as e:
+        log_error(
+            f"Error in wrapper_update_on_salary_slip_cancel for {doc.name}: {str(e)}",
+            "Wrapper Function Error"
+        )
 
 def wrapper_update_on_salary_slip_cancel_employee_tax_summary(doc, method=None):
     """Wrapper to call update_on_salary_slip_cancel from employee_tax_summary"""
-    from payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary import update_on_salary_slip_cancel
-    
-    if not hasattr(doc, 'end_date') or not doc.end_date:
-        frappe.msgprint(_("Salary slip end date missing, cannot update Employee Tax Summary on cancel"))
-        return
+    try:
+        from payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary import update_on_salary_slip_cancel
         
-    # Extract year from doc
-    year = getdate(doc.end_date).year
-    
-    # Call the original function with the correct parameters - only needs year
-    update_on_salary_slip_cancel(doc.name, year)
+        if not hasattr(doc, 'end_date') or not doc.end_date:
+            frappe.msgprint(_("Salary slip end date missing, cannot update Employee Tax Summary on cancel"))
+            return
+            
+        # Extract year from doc
+        year = getdate(doc.end_date).year
+        
+        # Call the original function with the correct parameters - only needs year
+        update_on_salary_slip_cancel(doc.name, year)
+    except ImportError:
+        log_error(
+            f"Could not import update_on_salary_slip_cancel from employee_tax_summary for {doc.name}",
+            "Import Error"
+        )
+    except Exception as e:
+        log_error(
+            f"Error in wrapper_update_on_salary_slip_cancel_employee_tax_summary for {doc.name}: {str(e)}",
+            "Wrapper Function Error"
+        )
 
-# Fungsi utility for error handling
+# Utility functions for error handling
 def log_error(message, title):
     """
     Log error to system log
@@ -357,6 +382,34 @@ def truncate_message(message, max_length=140):
         
     return message[:max_length - 3] + "..."
 
+def check_ter_method_enabled():
+    """
+    Check if TER method is enabled in PPh 21 Settings
+    
+    Returns:
+        bool: True if TER method is enabled, False otherwise
+    """
+    try:
+        if not frappe.db.exists("PPh 21 Settings", "PPh 21 Settings"):
+            return False
+            
+        # Get settings
+        settings = frappe.get_cached_value(
+            "PPh 21 Settings",
+            "PPh 21 Settings",
+            ["calculation_method", "use_ter"],
+            as_dict=True
+        )
+        
+        # Check if TER is enabled
+        if settings.get("calculation_method") == "TER" and settings.get("use_ter"):
+            return True
+            
+        return False
+    except Exception:
+        # If there's any error, return False as a safe default
+        return False
+
 def add_to_payroll_notifications(doc):
     """Add entry to payroll notifications if available with error handling"""
     try:
@@ -380,6 +433,11 @@ def add_to_payroll_notifications(doc):
         notification.posting_date = getattr(doc, 'posting_date', frappe.utils.today())
         notification.amount = getattr(doc, 'net_pay', 0)
         notification.status = "Draft"
+        
+        # Add TER information if applicable
+        if hasattr(doc, 'is_using_ter') and doc.is_using_ter:
+            notification.is_using_ter = 1
+            notification.ter_rate = getattr(doc, 'ter_rate', 0)
         
         # Insert notification
         notification.insert(ignore_permissions=True)

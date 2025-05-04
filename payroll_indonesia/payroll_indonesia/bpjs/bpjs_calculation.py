@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last updated: 2025-05-01 by dannyaudian
+# Last updated: 2025-05-04 by dannyaudian
 
 import frappe
 from frappe import _
@@ -21,22 +21,42 @@ def debug_log(message, module_name="BPJS Calculation", max_length=500):
     frappe.log_error(log_message, module_name)
 
 
-def get_bpjs_config(emp, settings):
-    """Get BPJS configuration based on employee enrollment status"""
+def check_bpjs_enrollment(employee_doc):
+    """
+    Check if employee is enrolled in BPJS programs
+    
+    Args:
+        employee_doc: Employee document or dictionary
+        
+    Returns:
+        dict: Configuration dictionary based on enrollment status
+    """
+    # Get BPJS settings
+    settings = get_bpjs_settings()
     config = {}
-
-    # Only include BPJS Kesehatan if employee is enrolled
+    
+    # Access the employee fields safely with get() if it's a dict or getattr() if it's a document
+    is_dict = isinstance(employee_doc, dict)
+    
+    # Check BPJS Kesehatan enrollment
     # Default to 1 (enrolled) if field is missing
-    if cint(emp.get("ikut_bpjs_kesehatan", 1)):
+    if is_dict:
+        kesehatan_enrolled = cint(employee_doc.get("ikut_bpjs_kesehatan", 1))
+        ketenagakerjaan_enrolled = cint(employee_doc.get("ikut_bpjs_ketenagakerjaan", 1))
+    else:
+        kesehatan_enrolled = cint(getattr(employee_doc, "ikut_bpjs_kesehatan", 1))
+        ketenagakerjaan_enrolled = cint(getattr(employee_doc, "ikut_bpjs_ketenagakerjaan", 1))
+    
+    # Configure BPJS Kesehatan if enrolled
+    if kesehatan_enrolled:
         config["kesehatan"] = {
             "employee_percent": settings.get("kesehatan_employee_percent", 1.0),
             "employer_percent": settings.get("kesehatan_employer_percent", 4.0),
             "max_salary": settings.get("kesehatan_max_salary", 12000000),
         }
 
-    # Only include BPJS Ketenagakerjaan components if employee is enrolled
-    # Default to 1 (enrolled) if field is missing
-    if cint(emp.get("ikut_bpjs_ketenagakerjaan", 1)):
+    # Configure BPJS Ketenagakerjaan components if enrolled
+    if ketenagakerjaan_enrolled:
         config["jht"] = {
             "employee_percent": settings.get("jht_employee_percent", 2.0),
             "employer_percent": settings.get("jht_employer_percent", 3.7),
@@ -54,16 +74,17 @@ def get_bpjs_config(emp, settings):
     return config
 
 
-def hitung_bpjs(employee, gaji_pokok):
+def hitung_bpjs(employee, base_salary=0, settings=None):
     """
-    Calculate BPJS amounts for an employee
+    Calculate BPJS contributions for given employee and salary
     
     Args:
-        employee: Employee ID
-        gaji_pokok: Base salary amount
+        employee: Employee ID or document
+        base_salary (float): Base salary amount
+        settings (obj, optional): BPJS Settings doc
         
     Returns:
-        dict: Dictionary with BPJS calculation results
+        dict: Dictionary with calculated amounts
     """
     # Initialize result with zeros to avoid None values
     result = {
@@ -78,31 +99,48 @@ def hitung_bpjs(employee, gaji_pokok):
         "total_employee": 0,
         "total_employer": 0
     }
-
-    # Basic validation
-    if not employee or not gaji_pokok or gaji_pokok <= 0:
-        debug_log(f"Invalid input: employee={employee}, gaji_pokok={gaji_pokok}")
-        return result
-
+    
     try:
-        # Get employee document
-        emp = frappe.get_doc("Employee", employee)
-        
-        # Get BPJS settings
-        settings = get_bpjs_settings()
-        
+        # Validate inputs
+        if isinstance(employee, str) and not base_salary:
+            # If employee is an ID and no base_salary provided, get employee document
+            emp_doc = frappe.get_doc("Employee", employee)
+            if not emp_doc:
+                debug_log(f"Employee {employee} not found")
+                return result
+        elif isinstance(employee, dict) or hasattr(employee, 'name'):
+            # If employee is already a document or dict, use it
+            emp_doc = employee
+        else:
+            debug_log(f"Invalid employee parameter: {type(employee)}")
+            return result
+            
+        # Basic validation
+        if not base_salary or base_salary <= 0:
+            debug_log(f"Invalid base salary: {base_salary} for employee {getattr(emp_doc, 'name', employee)}")
+            return result
+            
+        # Get BPJS settings if not provided
+        if not settings:
+            settings = frappe.get_cached_doc("BPJS Settings", "BPJS Settings")
+            
+        if not settings:
+            debug_log("BPJS Settings not found")
+            return result
+            
         # Get configuration based on enrollment status
-        config = get_bpjs_config(emp, settings)
+        config = check_bpjs_enrollment(emp_doc)
         
         # If no config (not enrolled in any program), return zeros
         if not config:
-            debug_log(f"Employee {employee} not participating in any BPJS program")
+            debug_log(f"Employee {getattr(emp_doc, 'name', employee)} not participating in any BPJS program")
             return result
 
         # Calculate BPJS Kesehatan if enrolled
         if "kesehatan" in config:
             # Apply salary cap
-            kesehatan_salary = min(gaji_pokok, config["kesehatan"].get("max_salary", gaji_pokok))
+            max_kesehatan = flt(config["kesehatan"].get("max_salary", base_salary))
+            kesehatan_salary = min(base_salary, max_kesehatan)
             
             # Calculate contributions
             result["kesehatan_employee"] = flt(kesehatan_salary * config["kesehatan"]["employee_percent"] / 100)
@@ -110,22 +148,24 @@ def hitung_bpjs(employee, gaji_pokok):
 
         # Calculate BPJS JHT if enrolled
         if "jht" in config:
-            result["jht_employee"] = flt(gaji_pokok * config["jht"]["employee_percent"] / 100)
-            result["jht_employer"] = flt(gaji_pokok * config["jht"]["employer_percent"] / 100)
+            result["jht_employee"] = flt(base_salary * config["jht"]["employee_percent"] / 100)
+            result["jht_employer"] = flt(base_salary * config["jht"]["employer_percent"] / 100)
 
         # Calculate BPJS JP if enrolled with salary cap
         if "jp" in config:
-            jp_salary = min(gaji_pokok, config["jp"].get("max_salary", gaji_pokok))
+            max_jp = flt(config["jp"].get("max_salary", base_salary))
+            jp_salary = min(base_salary, max_jp)
+            
             result["jp_employee"] = flt(jp_salary * config["jp"]["employee_percent"] / 100)
             result["jp_employer"] = flt(jp_salary * config["jp"]["employer_percent"] / 100)
 
         # Calculate BPJS JKK if enrolled
         if "jkk" in config:
-            result["jkk_employer"] = flt(gaji_pokok * config["jkk"]["percent"] / 100)
+            result["jkk_employer"] = flt(base_salary * config["jkk"]["percent"] / 100)
 
         # Calculate BPJS JKM if enrolled
         if "jkm" in config:
-            result["jkm_employer"] = flt(gaji_pokok * config["jkm"]["percent"] / 100)
+            result["jkm_employer"] = flt(base_salary * config["jkm"]["percent"] / 100)
 
         # Calculate totals with explicit conversion to float
         result["total_employee"] = flt(
@@ -137,13 +177,16 @@ def hitung_bpjs(employee, gaji_pokok):
         )
 
         # Log result safely
-        debug_log(f"BPJS result for {employee}: total_employee={result['total_employee']}, total_employer={result['total_employer']}")
+        emp_name = getattr(emp_doc, 'name', employee) if hasattr(emp_doc, 'name') else employee
+        debug_log(f"BPJS result for {emp_name}: total_employee={result['total_employee']}, total_employer={result['total_employer']}")
         return result
         
     except Exception as e:
         # Log error but don't raise exception
-        debug_log(f"Error calculating BPJS for {employee}: {str(e)}")
+        debug_log(f"Error calculating BPJS: {str(e)[:100]}")
+        frappe.log_error(f"Error calculating BPJS: {str(e)}", "BPJS Calculation Error")
         return result
+
 
 @frappe.whitelist()
 def update_all_bpjs_components():
@@ -163,73 +206,3 @@ def update_all_bpjs_components():
     except Exception as e:
         frappe.log_error(f"Error updating BPJS components: {str(e)[:100]}", "BPJS Update Error")
         frappe.throw(_("Failed to update BPJS components. Please check error log."))
-
-def hitung_bpjs(base_salary, settings=None):
-    """
-    Calculate BPJS contributions for given salary
-    
-    Args:
-        base_salary (float): Base salary amount
-        settings (obj, optional): BPJS Settings doc
-        
-    Returns:
-        dict: Dictionary with calculated amounts
-    """
-    try:
-        if not settings:
-            settings = frappe.get_cached_doc("BPJS Settings", "BPJS Settings")
-            
-        if not settings:
-            frappe.throw(_("BPJS Settings not found"))
-            
-        # Calculate each component
-        results = {
-            "kesehatan": {
-                "employee": 0,
-                "employer": 0
-            },
-            "jht": {
-                "employee": 0,
-                "employer": 0
-            },
-            "jp": {
-                "employee": 0,
-                "employer": 0  
-            },
-            "jkk": {
-                "employer": 0
-            },
-            "jkm": {
-                "employer": 0
-            }
-        }
-        
-        # BPJS Kesehatan
-        max_kesehatan = flt(settings.kesehatan_max_salary)
-        salary_for_kesehatan = min(base_salary, max_kesehatan)
-        
-        results["kesehatan"]["employee"] = flt(salary_for_kesehatan * settings.kesehatan_employee_percent / 100)
-        results["kesehatan"]["employer"] = flt(salary_for_kesehatan * settings.kesehatan_employer_percent / 100)
-        
-        # BPJS JHT
-        results["jht"]["employee"] = flt(base_salary * settings.jht_employee_percent / 100)
-        results["jht"]["employer"] = flt(base_salary * settings.jht_employer_percent / 100)
-        
-        # BPJS JP
-        max_jp = flt(settings.jp_max_salary)
-        salary_for_jp = min(base_salary, max_jp)
-        
-        results["jp"]["employee"] = flt(salary_for_jp * settings.jp_employee_percent / 100)
-        results["jp"]["employer"] = flt(salary_for_jp * settings.jp_employer_percent / 100)
-        
-        # BPJS JKK
-        results["jkk"]["employer"] = flt(base_salary * settings.jkk_percent / 100)
-        
-        # BPJS JKM
-        results["jkm"]["employer"] = flt(base_salary * settings.jkm_percent / 100)
-        
-        return results
-        
-    except Exception as e:
-        frappe.log_error(f"Error calculating BPJS: {str(e)[:100]}", "BPJS Calculation Error")
-        frappe.throw(_("Error calculating BPJS contributions"))

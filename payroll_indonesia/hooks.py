@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-29 12:48:43 by dannyaudian
+# Last modified: 2025-05-04 00:45:10 by dannyaudian
 
 from __future__ import unicode_literals
 
-# Konfigurasi app dasar
+# Basic app configuration
 app_name = "payroll_indonesia"
 app_title = "Payroll Indonesia"
 app_publisher = "PT. Innovasi Terbaik Bangsa"
@@ -15,12 +15,11 @@ app_license = "GPL-3"
 app_version = "0.1.0"  # Updated to semantic versioning format
 required_apps = ["erpnext", "hrms"]
 
-# JS files untuk doctypes
+# JS files for doctypes
 doctype_js = {
     "Employee": "payroll_indonesia/public/js/employee.js",
     "Salary Slip": "payroll_indonesia/public/js/salary_slip.js",
     "Payroll Entry": "payroll_indonesia/public/js/payroll_entry.js",
-    "PPh TER Table": "payroll_indonesia/payroll_indonesia/doctype/pph_ter_table/pph_ter_table.js",
     "BPJS Payment Summary": "payroll_indonesia/payroll_indonesia/doctype/bpjs_payment_summary/bpjs_payment_summary.js",
     "PPh 21 Settings": "payroll_indonesia/public/js/pph_21_settings.js",
     "BPJS Settings": "payroll_indonesia/payroll_indonesia/doctype/bpjs_settings/bpjs_settings.js",
@@ -29,7 +28,6 @@ doctype_js = {
 
 # List view JS
 doctype_list_js = {
-    "PPh TER Table": "payroll_indonesia/payroll_indonesia/doctype/pph_ter_table/pph_ter_table_list.js",
     "BPJS Payment Summary": "payroll_indonesia/payroll_indonesia/doctype/bpjs_payment_summary/bpjs_payment_summary_list.js",
     "Employee Tax Summary": "payroll_indonesia/public/js/employee_tax_summary_list.js",
     "BPJS Account Mapping": "payroll_indonesia/payroll_indonesia/doctype/bpjs_account_mapping/bpjs_account_mapping_list.js"
@@ -100,9 +98,9 @@ doc_events = {
     }
 }
 
-# Fixtures - dengan filter yang tepat
+# Fixtures - with appropriate filters
 fixtures = [
-    # Basic Setup - dengan filter module
+    # Basic Setup - with module filter
     {
         "doctype": "Custom Field",
         "filters": [["module", "=", "Payroll Indonesia"]]
@@ -116,7 +114,7 @@ fixtures = [
         "filters": [["module", "=", "Payroll Indonesia"]]
     },
     
-    # Master Data - dengan filter spesifik
+    # Master Data - with specific filters
     {
         "doctype": "Supplier Group",
         "filters": [["name", "in", ["BPJS Provider", "Tax Authority"]]]
@@ -144,10 +142,6 @@ fixtures = [
         "filters": [["parent", "=", "PPh 21 Settings"]]
     },
     {
-        "doctype": "PPh 21 TER Table",
-        "filters": [["parent", "=", "PPh 21 Settings"]]
-    },
-    {
         "doctype": "PPh 21 PTKP",
         "filters": [["parent", "=", "PPh 21 Settings"]]
     },
@@ -166,7 +160,7 @@ fixtures = [
         "filters": [["name", "like", "%"]]
     },
     
-    # Tracking & Component DocTypes - dengan filter eksplisit
+    # Tracking & Component DocTypes - with explicit filters
     {
         "doctype": "Employee Tax Summary",
         "filters": [["docstatus", "<", 2]]
@@ -199,7 +193,7 @@ fixtures = [
         ]
     },
     
-    # Transaction DocTypes - dengan filter berdasarkan waktu
+    # Transaction DocTypes - with time-based filters
     {
         "doctype": "BPJS Payment Summary",
         "filters": [["docstatus", "<", 2], ["creation", ">", "last 6 months"]]
@@ -212,26 +206,14 @@ fixtures = [
         "doctype": "BPJS Payment Account Detail",
         "filters": [["parent", "in", ["select name from `tabBPJS Payment Summary` where creation > (NOW() - INTERVAL 6 MONTH)"]]]
     },
-    {
-        "doctype": "PPh TER Table",
-        "filters": [["docstatus", "<", 2], ["creation", ">", "last 6 months"]]
-    },
-    {
-        "doctype": "PPh TER Detail",
-        "filters": [["parent", "in", ["select name from `tabPPh TER Table` where creation > (NOW() - INTERVAL 6 MONTH)"]]]
-    },
-    {
-        "doctype": "PPh TER Account Detail",
-        "filters": [["parent", "in", ["select name from `tabPPh TER Table` where creation > (NOW() - INTERVAL 6 MONTH)"]]]
-    },
     
-    # Workspace - dengan filter modul
+    # Workspace - with module filter
     {
         "doctype": "Workspace",
         "filters": [["module", "=", "Payroll Indonesia"]]
     },
     
-    # Reports - dengan filter modul
+    # Reports - with module filter
     {
         "doctype": "Report",
         "filters": [["module", "=", "Payroll Indonesia"]]
@@ -266,7 +248,7 @@ scheduler_events = {
     ]
 }
 
-# Jinja template methods - hanya mengekspos fungsi read-only dan aman
+# Jinja template methods - only expose read-only and safe functions
 jinja = {
     "methods": [
         # BPJS Settings & Functions
@@ -274,7 +256,6 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.utils.calculate_bpjs_contributions",
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
         "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation.hitung_bpjs",
-        # Remove debug_log as it's not needed in templates
         
         # PPh 21 Settings & Functions
         "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings",
@@ -297,7 +278,6 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_employee_bpjs_details",
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.get_formatted_currency"
     ]
-
 }
 
 # Regional Settings
@@ -313,10 +293,9 @@ regional_overrides = {
 # Module Export Config
 export_python_type_annotations = True
 
-# Document title fields untuk navigasi yang lebih baik
+# Document title fields for better navigation
 get_title = {
     "BPJS Payment Summary": "month_year_title",
-    "PPh TER Table": "month_year_title",
     "Employee Tax Summary": "title",
     "Payroll Log": "title",
     "BPJS Account Mapping": "mapping_name"
@@ -329,8 +308,7 @@ module_categories = {
 
 # Document States
 states_in_transaction = {
-    "BPJS Payment Summary": ["Draft", "Submitted", "Paid", "Cancelled"],
-    "PPh TER Table": ["Draft", "Submitted", "Paid", "Cancelled"]
+    "BPJS Payment Summary": ["Draft", "Submitted", "Paid", "Cancelled"]
 }
 
 # Web Routes
@@ -338,7 +316,7 @@ website_route_rules = [
     {"from_route": "/payslip/<path:payslip_name>", "to_route": "payroll_indonesia/templates/pages/payslip"}
 ]
 
-# Hook setelah migrasi - dengan urutan dan prioritas yang lebih baik
+# Hook after migration - with better order and priority
 after_migrate = [
     "payroll_indonesia.fixtures.setup.check_system_readiness",
     "payroll_indonesia.utilities.tax_slab.create_income_tax_slab",
@@ -357,7 +335,7 @@ on_session_creation = [
     "payroll_indonesia.override.auth_hooks.on_session_creation"
 ]
 
-# REST API endpoints - dengan validasi keamanan
+# REST API endpoints - with security validation
 rest_export = {
     "Employee": {
         "get": "payroll_indonesia.api.get_employee"
@@ -385,17 +363,16 @@ debug_tools = [
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.diagnose_accounts"
 ]
 
-# Deskripsi modul untuk memudahkan debugging
+# Module description for easier debugging
 module_info = {
     "payroll_indonesia.override.salary_slip": "Main Salary Slip Override",
     "payroll_indonesia.override.salary_slip.base": "Salary Slip Base Utilities",
     "payroll_indonesia.override.salary_slip.tax_calculator": "PPh 21 Calculator",
     "payroll_indonesia.override.salary_slip.bpjs_calculator": "BPJS Calculator",
-    "payroll_indonesia.override.salary_slip.ter_calculator": "TER Method Calculator",
+    "payroll_indonesia.override.salary_slip.ter_calculator": "TER Method Calculator (PMK-168)",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping": "BPJS Account Mapping Controller",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings": "BPJS Settings Controller",
     "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation": "BPJS Calculation Module",
-    "payroll_indonesia.payroll_indonesia.doctype.pph_ter_table.pph_ter_table": "PPh TER Table Controller",
     "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary": "Employee Tax Summary Controller",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary": "BPJS Payment Summary Controller",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api": "BPJS Payment API",
@@ -418,7 +395,7 @@ whitelist_methods = [
     "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation.hitung_bpjs"
 ]
 
-# Template akun untuk integrasi BPJS
+# Account templates for BPJS integration
 boot_info = {
     "bpjs_account_templates": [
         {

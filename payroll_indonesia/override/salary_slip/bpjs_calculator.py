@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-01 by dannyaudian
+# Last modified: 2025-05-04 00:28:50 by dannyaudian
 
 import frappe
 from frappe import _
-from frappe.utils import flt, now_datetime
+from frappe.utils import flt, cint, now_datetime
 import gc  # For manual garbage collection
 
 from .base import update_component_amount
@@ -14,12 +14,21 @@ from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpj
 # Define exports for proper importing by other modules
 __all__ = [
     'calculate_bpjs_components',
+    'verify_bpjs_components',
+    'check_bpjs_enrollment',
     'debug_log'
 ]
 
-def debug_log(message, module_name="BPJS Calculator", employee=None, max_length=250):
+def debug_log(message, module_name="BPJS Calculator", employee=None, trace=False, max_length=250):
     """
     Log debug message with timestamp and limited length
+    
+    Args:
+        message: Message to log
+        module_name: Module name for error log
+        employee: Optional employee identifier for context
+        trace: Whether to include stack trace (default: False)
+        max_length: Maximum message length to avoid memory issues
     """
     timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
     
@@ -45,8 +54,15 @@ def check_bpjs_enrollment(employee_doc):
         bool: True if enrolled in any BPJS program, False otherwise
     """
     # Check using the correct fields, defaulting to True (1) if missing
-    kesehatan_enrolled = cint(getattr(employee_doc, "ikut_bpjs_kesehatan", 1))
-    ketenagakerjaan_enrolled = cint(getattr(employee_doc, "ikut_bpjs_ketenagakerjaan", 1))
+    if hasattr(employee_doc, "ikut_bpjs_kesehatan"):
+        kesehatan_enrolled = cint(employee_doc.ikut_bpjs_kesehatan)
+    else:
+        kesehatan_enrolled = 1  # Default to enrolled if field missing
+        
+    if hasattr(employee_doc, "ikut_bpjs_ketenagakerjaan"):
+        ketenagakerjaan_enrolled = cint(employee_doc.ikut_bpjs_ketenagakerjaan)
+    else:
+        ketenagakerjaan_enrolled = 1  # Default to enrolled if field missing
     
     # Return True if enrolled in any BPJS program
     return kesehatan_enrolled or ketenagakerjaan_enrolled
@@ -135,7 +151,7 @@ def calculate_bpjs_components(doc, employee, base_salary):
         
     except Exception as e:
         # Log error with limited size
-        debug_log(f"Error in BPJS calculation: {str(e)[:100]}", employee=employee_info)
+        debug_log(f"Error in BPJS calculation: {str(e)[:100]}", employee=employee_info, trace=True)
         
         # Initialize total_bpjs to 0 to avoid NoneType errors in tax calculations
         if hasattr(doc, 'total_bpjs'):
@@ -145,8 +161,66 @@ def calculate_bpjs_components(doc, employee, base_salary):
         frappe.msgprint(_("Warning: Error in BPJS calculation. See error log for details."))
 
 
+def verify_bpjs_components(doc):
+    """
+    Verify that BPJS components in the salary slip are correct
+    
+    Args:
+        doc: Salary slip document
+        
+    Returns:
+        dict: Verification results
+    """
+    # Initialize result
+    result = {
+        "all_zero": True,
+        "kesehatan_found": False,
+        "jht_found": False,
+        "jp_found": False,
+        "total": 0
+    }
+    
+    try:
+        # Check for BPJS components in deductions
+        for deduction in doc.deductions:
+            if deduction.salary_component == "BPJS Kesehatan Employee":
+                result["kesehatan_found"] = True
+                if flt(deduction.amount) > 0:
+                    result["all_zero"] = False
+                result["total"] += flt(deduction.amount)
+                
+            elif deduction.salary_component == "BPJS JHT Employee":
+                result["jht_found"] = True
+                if flt(deduction.amount) > 0:
+                    result["all_zero"] = False
+                result["total"] += flt(deduction.amount)
+                
+            elif deduction.salary_component == "BPJS JP Employee":
+                result["jp_found"] = True
+                if flt(deduction.amount) > 0:
+                    result["all_zero"] = False
+                result["total"] += flt(deduction.amount)
+        
+        # Update doc.total_bpjs if it exists
+        if hasattr(doc, 'total_bpjs'):
+            doc.total_bpjs = result["total"]
+            
+        return result
+        
+    except Exception as e:
+        debug_log(f"Error verifying BPJS components: {str(e)[:100]}", trace=True)
+        # Return default result on error
+        return result
+
+
 def add_bpjs_info_to_note(doc, bpjs_values):
-    """Add BPJS calculation details to payroll note"""
+    """
+    Add BPJS calculation details to payroll note
+    
+    Args:
+        doc: Salary slip document
+        bpjs_values: BPJS calculation results
+    """
     try:
         # Initialize payroll_note if needed
         if not hasattr(doc, 'payroll_note'):
@@ -172,45 +246,4 @@ def add_bpjs_info_to_note(doc, bpjs_values):
         
     except Exception as e:
         # Log error but continue
-        debug_log(f"Error adding BPJS info to note: {str(e)[:100]}")
-
-def get_bpjs_base_salary(doc):
-    """
-    Get base salary for BPJS calculation.
-    
-    Args:
-        doc: Salary Slip document
-        
-    Returns:
-        float: Base salary amount for BPJS calculations
-    """
-    # First try using the standardized method if available
-    if hasattr(doc, 'get_base_salary_for_bpjs') and callable(doc.get_base_salary_for_bpjs):
-        return flt(doc.get_base_salary_for_bpjs())
-    
-    # In Indonesia, BPJS is typically calculated based on Gaji Pokok
-    base_component = "Gaji Pokok"
-    base_salary = 0
-    
-    if hasattr(doc, 'earnings') and doc.earnings:
-        for earning in doc.earnings:
-            if earning.salary_component == base_component:
-                base_salary = flt(earning.amount)
-                break
-    
-    # If no Gaji Pokok found, try basic_pay field
-    if base_salary <= 0 and hasattr(doc, 'basic_pay') and doc.basic_pay:
-        base_salary = flt(doc.basic_pay)
-    
-    # Final fallback to gross_pay
-    if base_salary <= 0 and hasattr(doc, 'gross_pay') and doc.gross_pay:
-        base_salary = flt(doc.gross_pay)
-    else:
-        # If all else fails, default to 0 to prevent calculation errors
-        base_salary = 0
-        
-    # Log warning if base salary is zero
-    if base_salary <= 0:
-        frappe.logger().warning(f"BPJS calculation for {doc.name} has zero base salary")
-        
-    return base_salary
+        debug_log(f"Error adding BPJS info to note: {str(e)[:100]}", trace=True)
