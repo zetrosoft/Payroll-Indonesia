@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 03:02:55 by dannyaudian
+# Last modified: 2025-05-04 03:12:41 by dannyaudian
 
 import frappe
 from frappe import _
@@ -33,6 +33,9 @@ def override_salary_slip_gl_entries(doc, method=None):
     if not gl_entries:
         return
     
+    # Store company abbreviation for consistent use
+    company_abbr = frappe.get_cached_value('Company', doc.company, 'abbr')
+    
     # Log for debugging
     frappe.logger().debug(f"Overriding GL entries for Salary Slip {doc.name} in company {doc.company}")
     
@@ -52,7 +55,7 @@ def override_salary_slip_gl_entries(doc, method=None):
             continue
         
         # Process the component based on standardized naming conventions
-        modified_entry = process_bpjs_component_entry(entry, component, bpjs_mapping)
+        modified_entry = process_bpjs_component_entry(entry, component, bpjs_mapping, company_abbr)
         modified_entries.append(modified_entry)
     
     # Replace GL entries with our modified entries
@@ -62,7 +65,7 @@ def override_salary_slip_gl_entries(doc, method=None):
     if frappe.conf.get("developer_mode"):
         frappe.logger().debug(f"Modified GL entries for {doc.name}: {modified_entries}")
 
-def process_bpjs_component_entry(entry, component, bpjs_mapping):
+def process_bpjs_component_entry(entry, component, bpjs_mapping, company_abbr=None):
     """
     Process a GL entry for a BPJS component to use correct accounts
     
@@ -70,6 +73,7 @@ def process_bpjs_component_entry(entry, component, bpjs_mapping):
         entry (dict): Original GL entry
         component (str): BPJS component name
         bpjs_mapping (obj): BPJS Account Mapping document
+        company_abbr (str, optional): Company abbreviation for fallback
         
     Returns:
         dict: Modified GL entry with updated account
@@ -113,6 +117,12 @@ def process_bpjs_component_entry(entry, component, bpjs_mapping):
         elif "JP" in component and bpjs_mapping.jp_employee_account:
             if entry.get('credit'):
                 entry['account'] = bpjs_mapping.jp_employee_account
+    
+    # If not found in mapping but component is BPJS, use standardized account name as fallback
+    if company_abbr and ("BPJS" in component) and entry.get('account') == "":
+        fallback_account = get_fallback_bpjs_account(component, company_abbr, entry.get('debit') > 0)
+        if fallback_account:
+            entry['account'] = fallback_account
     
     return entry
 
@@ -330,7 +340,59 @@ def get_default_bpjs_account(component_name, type_name, company):
     if account_name and frappe.db.exists("Account", account_name):
         return account_name
     
+    # Try to find parent accounts as fallback
+    if not account_name:
+        if type_name == "earnings" or "Employer" in component_name:
+            parent_account = f"BPJS Expenses - {abbr}"
+            if frappe.db.exists("Account", parent_account):
+                return parent_account
+        else:
+            parent_account = f"BPJS Payable - {abbr}"
+            if frappe.db.exists("Account", parent_account):
+                return parent_account
+    
     return None
+
+def get_fallback_bpjs_account(component_name, company_abbr, is_debit):
+    """
+    Get a fallback BPJS account when mapping doesn't provide one
+    
+    Args:
+        component_name (str): BPJS component name
+        company_abbr (str): Company abbreviation
+        is_debit (bool): Whether this is a debit entry (for expense) or credit entry (for liability)
+        
+    Returns:
+        str: Fallback account name or None
+    """
+    if is_debit:
+        # For debit entries, use expense accounts
+        if "Kesehatan" in component_name:
+            return f"BPJS Kesehatan Employer Expense - {company_abbr}"
+        elif "JHT" in component_name:
+            return f"BPJS JHT Employer Expense - {company_abbr}"
+        elif "JP" in component_name:
+            return f"BPJS JP Employer Expense - {company_abbr}"
+        elif "JKK" in component_name:
+            return f"BPJS JKK Employer Expense - {company_abbr}"
+        elif "JKM" in component_name:
+            return f"BPJS JKM Employer Expense - {company_abbr}"
+        else:
+            return f"BPJS Expenses - {company_abbr}"
+    else:
+        # For credit entries, use liability accounts
+        if "Kesehatan" in component_name:
+            return f"BPJS Kesehatan Payable - {company_abbr}"
+        elif "JHT" in component_name:
+            return f"BPJS JHT Payable - {company_abbr}"
+        elif "JP" in component_name:
+            return f"BPJS JP Payable - {company_abbr}"
+        elif "JKK" in component_name:
+            return f"BPJS JKK Payable - {company_abbr}"
+        elif "JKM" in component_name:
+            return f"BPJS JKM Payable - {company_abbr}"
+        else:
+            return f"BPJS Payable - {company_abbr}"
 
 def get_default_payable_account(doc):
     """
