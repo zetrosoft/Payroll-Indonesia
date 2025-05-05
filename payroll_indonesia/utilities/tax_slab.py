@@ -175,12 +175,14 @@ def get_default_tax_slab():
 def update_salary_structures():
     """
     Update all Salary Structures to bypass Income Tax Slab validation
+    with improved error handling for missing salary details
     
     Returns:
         int: Number of successfully updated Salary Structures
     """
     success_count = 0
     error_count = 0
+    skipped_count = 0
     
     try:
         # Get default tax slab
@@ -193,34 +195,100 @@ def update_salary_structures():
         structures = frappe.get_all(
             "Salary Structure", 
             filters={"is_active": 1},
-            fields=["name"]
+            fields=["name", "docstatus"]
         )
         
-        # Update each structure
+        debug_log(f"Found {len(structures)} active salary structures to update", "Tax Slab")
+        
+        # Update each structure with better error handling
         for structure in structures:
             try:
-                doc = frappe.get_doc("Salary Structure", structure.name)
-                doc.income_tax_slab = default_tax_slab
-                doc.tax_calculation_method = "Manual"
-                doc.save(ignore_permissions=True)
-                success_count += 1
+                # First check if the structure can be opened (has valid references)
+                try:
+                    doc = frappe.get_doc("Salary Structure", structure.name)
+                except Exception as e:
+                    if "not found" in str(e).lower():
+                        # Log the specific missing reference
+                        debug_log(f"Skipping structure {structure.name} - missing reference: {str(e)}", "Tax Slab Error")
+                        skipped_count += 1
+                        continue
+                    else:
+                        # Re-raise if it's a different kind of error
+                        raise
+                
+                # Check if the structure has valid earnings and deductions
+                has_invalid_details = False
+                
+                # Check earnings
+                for i, earning in enumerate(doc.earnings or []):
+                    if not frappe.db.exists("Salary Detail", earning.name):
+                        debug_log(f"Structure {structure.name} has invalid earning reference: {earning.name}", "Tax Slab Error")
+                        has_invalid_details = True
+                        break
+                
+                # Check deductions
+                if not has_invalid_details:
+                    for i, deduction in enumerate(doc.deductions or []):
+                        if not frappe.db.exists("Salary Detail", deduction.name):
+                            debug_log(f"Structure {structure.name} has invalid deduction reference: {deduction.name}", "Tax Slab Error")
+                            has_invalid_details = True
+                            break
+                
+                if has_invalid_details:
+                    skipped_count += 1
+                    continue
+                
+                # Only update if it's not submitted
+                if structure.docstatus == 0:
+                    # Update the structure
+                    doc.income_tax_slab = default_tax_slab
+                    doc.tax_calculation_method = "Manual"
+                    doc.flags.ignore_validate = True  # Skip validation
+                    doc.save(ignore_permissions=True)
+                    success_count += 1
+                    debug_log(f"Updated structure {structure.name} with tax slab", "Tax Slab")
+                else:
+                    # For submitted documents, use direct DB update to avoid validation
+                    frappe.db.set_value(
+                        "Salary Structure",
+                        structure.name,
+                        {
+                            "income_tax_slab": default_tax_slab,
+                            "tax_calculation_method": "Manual"
+                        },
+                        update_modified=False
+                    )
+                    success_count += 1
+                    debug_log(f"Updated submitted structure {structure.name} with tax slab", "Tax Slab")
             except Exception as e:
                 error_count += 1
                 debug_log(f"Error updating structure {structure.name}: {str(e)}", "Tax Slab Error")
+                frappe.log_error(
+                    f"Error updating structure {structure.name}: {str(e)}\n\n"
+                    f"Traceback: {frappe.get_traceback()}", 
+                    "Salary Structure Update Error"
+                )
                 
         frappe.db.commit()
         
         # Log result
-        debug_log(f"Updated {success_count} salary structures, {error_count} errors", "Tax Slab")
+        debug_log(f"Updated {success_count} salary structures, {skipped_count} skipped, {error_count} errors", "Tax Slab")
         return success_count
         
     except Exception as e:
-        frappe.log_error(f"Error updating salary structures: {str(e)}", "Tax Slab Error")
+        frappe.db.rollback()
+        debug_log(f"Critical error updating salary structures: {str(e)}", "Tax Slab Error")
+        frappe.log_error(
+            f"Critical error updating salary structures: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}", 
+            "Tax Slab Error"
+        )
         return 0
 
 def update_existing_assignments():
     """
     Update existing Salary Structure Assignments with default Income Tax Slab
+    with improved error handling
     
     Returns:
         int: Number of successfully updated Salary Structure Assignments
@@ -242,30 +310,57 @@ def update_existing_assignments():
                 ["income_tax_slab", "in", ["", None]],
                 ["docstatus", "=", 1]
             ],
-            fields=["name"]
+            fields=["name", "employee", "salary_structure"]
         )
         
-        # Update each assignment
-        for assignment in assignments:
-            try:
-                frappe.db.set_value(
-                    "Salary Structure Assignment",
-                    assignment.name,
-                    "income_tax_slab",
-                    default_tax_slab,
-                    update_modified=False
-                )
-                success_count += 1
-            except Exception as e:
-                error_count += 1
-                debug_log(f"Error updating assignment {assignment.name}: {str(e)}", "Tax Slab Error")
-                
-        frappe.db.commit()
+        debug_log(f"Found {len(assignments)} salary structure assignments to update", "Tax Slab")
         
-        # Log result
+        # Process in batches to avoid transaction timeouts
+        batch_size = 50
+        for i in range(0, len(assignments), batch_size):
+            batch = assignments[i:i+batch_size]
+            updated_in_batch = 0
+            
+            for assignment in batch:
+                try:
+                    # Check if the referenced salary structure exists
+                    if assignment.salary_structure and not frappe.db.exists("Salary Structure", assignment.salary_structure):
+                        debug_log(f"Skipping assignment {assignment.name} - salary structure {assignment.salary_structure} not found", "Tax Slab Warning")
+                        continue
+                        
+                    # Update the assignment
+                    frappe.db.set_value(
+                        "Salary Structure Assignment",
+                        assignment.name,
+                        "income_tax_slab",
+                        default_tax_slab,
+                        update_modified=False
+                    )
+                    updated_in_batch += 1
+                    success_count += 1
+                except Exception as e:
+                    error_count += 1
+                    debug_log(f"Error updating assignment {assignment.name} for employee {assignment.employee}: {str(e)}", "Tax Slab Error")
+                    frappe.log_error(
+                        f"Error updating assignment {assignment.name}: {str(e)}\n\n"
+                        f"Traceback: {frappe.get_traceback()}", 
+                        "Tax Slab Assignment Error"
+                    )
+            
+            # Commit after each batch
+            frappe.db.commit()
+            debug_log(f"Updated {updated_in_batch} assignments in batch {i//batch_size + 1}", "Tax Slab")
+                
+        # Log final result
         debug_log(f"Updated {success_count} salary structure assignments, {error_count} errors", "Tax Slab")
         return success_count
         
     except Exception as e:
-        frappe.log_error(f"Error updating salary structure assignments: {str(e)}", "Tax Slab Error")
+        frappe.db.rollback()
+        debug_log(f"Critical error updating salary structure assignments: {str(e)}", "Tax Slab Error")
+        frappe.log_error(
+            f"Critical error updating salary structure assignments: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}", 
+            "Tax Slab Error"
+        )
         return 0
