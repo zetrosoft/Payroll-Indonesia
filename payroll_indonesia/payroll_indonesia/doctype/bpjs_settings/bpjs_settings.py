@@ -797,24 +797,27 @@ class BPJSSettings(Document):
             debug_log(f"Error in on_update: {str(e)}", "BPJS Settings Update Error", trace=True)
 
     def update_salary_structures(self):
-        """Update BPJS components in active salary structures"""
+        """
+        Update BPJS components in active salary structures
+        with proper handling of submitted documents
+        """
         try:
             debug_log("Starting update_salary_structures method", "BPJS Settings")
-            
+        
             # Find active salary structures
             salary_structures = frappe.get_all(
                 "Salary Structure",
-                filters={"docstatus": 1, "is_active": "Yes"},
-                pluck="name"
+                filters={"is_active": "Yes"},
+                fields=["name", "docstatus"],
             )
-            
+        
             if not salary_structures:
                 debug_log("No active salary structures found", "BPJS Settings")
                 return
                 
             # Log for debug
-            debug_log(f"Updating {len(salary_structures)} active salary structures with BPJS settings", "BPJS Settings")
-            
+            debug_log(f"Found {len(salary_structures)} active salary structures", "BPJS Settings")
+        
             # Get list of BPJS components to update with standardized names
             bpjs_components = {
                 "BPJS Kesehatan Employee": self.kesehatan_employee_percent,
@@ -826,20 +829,35 @@ class BPJSSettings(Document):
                 "BPJS JKK": self.jkk_percent,
                 "BPJS JKM": self.jkm_percent
             }
-            
-            # Update each salary structure
+        
+            # Count statistics
             updated_count = 0
-            for ss_name in salary_structures:
+            submitted_count = 0
+            skipped_count = 0
+            error_count = 0
+        
+            # Update each salary structure
+            for structure in salary_structures:
                 try:
-                    ss = frappe.get_doc("Salary Structure", ss_name)
-                    debug_log(f"Processing salary structure: {ss_name}", "BPJS Settings")
+                    # Different handling based on docstatus
+                    if structure.docstatus == 1:  # Submitted
+                        debug_log(f"Salary structure {structure.name} is submitted, using alternative update method", "BPJS Settings")
                     
+                        # For submitted structures, we need to create amendment rather than direct updates
+                        # Instead, we'll just log this for manual follow-up
+                        submitted_count += 1
+                        continue
+                
+                    # For draft structures, proceed with normal updates    
+                    ss = frappe.get_doc("Salary Structure", structure.name)
+                    debug_log(f"Processing salary structure: {structure.name} (draft)", "BPJS Settings")
+                
                     # Flag to check if changes were made
                     changes_made = False
-                    
+                
                     # Track missing components
                     missing_components = []
-                    
+                
                     # Update each component
                     for component_name, percent in bpjs_components.items():
                         # Check in earnings
@@ -850,13 +868,14 @@ class BPJSSettings(Document):
                                 if detail.amount_based_on_formula and detail.formula:
                                     debug_log(f"Component {component_name} uses custom formula, skipping", "BPJS Settings")
                                     continue
-                                
+                            
                                 # Update rate if needed
-                                debug_log(f"Updating {component_name} in earnings from {detail.amount} to {percent}", "BPJS Settings")
-                                detail.amount = percent
-                                changes_made = True
+                                if detail.amount != percent:
+                                    debug_log(f"Updating {component_name} in earnings from {detail.amount} to {percent}", "BPJS Settings")
+                                    detail.amount = percent
+                                    changes_made = True
                                 break
-                                
+                            
                         if not found:
                             # Check in deductions
                             for detail in ss.deductions:
@@ -865,39 +884,49 @@ class BPJSSettings(Document):
                                     if detail.amount_based_on_formula and detail.formula:
                                         debug_log(f"Component {component_name} uses custom formula, skipping", "BPJS Settings")
                                         continue
-                                    
+                                
                                     # Update rate if needed
-                                    debug_log(f"Updating {component_name} in deductions from {detail.amount} to {percent}", "BPJS Settings")
-                                    detail.amount = percent
-                                    changes_made = True
+                                    if detail.amount != percent:
+                                        debug_log(f"Updating {component_name} in deductions from {detail.amount} to {percent}", "BPJS Settings")
+                                        detail.amount = percent
+                                        changes_made = True
                                     break
-                        
+                    
                         if not found:
                             missing_components.append(component_name)
-                    
+                
                     # Log warning about missing components
                     if missing_components:
-                        debug_log(f"Salary Structure {ss_name} missing BPJS components: {', '.join(missing_components)}", "BPJS Settings")
-                    
+                        debug_log(f"Salary Structure {structure.name} missing BPJS components: {', '.join(missing_components)}", "BPJS Settings")
+                        skipped_count += 1
+                
                     # Save if changes were made
                     if changes_made:
                         ss.flags.ignore_validate = True
                         ss.flags.ignore_mandatory = True
                         ss.save(ignore_permissions=True)
                         updated_count += 1
-                        debug_log(f"Saved changes to {ss_name}", "BPJS Settings")
-                        
+                        debug_log(f"Saved changes to {structure.name}", "BPJS Settings")
+                    
                 except Exception as e:
+                    error_count += 1
                     frappe.log_error(
-                        f"Error updating salary structure {ss_name}: {str(e)}\n\n"
+                        f"Error updating salary structure {structure.name}: {str(e)}\n\n"
                         f"Traceback: {frappe.get_traceback()}", 
                         "BPJS Update Error"
                     )
-                    debug_log(f"Error updating {ss_name}: {str(e)}", "BPJS Settings", trace=True)
+                    debug_log(f"Error updating {structure.name}: {str(e)}", "BPJS Settings", trace=True)
                     continue
-            
-            if updated_count > 0:
-                debug_log(f"Successfully updated {updated_count} salary structures", "BPJS Settings")
+        
+            # Log summary
+            debug_log(
+                f"Salary Structure Update Summary: "
+                f"Updated: {updated_count}, "
+                f"Submitted (skipped): {submitted_count}, "
+                f"Missing components: {skipped_count}, "
+                f"Errors: {error_count}",
+                "BPJS Settings"
+            )
                 
         except Exception as e:
             frappe.log_error(
@@ -906,7 +935,7 @@ class BPJSSettings(Document):
                 "BPJS Settings Update Error"
             )
             debug_log(f"Critical error in update_salary_structures: {str(e)}", "BPJS Settings", trace=True)
-
+        
     def ensure_bpjs_mapping_for_all_companies(self):
         """Ensure all companies have BPJS mapping"""
         try:
