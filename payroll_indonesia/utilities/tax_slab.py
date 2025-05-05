@@ -53,109 +53,98 @@ def create_income_tax_slab():
                 debug_log("No company found, cannot create Income Tax Slab", "Tax Slab Error")
                 return None
                 
-        # Create slab with unique title
-        current_year = getdate(today()).year
-        title = f"Indonesia Tax Slab {current_year}"
-        
-        # Check the autoname field for Income Tax Slab
-        autoname_field = frappe.db.get_value("DocType", "Income Tax Slab", "autoname")
-        debug_log(f"Income Tax Slab has autoname field: {autoname_field}", "Tax Slab")
-        
-        # Create doc with necessary fields
-        tax_slab = frappe.new_doc("Income Tax Slab")
-        
-        # Set effective date to beginning of current year
-        tax_slab.effective_from = f"{current_year}-01-01"
-        tax_slab.company = company
-        tax_slab.currency = "IDR"
-        
-        # Check field existence before setting
-        meta = frappe.get_meta("Income Tax Slab")
-        
-        if meta.get_field("title"):
-            tax_slab.title = title
-            
-        # Important: Set name by title for prompt autoname
-        if autoname_field == "prompt":
-            # For prompt autoname, use the title as the document name directly
-            tax_slab.name = f"Indonesia-Tax-Slab-{current_year}"
-            debug_log(f"Setting document name directly to: {tax_slab.name}", "Tax Slab")
-            
-        if meta.get_field("is_default"):
+        # Try the simple approach seen in setup.py
+        try:
+            # This approach worked in setup.py
+            tax_slab = frappe.new_doc("Income Tax Slab")
+            # Explicitly set name before other fields
+            tax_slab.name = "Indonesia Income Tax"  # Use a fixed name
+            tax_slab.title = "Indonesia Income Tax"
+            tax_slab.effective_from = getdate("2023-01-01")
+            tax_slab.company = company
+            tax_slab.currency = "IDR"
             tax_slab.is_default = 1
-            
-        if meta.get_field("disabled"):
             tax_slab.disabled = 0
-        
-        # Add tax slabs
-        tax_slab.append("slabs", {
-            "from_amount": 0,
-            "to_amount": 60000000,
-            "percent_deduction": 5
-        })
-        
-        tax_slab.append("slabs", {
-            "from_amount": 60000000,
-            "to_amount": 250000000,
-            "percent_deduction": 15
-        })
-        
-        tax_slab.append("slabs", {
-            "from_amount": 250000000,
-            "to_amount": 500000000,
-            "percent_deduction": 25
-        })
-        
-        tax_slab.append("slabs", {
-            "from_amount": 500000000,
-            "to_amount": 5000000000,
-            "percent_deduction": 30
-        })
-        
-        tax_slab.append("slabs", {
-            "from_amount": 5000000000,
-            "to_amount": 0,
-            "percent_deduction": 35
-        })
-        
-        # Save doc with additional flags to bypass validation
-        tax_slab.flags.ignore_permissions = True
-        tax_slab.flags.ignore_mandatory = True
-        
-        # Special handling for prompt autoname
-        if autoname_field == "prompt":
-            # Use direct SQL insert as a last resort if normal insertion fails
-            try:
-                tax_slab.insert()
-            except frappe.exceptions.ValidationError as e:
-                if "Please set the document name" in str(e):
-                    debug_log("Trying alternative approach for prompt autoname", "Tax Slab")
-                    
-                    # Try using db_set for name
-                    tax_slab.db_set("name", f"Indonesia-Tax-Slab-{current_year}")
-                    tax_slab.insert(ignore_mandatory=True)
-                else:
-                    raise
-        else:
+
+            # Add tax brackets
+            tax_slab.append("slabs", {"from_amount": 0, "to_amount": 60000000, "percent_deduction": 5})
+            tax_slab.append("slabs", {"from_amount": 60000000, "to_amount": 250000000, "percent_deduction": 15})
+            tax_slab.append("slabs", {"from_amount": 250000000, "to_amount": 500000000, "percent_deduction": 25})
+            tax_slab.append("slabs", {"from_amount": 500000000, "to_amount": 5000000000, "percent_deduction": 30})
+            tax_slab.append("slabs", {"from_amount": 5000000000, "to_amount": 0, "percent_deduction": 35})
+                
+            # Save with flags to bypass validation
+            tax_slab.flags.ignore_permissions = True
+            tax_slab.flags.ignore_mandatory = True
             tax_slab.insert()
+            frappe.db.commit()
+
+            debug_log(f"Successfully created Income Tax Slab: {tax_slab.name}", "Tax Slab")
+            return tax_slab.name
         
-        frappe.db.commit()
-        
-        debug_log(f"Successfully created Income Tax Slab: {tax_slab.name}", "Tax Slab")
-        return tax_slab.name
-        
+        except frappe.exceptions.ValidationError as e:
+            if "Please set the document name" not in str(e):
+                # For other validation errors, re-raise
+                raise
+                
+            # If hit the name validation error, try a different approach
+            debug_log("First approach failed, trying alternative approach", "Tax Slab")
+            
+            # Try bypass approach - use direct SQL as a last resort
+            current_year = getdate(today()).year
+            slab_name = f"Indonesia-Tax-Slab-{current_year}"
+            
+            # Create directly in DB
+            frappe.db.sql(
+                """INSERT INTO `tabIncome Tax Slab` 
+                   (name, creation, modified, modified_by, owner, docstatus,
+                    title, effective_from, company, currency, is_default, disabled)
+                   VALUES (%s, %s, %s, %s, %s, 0,
+                           %s, %s, %s, %s, 1, 0)""",
+                (slab_name, now_datetime(), now_datetime(), frappe.session.user, frappe.session.user, 
+                 f"Indonesia Tax Slab {current_year}", f"{current_year}-01-01", company, "IDR")
+            )
+            
+            # Create slab entries
+            slabs = [
+                (0, 60000000, 5),
+                (60000000, 250000000, 15),
+                (250000000, 500000000, 25),
+                (500000000, 5000000000, 30),
+                (5000000000, 0, 35)
+            ]
+            
+            for i, (from_amount, to_amount, percent) in enumerate(slabs):
+                # Create a unique name for this slab entry
+                child_name = f"{slab_name}-SLAB{i+1}"
+                frappe.db.sql(
+                    """INSERT INTO `tabIncome Tax Slab Slab` 
+                       (name, creation, modified, modified_by, owner, docstatus, 
+                        parent, parentfield, parenttype, idx, 
+                        from_amount, to_amount, percent_deduction)
+                       VALUES (%s, %s, %s, %s, %s, 0, 
+                               %s, 'slabs', 'Income Tax Slab', %s, 
+                               %s, %s, %s)""",
+                    (child_name, now_datetime(), now_datetime(), frappe.session.user, frappe.session.user,
+                     slab_name, i+1,
+                     from_amount, to_amount, percent)
+                )
+            
+            frappe.db.commit()
+            debug_log(f"Successfully created Income Tax Slab via SQL: {slab_name}", "Tax Slab")
+            return slab_name
+            
     except Exception as e:
         frappe.db.rollback()
         debug_log(f"Error creating Income Tax Slab: {str(e)}", "Tax Slab Error")
         frappe.log_error(f"Error creating Income Tax Slab: {str(e)}\n\n{frappe.get_traceback()}", "Tax Slab Error")
         
-        # If we can't create a tax slab, try setting an existing one as default
+        # Last resort - check if any tax slabs exist already
         try:
-            # Find any existing tax slabs
-            any_slabs = frappe.get_all("Income Tax Slab", limit=1)
-            if any_slabs:
-                debug_log(f"Using existing tax slab as fallback: {any_slabs[0].name}", "Tax Slab")
-                return any_slabs[0].name
+            existing_slabs = frappe.get_all("Income Tax Slab", limit=1)
+            if existing_slabs:
+                debug_log(f"Using existing tax slab as last resort: {existing_slabs[0].name}", "Tax Slab")
+                return existing_slabs[0].name
         except:
             pass
             
