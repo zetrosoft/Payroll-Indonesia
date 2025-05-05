@@ -61,10 +61,13 @@ def on_update(doc):
     if not doc:
         return
     try:
-        doc.update_salary_structures()
-        doc.ensure_bpjs_mapping_for_all_companies()
+        # Call the class instance methods directly to avoid passing 'method' parameter
+        if hasattr(doc, 'update_salary_structures'):
+            doc.update_salary_structures()
+        if hasattr(doc, 'ensure_bpjs_mapping_for_all_companies'):
+            doc.ensure_bpjs_mapping_for_all_companies()
     except Exception as e:
-        frappe.log_error(f"Error in on_update: {str(e)}", "BPJS Settings On Update Error")
+        frappe.log_error(f"Error in on_update: {str(e)}\n\n{frappe.get_traceback()}", "BPJS Settings On Update Error")
 
 # HELPER FUNCTIONS
 def create_account(company, account_name, account_type, parent):
@@ -781,21 +784,20 @@ class BPJSSettings(Document):
     def on_update(self):
         """Update related documents when settings change"""
         debug_log("Starting on_update processing", "BPJS Settings")
-        
+    
         try:
             # Update salary structure assignments if needed
             self.update_salary_structures()
-        
+    
             # Ensure all companies have BPJS mapping
             self.ensure_bpjs_mapping_for_all_companies()
         except Exception as e:
             frappe.log_error(
-                f"Error in on_update: {str(e)}\n\n"
+                f"Error in BPJSSettings.on_update: {str(e)}\n\n"
                 f"Traceback: {frappe.get_traceback()}", 
                 "BPJS Settings Update Error"
-            )
-            debug_log(f"Error in on_update: {str(e)}", "BPJS Settings Update Error", trace=True)
-
+        )
+        debug_log(f"Error in on_update: {str(e)}", "BPJS Settings Update Error", trace=True)
     def update_salary_structures(self):
         """
         Update BPJS components in active salary structures

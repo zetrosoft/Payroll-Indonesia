@@ -53,9 +53,10 @@ def create_income_tax_slab():
                 debug_log("No company found, cannot create Income Tax Slab", "Tax Slab Error")
                 return None
                 
-        # Create slab with unique title
+        # Create slab with unique title and name
         current_year = getdate(today()).year
         title = f"Indonesia Tax Slab {current_year}"
+        slab_name = f"Indonesia-Tax-Slab-{current_year}"  # Explicitly set document name
         
         # Get DocField properties
         meta = frappe.get_meta("Income Tax Slab")
@@ -66,6 +67,10 @@ def create_income_tax_slab():
         
         # Create doc with necessary fields
         tax_slab = frappe.new_doc("Income Tax Slab")
+        
+        # Set document name explicitly
+        if has_name:
+            tax_slab.set("name", slab_name)
         
         # Check field existence before setting
         if has_title:
@@ -113,8 +118,10 @@ def create_income_tax_slab():
             "percent_deduction": 35
         })
         
-        # Save doc
-        tax_slab.insert(ignore_permissions=True)
+        # Save doc with additional flags to bypass autoname if needed
+        tax_slab.flags.ignore_permissions = True
+        tax_slab.flags.ignore_mandatory = True
+        tax_slab.insert()
         frappe.db.commit()
         
         debug_log(f"Successfully created Income Tax Slab: {tax_slab.name}", "Tax Slab")
@@ -123,7 +130,7 @@ def create_income_tax_slab():
     except Exception as e:
         frappe.db.rollback()
         debug_log(f"Error creating Income Tax Slab: {str(e)}", "Tax Slab Error")
-        frappe.log_error(f"Error creating Income Tax Slab: {str(e)}", "Tax Slab Error")
+        frappe.log_error(f"Error creating Income Tax Slab: {str(e)}\n\n{frappe.get_traceback()}", "Tax Slab Error")
         return None
 
 def get_default_tax_slab():
