@@ -256,6 +256,10 @@ def verify_bpjs_components(doc):
 def add_bpjs_info_to_note(doc, bpjs_values):
     """
     Add BPJS calculation details to payroll note with duplication check
+    
+    Args:
+        doc: Salary slip document
+        bpjs_values: BPJS calculation results
     """
     try:
         # Initialize payroll_note if needed
