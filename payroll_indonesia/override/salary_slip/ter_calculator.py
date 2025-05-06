@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-29 19:55:00 by dannyaudian
+# Last modified: 2025-05-06 03:54:51 by dannyaudian
 
 import frappe
 from frappe import _
@@ -9,6 +9,9 @@ from frappe.utils import flt, getdate, cint, now_datetime
 import hashlib
 
 from .base import update_component_amount
+
+# Import the newly created add_tax_info_to_note function from tax_calculator
+from .tax_calculator import add_tax_info_to_note
 
 # Cache for TER rates to avoid repeated queries - cleared every 30 minutes
 _ter_rate_cache = {}
@@ -39,13 +42,13 @@ def calculate_monthly_pph_with_ter(doc, employee):
         # Update PPh 21 component
         update_component_amount(doc, "PPh 21", monthly_tax, "deductions")
 
-        # Update note with TER info
-        doc.payroll_note += "\n\n=== Perhitungan PPh 21 dengan TER ==="
-        doc.payroll_note += f"\nStatus Pajak: {status_pajak}"
-        doc.payroll_note += f"\nPenghasilan Bruto: Rp {gross_pay:,.0f}"
-        doc.payroll_note += f"\nTarif Efektif Rata-rata: {ter_rate * 100:.2f}%"
-        doc.payroll_note += f"\nPPh 21 Sebulan: Rp {monthly_tax:,.0f}"
-        doc.payroll_note += "\n\nSesuai PMK 168/2023 tentang Tarif Efektif Rata-rata"
+        # Use the centralized function to add tax info to payroll note
+        add_tax_info_to_note(doc, "TER", {
+            "status_pajak": status_pajak,
+            "gross_pay": gross_pay,
+            "ter_rate": ter_rate * 100,  # Convert to percentage for display
+            "monthly_tax": monthly_tax
+        })
 
     except Exception as e:
         frappe.log_error(
@@ -221,6 +224,11 @@ def get_ytd_totals_from_tax_summary(employee, year, month):
     """
     global _ytd_tax_cache
     
+    # Ensure _ytd_tax_cache exists
+    if "_ytd_tax_cache" not in globals():
+        global _ytd_tax_cache
+        _ytd_tax_cache = {}
+    
     # Create cache key
     cache_key = f"{employee}:{year}:{month}"
     
@@ -346,4 +354,3 @@ def clean_ytd_tax_cache():
     global _ytd_tax_cache, _cleanup_scheduled
     _ytd_tax_cache = {}
     _cleanup_scheduled = False
-
