@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 02:14:58 by dannyaudian
+# Last modified: 2025-05-06 03:01:01 by dannyaudian
 
 import frappe
 from frappe import _
@@ -14,10 +14,14 @@ from payroll_indonesia.override.salary_slip.bpjs_calculator import debug_log
 from payroll_indonesia.override.salary_slip.controller import IndonesiaPayrollSalarySlip
 from payroll_indonesia.override.salary_slip import setup_fiscal_year_if_missing
 
+# Import BPJS functions
+from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs, check_bpjs_enrollment
+
 __all__ = [
     'validate_salary_slip',
     'validate_dependent_doctypes',
     'validate_required_components',
+    'ensure_bpjs_components',
     'on_submit_salary_slip',
     'on_cancel_salary_slip',
     'after_insert_salary_slip',
@@ -32,6 +36,18 @@ __all__ = [
 
 # Constants
 MAX_ERROR_MESSAGE_LENGTH = 140
+# Required components that must exist in every salary slip
+REQUIRED_COMPONENTS = {
+    "earnings": ["Gaji Pokok"],
+    "deductions": [
+        "BPJS JHT Employee",
+        "BPJS JP Employee", 
+        "BPJS Kesehatan Employee",
+        "PPh 21"
+    ]
+}
+# Default UMR Jakarta as safe fallback
+DEFAULT_UMR = 4900000
 
 # Validation functions for salary slip
 def validate_salary_slip(doc, method=None):
@@ -43,6 +59,11 @@ def validate_salary_slip(doc, method=None):
         method (str, optional): Method that called this function
     """
     try:
+        # Get employee info for logging
+        employee_info = f"{doc.employee} ({doc.employee_name})" if hasattr(doc, 'employee_name') else doc.employee
+        debug_log(f"Starting validate_salary_slip for {doc.name if hasattr(doc, 'name') else 'New Salary Slip'}", 
+                 employee=employee_info)
+        
         # Validate employee is specified
         if not doc.employee:
             frappe.throw(_("Employee is mandatory for Salary Slip"))
@@ -65,8 +86,18 @@ def validate_salary_slip(doc, method=None):
         # Validate required DocTypes and settings exist
         validate_dependent_doctypes()
         
-        # Check if all required components exist in salary slip
+        # Check if all required components exist in salary slip - added detailed logging
+        debug_log(f"Validating required components for {doc.name if hasattr(doc, 'name') else 'New Salary Slip'}", 
+                 employee=employee_info)
         validate_required_components(doc)
+        
+        # Ensure BPJS components are properly set - NEW FUNCTION
+        debug_log(f"Ensuring BPJS components for {doc.name if hasattr(doc, 'name') else 'New Salary Slip'}", 
+                 employee=employee_info)
+        ensure_bpjs_components(doc)
+        
+        debug_log(f"Validation completed for {doc.name if hasattr(doc, 'name') else 'New Salary Slip'}", 
+                 employee=employee_info)
         
     except Exception as e:
         log_error(
@@ -119,7 +150,7 @@ def validate_dependent_doctypes():
 
 def validate_required_components(doc):
     """
-    Check if all required components exist in the salary slip
+    Check if all required components exist in the salary slip and add them if missing
     
     Args:
         doc (obj): Salary Slip document
@@ -128,19 +159,9 @@ def validate_required_components(doc):
         ValidationError: If required components are missing and can't be added
     """
     try:
-        required_components = {
-            "earnings": ["Gaji Pokok"],
-            "deductions": [
-                "BPJS JHT Employee",
-                "BPJS JP Employee", 
-                "BPJS Kesehatan Employee",
-                "PPh 21"
-            ]
-        }
-        
         # First check if all required components exist in the system
         missing_components = []
-        for component_type, components in required_components.items():
+        for component_type, components in REQUIRED_COMPONENTS.items():
             for component in components:
                 if not frappe.db.exists("Salary Component", component):
                     missing_components.append(component)
@@ -151,39 +172,289 @@ def validate_required_components(doc):
             ))
         
         # Then check if all required components are in the salary slip
-        for component_type, components in required_components.items():
+        for component_type, components in REQUIRED_COMPONENTS.items():
+            # Verify the component type exists in the doc
             if not hasattr(doc, component_type) or not getattr(doc, component_type):
-                frappe.throw(_("Salary slip doesn't have {0}").format(component_type))
+                frappe.throw(_("Salary slip doesn't have {0} table").format(component_type))
                 
+            # Get list of existing components in this type
             components_in_slip = [d.salary_component for d in getattr(doc, component_type)]
+            
+            # Check for missing components and add them
             for component in components:
                 if component not in components_in_slip:
-                    # Add the missing component
+                    debug_log(f"Adding missing component {component} to {doc.name if hasattr(doc, 'name') else 'New Salary Slip'}")
+                    # Add the missing component with improved error handling
                     try:
-                        # Get abbr from component
-                        component_doc = frappe.get_doc("Salary Component", component)
+                        # Get component details
+                        component_doc = frappe.get_cached_doc("Salary Component", component)
+                        if not component_doc:
+                            debug_log(f"Component {component} exists but couldn't be fetched", trace=True)
+                            component_doc = frappe.get_doc("Salary Component", component)
+                        
+                        # Get abbr, default to first 3 chars if not found
+                        abbr = component_doc.salary_component_abbr if hasattr(component_doc, "salary_component_abbr") else component[:3].upper()
                         
                         # Create a new row
-                        doc.append(component_type, {
-                            "salary_component": component,
-                            "abbr": component_doc.salary_component_abbr,
-                            "amount": 0
-                        })
+                        row = frappe.new_doc("Salary Detail")
+                        row.salary_component = component
+                        row.abbr = abbr
+                        row.amount = 0  # Initialize with zero
+                        row.parentfield = component_type
+                        row.parenttype = "Salary Slip"
+                        row.parent = doc.name if hasattr(doc, 'name') else ""
                         
+                        # Append to the component list in doc
+                        getattr(doc, component_type).append(row)
+                        
+                        debug_log(f"Added missing component: {component}")
                         frappe.msgprint(_("Added missing component: {0}").format(component))
+                        
                     except Exception as e:
                         log_error(
-                            f"Error adding component {component}: {str(e)}",
+                            f"Error adding component {component}: {str(e)}\nTraceback: {frappe.get_traceback()}",
                             "Component Addition Error"
                         )
                         frappe.throw(_("Error adding component {0}: {1}").format(component, str(e)))
                         
     except Exception as e:
         log_error(
-            f"Error validating required components: {str(e)}",
+            f"Error validating required components: {str(e)}\nTraceback: {frappe.get_traceback()}",
             "Component Validation Error"
         )
         frappe.throw(_("Error validating required salary components: {0}").format(str(e)))
+
+def ensure_bpjs_components(doc):
+    """
+    Ensure BPJS components are properly calculated and set
+    
+    Args:
+        doc (obj): Salary Slip document
+    """
+    try:
+        # Skip if employee is not set
+        if not hasattr(doc, 'employee') or not doc.employee:
+            debug_log(f"Cannot ensure BPJS components - employee not set")
+            return
+            
+        # Get employee doc
+        try:
+            employee = frappe.get_doc("Employee", doc.employee)
+        except Exception as e:
+            debug_log(f"Error getting employee doc for {doc.employee}: {str(e)}", trace=True)
+            return
+            
+        # Get base salary for BPJS from earnings
+        base_salary = get_base_salary_for_bpjs(doc)
+        if base_salary <= 0:
+            debug_log(f"Base salary for BPJS is invalid: {base_salary}. Using gross_pay or default UMR.", employee=doc.employee)
+            # Try to use gross_pay
+            if hasattr(doc, 'gross_pay') and doc.gross_pay > 0:
+                base_salary = doc.gross_pay
+            else:
+                # Use default UMR as fallback
+                base_salary = DEFAULT_UMR
+                
+        debug_log(f"Using base salary {base_salary} for BPJS calculations", employee=doc.employee)
+        
+        # Check if employee is enrolled in BPJS
+        try:
+            # Get BPJS config for employee
+            bpjs_config = check_bpjs_enrollment(employee)
+            
+            # If employee is not enrolled, set zeros in components and return
+            if not bpjs_config:
+                debug_log(f"Employee {doc.employee} is not enrolled in BPJS. Setting zeros.")
+                set_component_values(doc, {
+                    "BPJS Kesehatan Employee": 0,
+                    "BPJS JHT Employee": 0,
+                    "BPJS JP Employee": 0
+                }, "deductions")
+                
+                # Set total_bpjs to 0
+                if hasattr(doc, 'total_bpjs'):
+                    doc.total_bpjs = 0
+                    
+                return
+                
+            # Employee is enrolled, calculate BPJS values
+            debug_log(f"Calculating BPJS values for {doc.employee} with base salary {base_salary}")
+            bpjs_values = hitung_bpjs(employee, base_salary)
+            
+            # Check if calculation succeeded
+            if not bpjs_values or bpjs_values["total_employee"] <= 0:
+                debug_log(f"BPJS calculation returned no values or zero total. Check BPJS settings.", employee=doc.employee)
+                # Don't return, will set zeros below
+            
+            # Set component values in the salary slip with explicit keys
+            set_component_values(doc, {
+                "BPJS Kesehatan Employee": bpjs_values.get("kesehatan_employee", 0),
+                "BPJS JHT Employee": bpjs_values.get("jht_employee", 0),
+                "BPJS JP Employee": bpjs_values.get("jp_employee", 0)
+            }, "deductions")
+            
+            # Set total_bpjs field
+            if hasattr(doc, 'total_bpjs'):
+                doc.total_bpjs = flt(bpjs_values.get("total_employee", 0))
+                debug_log(f"Set total_bpjs to {doc.total_bpjs}", employee=doc.employee)
+                
+            # Add note about BPJS calculation
+            add_bpjs_note(doc, bpjs_values)
+            
+        except Exception as e:
+            debug_log(f"Error calculating BPJS for {doc.employee}: {str(e)}", trace=True, employee=doc.employee)
+            frappe.msgprint(_("Warning: Error calculating BPJS values. Check log for details."))
+            
+    except Exception as e:
+        debug_log(f"Error in ensure_bpjs_components: {str(e)}", trace=True)
+        log_error(
+            f"Error ensuring BPJS components: {str(e)}\nTraceback: {frappe.get_traceback()}",
+            "BPJS Component Error"
+        )
+        frappe.msgprint(_("Warning: Error ensuring BPJS components. Check log for details."))
+
+def get_base_salary_for_bpjs(doc):
+    """
+    Get base salary for BPJS calculation with enhanced validation
+    
+    Args:
+        doc (obj): Salary Slip document
+        
+    Returns:
+        float: Base salary amount for BPJS calculation
+    """
+    base_salary = 0
+    
+    # Check if earnings exist
+    if not hasattr(doc, 'earnings') or not doc.earnings:
+        debug_log(f"No earnings found in salary slip {getattr(doc, 'name', 'unknown')}")
+        # No earnings, use gross_pay if available
+        if hasattr(doc, 'gross_pay') and doc.gross_pay > 0:
+            debug_log(f"Using gross_pay as base salary: {doc.gross_pay}")
+            return flt(doc.gross_pay)
+        return 0
+        
+    # Try to find Gaji Pokok first
+    gaji_pokok_found = False
+    for earning in doc.earnings:
+        if earning.salary_component == "Gaji Pokok":
+            base_salary = flt(earning.amount)
+            gaji_pokok_found = True
+            debug_log(f"Found Gaji Pokok component: {base_salary}")
+            break
+    
+    # If not found, try Basic
+    if not gaji_pokok_found:
+        debug_log("Gaji Pokok not found, looking for Basic component")
+        basic_found = False
+        for earning in doc.earnings:
+            if earning.salary_component == "Basic":
+                base_salary = flt(earning.amount)
+                basic_found = True
+                debug_log(f"Found Basic component: {base_salary}")
+                break
+        
+        # If still not found, use first component
+        if not basic_found and doc.earnings:
+            base_salary = flt(doc.earnings[0].amount)
+            debug_log(f"Using first component as base salary: {base_salary} ({doc.earnings[0].salary_component})")
+    
+    # If still zero, use gross_pay as fallback
+    if base_salary <= 0 and hasattr(doc, 'gross_pay') and doc.gross_pay > 0:
+        base_salary = flt(doc.gross_pay)
+        debug_log(f"No valid component found, using gross_pay as base salary: {base_salary}")
+        
+    debug_log(f"Final base salary for BPJS calculation: {base_salary}")
+    return base_salary
+
+def set_component_values(doc, component_values, component_type):
+    """
+    Set values for components in the salary slip
+    
+    Args:
+        doc (obj): Salary Slip document
+        component_values (dict): Dictionary of component names and values
+        component_type (str): Type of component (earnings/deductions)
+    """
+    components = getattr(doc, component_type, [])
+    if not components:
+        debug_log(f"No {component_type} found in doc {getattr(doc, 'name', 'unknown')}")
+        return
+        
+    # Track which components were found and updated
+    updated_components = set()
+    
+    # Update existing components
+    for component in components:
+        if component.salary_component in component_values:
+            old_value = flt(component.amount)
+            new_value = flt(component_values[component.salary_component])
+            component.amount = new_value
+            updated_components.add(component.salary_component)
+            debug_log(f"Updated {component.salary_component}: {old_value} -> {new_value}")
+            
+    # Add missing components if not found
+    for component_name, value in component_values.items():
+        if component_name not in updated_components:
+            try:
+                # Get component details
+                component_doc = frappe.get_cached_doc("Salary Component", component_name)
+                if not component_doc:
+                    component_doc = frappe.get_doc("Salary Component", component_name)
+                
+                # Get abbreviation
+                abbr = component_doc.salary_component_abbr if hasattr(component_doc, "salary_component_abbr") else component_name[:3].upper()
+                
+                # Create new row
+                row = frappe.new_doc("Salary Detail")
+                row.salary_component = component_name
+                row.abbr = abbr
+                row.amount = flt(value)
+                row.parentfield = component_type
+                row.parenttype = "Salary Slip"
+                row.parent = doc.name if hasattr(doc, 'name') else ""
+                
+                # Add to components
+                components.append(row)
+                debug_log(f"Added new component {component_name} with value {value}")
+                
+            except Exception as e:
+                debug_log(f"Error adding component {component_name}: {str(e)}", trace=True)
+
+def add_bpjs_note(doc, bpjs_values):
+    """
+    Add BPJS calculation details to payroll note
+    
+    Args:
+        doc (obj): Salary Slip document
+        bpjs_values (dict): BPJS calculation values
+    """
+    try:
+        # Initialize payroll_note if needed
+        if not hasattr(doc, 'payroll_note'):
+            doc.payroll_note = ""
+        elif doc.payroll_note is None:
+            doc.payroll_note = ""
+            
+        # Add BPJS calculation details
+        doc.payroll_note += "\n\n=== BPJS Calculation ===\n"
+        
+        # Only add components with values
+        if bpjs_values.get("kesehatan_employee", 0) > 0:
+            doc.payroll_note += f"BPJS Kesehatan: Rp {flt(bpjs_values['kesehatan_employee']):,.0f}\n"
+            
+        if bpjs_values.get("jht_employee", 0) > 0:
+            doc.payroll_note += f"BPJS JHT: Rp {flt(bpjs_values['jht_employee']):,.0f}\n"
+            
+        if bpjs_values.get("jp_employee", 0) > 0:
+            doc.payroll_note += f"BPJS JP: Rp {flt(bpjs_values['jp_employee']):,.0f}\n"
+            
+        # Add total
+        doc.payroll_note += f"Total BPJS: Rp {flt(bpjs_values.get('total_employee', 0)):,.0f}\n"
+        
+    except Exception as e:
+        # Log error but continue
+        debug_log(f"Error adding BPJS info to note: {str(e)}", trace=True)
 
 def on_submit_salary_slip(doc, method=None):
     """
