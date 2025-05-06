@@ -2,7 +2,7 @@
   "doctype": "Workspace",
   "name": "Payroll Indonesia",
   "category": "Modules",
-  "content": "[{\"id\":\"px9s17dYkx\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Payroll Indonesia</b></span>\",\"col\":12}},{\"id\":\"aW2i5R5GRP\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"f5K0dYJ3QS\",\"type\":\"paragraph\",\"data\":{\"text\":\"Modul untuk manajemen penggajian karyawan di Indonesia dengan fitur-fitur khusus untuk peraturan perpajakan dan BPJS di Indonesia.\",\"col\":12}},{\"id\":\"1it3dCOnm6\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Akses Cepat</b></span>\",\"col\":12}},{\"id\":\"x7pLl-spS4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Slip Gaji\",\"col\":3}},{\"id\":\"SSGrXWmY-H\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Employee\",\"col\":3}},{\"id\":\"-5J_yLxDaS\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Salary Structure\",\"col\":3}},{\"id\":\"6YEYpnIBKV\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"PPh TER Table\",\"col\":3}},{\"id\":\"c_GjZuZ2oN\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Pengaturan BPJS\",\"col\":3}},{\"id\":\"mX-9DJSyT2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Jabatan\",\"col\":3}},{\"id\":\"tax-summary-shortcut\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Ringkasan Pajak\",\"col\":3}},{\"id\":\"oNjjNbnUHp\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"0BcePLg0g1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Master Data & Pengaturan</b></span>\",\"col\":12}},{\"id\":\"master-data-card\",\"type\":\"card\",\"data\":{\"card_name\":\"Master Data\",\"col\":4}},{\"id\":\"struktur-gaji-card\",\"type\":\"card\",\"data\":{\"card_name\":\"Struktur Gaji\",\"col\":4}},{\"id\":\"dokumen-penggajian-card\",\"type\":\"card\",\"data\":{\"card_name\":\"Dokumen Penggajian\",\"col\":4}},{\"id\":\"pengaturan-pajak-card\",\"type\":\"card\",\"data\":{\"card_name\":\"Pengaturan Pajak\",\"col\":4}},{\"id\":\"laporan-card\",\"type\":\"card\",\"data\":{\"card_name\":\"Laporan & Ringkasan\",\"col\":4}}]",
+  "content": "[{\"id\":\"px9s17dYkx\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Payroll Indonesia</b></span>\",\"col\":12}},{\"id\":\"aW2i5R5GRP\",\"type\":\"spacer\",\"data\"[...]",
   "creation": "2025-04-24 11:27:41",
   "docstatus": 0,
   "icon": "hr",
@@ -42,15 +42,6 @@
       "link_to": "Golongan",
       "link_type": "DocType", 
       "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "PPh 21 TER Table",
-      "link_to": "PPh 21 TER Table",
-      "link_type": "DocType",
-      "onboard": 0,
       "type": "Link"
     },
     {
@@ -115,15 +106,6 @@
     {
       "hidden": 0,
       "is_query_report": 0,
-      "label": "PPh TER Table",
-      "link_to": "PPh TER Table",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
       "label": "Payroll Entry",
       "link_to": "Payroll Entry",
       "link_type": "DocType",
@@ -133,7 +115,7 @@
     {
       "hidden": 0,
       "is_query_report": 0,
-      "label": "Pengaturan Pajak",
+      "label": "Pengaturan",
       "onboard": 0,
       "type": "Card Break"
     },
@@ -151,6 +133,15 @@
       "is_query_report": 0,
       "label": "Pengaturan BPJS",
       "link_to": "BPJS Settings",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "BPJS Account Mapping",
+      "link_to": "BPJS Account Mapping",
       "link_type": "DocType",
       "onboard": 1,
       "type": "Link"
@@ -199,7 +190,7 @@
       "type": "Link"
     }
   ],
-  "modified": "2025-04-24 11:27:41",
+  "modified": "2025-05-06 07:29:39",
   "modified_by": "dannyaudian",
   "module": "Payroll Indonesia",
   "owner": "dannyaudian",
@@ -217,9 +208,9 @@
       "filter_by": "docstatus,=,0"
     },
     {
-      "document_type": "PPh TER Table",
-      "label": "PPh TER (Draft)",
-      "filter_by": "docstatus,=,0"
+      "document_type": "BPJS Account Mapping",
+      "label": "BPJS Account Mapping",
+      "filter_by": "docstatus,=,1"
     },
     {
       "document_type": "Salary Structure",
@@ -271,10 +262,8 @@
     {
       "color": "Red",
       "doc_view": "List",
-      "format": "{} Pending",
-      "label": "PPh TER Table",
-      "link_to": "PPh TER Table",
-      "stats_filter": "[[\"PPh TER Table\",\"docstatus\",\"=\",\"0\",false]]",
+      "label": "BPJS Account Mapping",
+      "link_to": "BPJS Account Mapping",
       "type": "DocType"
     },
     {
