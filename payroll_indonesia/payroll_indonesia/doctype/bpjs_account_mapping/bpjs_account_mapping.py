@@ -9,7 +9,7 @@ from frappe.model.document import Document
 from frappe.utils import flt, cstr, now_datetime
 
 # Import shared functions from setup.py to avoid duplication
-from payroll_indonesia.setup.setup_module import (
+from payroll_indonesia.payroll_indonesia.setup.setup_module import (
     DEFAULT_BPJS_VALUES,
     get_default_bpjs_values,
 )
