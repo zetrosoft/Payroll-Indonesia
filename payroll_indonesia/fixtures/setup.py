@@ -10,7 +10,7 @@ import json
 import os
 
 # Import utility functions from centralized utils module
-from payroll_indonesia.utils import (
+from payroll_indonesia.payroll_indonesia.utils import (
     get_default_config,
     debug_log,
     create_account,
@@ -714,8 +714,6 @@ def setup_pph21_ter(config):
         debug_log(f"Error setting up TER rates: {str(e)}", "TER Setup Error", trace=True)
         return False
 
-# ... rest of code here ...
-
 def setup_income_tax_slab(config):
     """
     Create Income Tax Slab for Indonesia using config data
@@ -747,20 +745,7 @@ def setup_income_tax_slab(config):
         tax_brackets = config.get("tax_brackets", [])
         if not tax_brackets:
             debug_log("No tax brackets found in config, using defaults", "Tax Slab Setup")
-            # Fallback to defaults
-            tax_brackets = [
-                {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
-                {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
-                {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
-                {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
-                {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
-            ]
-        
-        # Create tax slab
-        tax_slab = frappe.new_doc("Income Tax Slab")
-        tax_slab.name = "Indonesia Income Tax"
-        tax_slab.title = "Indonesia Income Tax"
-        tax_slab.effective_from = getdate("2023-01-01")
+                {"income_from": 0, "income_to": 60000000, "tax_rate
         tax_slab.company = company
         tax_slab.currency = config.get("defaults", {}).get("currency", "IDR")
         tax_slab.is_default = 1
