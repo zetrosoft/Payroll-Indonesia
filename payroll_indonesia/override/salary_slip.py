@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 00:21:05 by dannyaudian
+# Last modified: 2025-05-06 02:42:20 by dannyaudian
 
 import frappe
 from frappe import _
@@ -74,7 +74,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     - Integration with Employee Tax Summary
     """
     def validate(self):
-        """Validate salary slip and calculate Indonesian components"""
+        """Validate salary slip and calculate Indonesian components with enhanced BPJS handling"""
         employee_info = f"{self.employee} ({self.employee_name})" if hasattr(self, 'employee_name') else self.employee
         debug_log(f"Starting validate for salary slip {self.name}", employee=employee_info)
         
@@ -91,13 +91,55 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             debug_log(f"Getting employee doc for {self.employee}", employee=employee_info)
             employee = self.get_employee_doc()
             
-            # Calculate base salary for BPJS
+            # Calculate base salary for BPJS with enhanced validation
             debug_log(f"Calculating base salary for {self.name}", employee=employee_info)
             base_salary = self.get_base_salary_for_bpjs()
-            debug_log(f"Base salary for BPJS calculation: {base_salary}", employee=employee_info)
             
-            # Calculate BPJS components - now using imported function
+            # Enhanced validation for base_salary
+            if base_salary <= 0:
+                debug_log(f"Warning: Base salary is zero or negative: {base_salary}. Attempting to use gross pay.", employee=employee_info)
+                if hasattr(self, 'gross_pay') and self.gross_pay > 0:
+                    base_salary = self.gross_pay
+                    debug_log(f"Using gross pay as base salary: {base_salary}", employee=employee_info)
+                else:
+                    # Use minimum default (UMR Jakarta as safe default)
+                    base_salary = 4900000  # Default to Jakarta UMR as safe minimum
+                    debug_log(f"Using default minimum wage as base salary: {base_salary}", employee=employee_info)
+            
+            debug_log(f"Final base salary for BPJS calculation: {base_salary}", employee=employee_info)
+            
+            # Calculate BPJS components with validated base_salary
+            debug_log(f"Calling calculate_bpjs_components with base_salary: {base_salary}", employee=employee_info)
             calculate_bpjs_components(self, employee, base_salary)
+            
+            # Verify BPJS components were calculated
+            verification = verify_bpjs_components(self)
+            if verification["all_zero"]:
+                debug_log(f"Warning: All BPJS components are zero after calculation for {employee_info}. Check enrollment status or salary structure.", employee=employee_info)
+                
+                # Check if employee should have BPJS
+                if check_bpjs_enrollment(employee):
+                    debug_log(f"Employee is enrolled in BPJS but components are zero. Attempting recalculation.", employee=employee_info)
+                    # Re-attempt with direct hitung_bpjs call
+                    try:
+                        bpjs_values = hitung_bpjs(employee, base_salary)
+                        if bpjs_values["total_employee"] > 0:
+                            # BPJS calculation succeeded but component update may have failed
+                            debug_log(f"Direct BPJS calculation succeeded but components were not updated. Manually updating components.", employee=employee_info)
+                            # Manually update BPJS components
+                            for component, value in [
+                                ("BPJS Kesehatan Employee", bpjs_values["kesehatan_employee"]), 
+                                ("BPJS JHT Employee", bpjs_values["jht_employee"]), 
+                                ("BPJS JP Employee", bpjs_values["jp_employee"])
+                            ]:
+                                if value > 0:
+                                    update_component_amount(self, component, value, "deductions")
+                                    debug_log(f"Manually updated {component}: {value}", employee=employee_info)
+                            
+                            # Update total_bpjs
+                            self.total_bpjs = flt(bpjs_values["total_employee"])
+                    except Exception as bpjs_err:
+                        debug_log(f"Error in direct BPJS calculation: {str(bpjs_err)}", employee=employee_info, trace=True)
             
             # IMPROVED: First determine tax calculation strategy, then calculate
             tax_strategy = self.determine_tax_strategy(employee)
@@ -184,9 +226,9 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             debug_log(f"Calculating tax with TER for {self.name}")
             calculate_monthly_pph_with_ter(self, employee)
         else:
-            from payroll_indonesia.override.salary_slip.tax_calculator import calculate_monthly_pph_progressive
+            from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
             debug_log(f"Calculating tax with Progressive method for {self.name}")
-            calculate_monthly_pph_progressive(self, employee)
+            calculate_tax_components(self, employee)
 
     def on_submit(self):
         """Create related documents on submit and verify BPJS values"""
@@ -213,7 +255,12 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                         
                         # Re-attempt BPJS calculation as a fallback
                         base_salary = self.get_base_salary_for_bpjs()
+                        if base_salary <= 0:
+                            base_salary = self.gross_pay if hasattr(self, 'gross_pay') and self.gross_pay > 0 else 4900000
+                            debug_log(f"Using alternative base salary for recalculation: {base_salary}")
+                            
                         calculate_bpjs_components(self, employee, base_salary)
+                        debug_log(f"BPJS recalculation completed with base salary: {base_salary}")
                 except Exception as e:
                     debug_log(f"Error during BPJS verification: {str(e)}", trace=True)
         
@@ -495,31 +542,59 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     
     def get_base_salary_for_bpjs(self):
         """
-        Get base salary for BPJS calculation
+        Get base salary for BPJS calculation with enhanced validation
         First tries to find Gaji Pokok component, then falls back to Basic or first component
         """
         debug_log(f"Getting base salary for BPJS calculation for {self.name}")
+        base_salary = 0
         
-        # Optimized component lookup with direct access
+        # Check if earnings exist
+        if not hasattr(self, 'earnings') or not self.earnings:
+            debug_log(f"No earnings found in salary slip {self.name}")
+            # No earnings, use gross_pay if available
+            if hasattr(self, 'gross_pay') and self.gross_pay > 0:
+                debug_log(f"Using gross_pay as base salary: {self.gross_pay}")
+                return flt(self.gross_pay)
+            return 0
+            
+        # Optimized component lookup with direct access - try Gaji Pokok first
+        gaji_pokok_found = False
         for earning in self.earnings:
             if earning.salary_component == "Gaji Pokok":
-                return flt(earning.amount)
+                base_salary = flt(earning.amount)
+                gaji_pokok_found = True
+                debug_log(f"Found Gaji Pokok component: {base_salary}")
+                break
         
         # If not found, try Basic
-        for earning in self.earnings:
-            if earning.salary_component == "Basic":
-                return flt(earning.amount)
-        
-        # If still not found, use first component
-        if self.earnings:
-            return flt(self.earnings[0].amount)
-        
-        # If still zero, use gross_pay
-        if hasattr(self, 'gross_pay'):
-            return flt(self.gross_pay)
+        if not gaji_pokok_found:
+            debug_log("Gaji Pokok not found, looking for Basic component")
+            basic_found = False
+            for earning in self.earnings:
+                if earning.salary_component == "Basic":
+                    base_salary = flt(earning.amount)
+                    basic_found = True
+                    debug_log(f"Found Basic component: {base_salary}")
+                    break
             
-        # Last resort - return 0
-        return 0
+            # If still not found, use first component
+            if not basic_found and self.earnings:
+                base_salary = flt(self.earnings[0].amount)
+                debug_log(f"Using first component as base salary: {base_salary} ({self.earnings[0].salary_component})")
+        
+        # If still zero, use gross_pay as fallback
+        if base_salary <= 0 and hasattr(self, 'gross_pay') and self.gross_pay > 0:
+            base_salary = flt(self.gross_pay)
+            debug_log(f"No valid component found, using gross_pay as base salary: {base_salary}")
+            
+        # Final check - if still zero, use UMR as fallback for safe calculation
+        if base_salary <= 0:
+            default_umr = 4900000  # Jakarta UMR as default
+            debug_log(f"No valid base salary found, using default UMR: {default_umr}")
+            base_salary = default_umr
+            
+        debug_log(f"Final base salary for BPJS calculation: {base_salary}")
+        return base_salary
     
     def generate_tax_id_data(self, employee):
         """Get tax ID information (NPWP and KTP) from employee data"""
@@ -733,6 +808,7 @@ def check_fiscal_year_setup(date_str=None):
             "message": str(e)
         }
 
+
 @frappe.whitelist()
 def setup_fiscal_year_if_missing(date_str=None):
     """
@@ -800,7 +876,8 @@ def setup_fiscal_year_if_missing(date_str=None):
             "message": str(e)
         }
 
-# Add to salary_slip.py
+
+# Helper functions for salary slip batch processing
 @frappe.whitelist()
 def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
     """
@@ -989,6 +1066,7 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
         })
         return results
 
+
 # Helper function for diagnostics
 def diagnose_system_resources():
     """Get system resource information"""
@@ -1008,6 +1086,7 @@ def diagnose_system_resources():
                 "status": "psutil not installed"
             }
         }
+
 
 def override_salary_slip_gl_entries(doc, method=None):
     frappe.msgprint("Override GL entries function called")
