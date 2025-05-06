@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 02:01:26 by dannyaudian
+# Last modified: 2025-05-06 02:14:58 by dannyaudian
 
 import frappe
 from frappe import _
@@ -21,9 +21,7 @@ __all__ = [
     'on_submit_salary_slip',
     'on_cancel_salary_slip',
     'after_insert_salary_slip',
-    'wrapper_create_from_salary_slip',
     'wrapper_create_from_employee_tax_summary',
-    'wrapper_update_on_salary_slip_cancel',
     'wrapper_update_on_salary_slip_cancel_employee_tax_summary',
     'log_error',
     'log_and_raise_error',
@@ -101,10 +99,9 @@ def validate_dependent_doctypes():
         if not frappe.db.exists("PPh 21 Settings", "PPh 21 Settings"):
             frappe.throw(_("PPh 21 Settings document not configured. Please create PPh 21 Settings first."))
             
-        # Check required dependent DocTypes
+        # Check required dependent DocTypes - Employee Tax Summary only
         required_doctypes = [
-            "Employee Tax Summary",
-            "BPJS Payment Summary"
+            "Employee Tax Summary"
         ]
         
         for doctype in required_doctypes:
@@ -297,32 +294,6 @@ def after_insert_salary_slip(doc, method=None):
         # Don't throw here to prevent blocking salary slip creation
         frappe.msgprint(_("Warning: Error in post-creation processing: {0}").format(str(e)))
 
-# Wrapper functions for compatibility with hooks - confirmed alignment with actual implementations
-def wrapper_create_from_salary_slip(doc, method=None):
-    """
-    Wrapper to call create_from_salary_slip from bpjs_payment_api
-    
-    Args:
-        doc (obj): Salary Slip document
-        method (str, optional): Method that called this function (not used)
-    """
-    try:
-        from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import create_from_salary_slip
-        # Call the original function with only doc.name parameter
-        create_from_salary_slip(doc.name)
-    except ImportError:
-        log_error(
-            f"Could not import create_from_salary_slip from bpjs_payment_api for {doc.name}",
-            "Import Error"
-        )
-        frappe.msgprint(_("Warning: Could not create BPJS Payment Summary."))
-    except Exception as e:
-        log_error(
-            f"Error in wrapper_create_from_salary_slip for {doc.name}: {str(e)}",
-            "Wrapper Function Error"
-        )
-        frappe.msgprint(_("Warning: Error creating BPJS Payment Summary: {0}").format(str(e)))
-
 def wrapper_create_from_employee_tax_summary(doc, method=None):
     """
     Wrapper to call create_from_salary_slip from employee_tax_summary
@@ -347,38 +318,6 @@ def wrapper_create_from_employee_tax_summary(doc, method=None):
             "Wrapper Function Error"
         )
         frappe.msgprint(_("Warning: Error creating Employee Tax Summary: {0}").format(str(e)))
-
-def wrapper_update_on_salary_slip_cancel(doc, method=None):
-    """
-    Wrapper to call update_on_salary_slip_cancel from bpjs_payment_api
-    
-    Args:
-        doc (obj): Salary Slip document
-        method (str, optional): Method that called this function (not used)
-    """
-    try:
-        from payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api import update_on_salary_slip_cancel
-        
-        if not hasattr(doc, 'end_date') or not doc.end_date:
-            frappe.msgprint(_("Salary slip end date missing, cannot update BPJS Payment Summary on cancel"))
-            return
-            
-        # Extract month and year from doc
-        month = getdate(doc.end_date).month
-        year = getdate(doc.end_date).year
-        
-        # Call the original function with the correct parameters
-        update_on_salary_slip_cancel(doc.name, month, year)
-    except ImportError:
-        log_error(
-            f"Could not import update_on_salary_slip_cancel from bpjs_payment_api for {doc.name}",
-            "Import Error"
-        )
-    except Exception as e:
-        log_error(
-            f"Error in wrapper_update_on_salary_slip_cancel for {doc.name}: {str(e)}",
-            "Wrapper Function Error"
-        )
 
 def wrapper_update_on_salary_slip_cancel_employee_tax_summary(doc, method=None):
     """
@@ -521,6 +460,12 @@ def add_to_payroll_notifications(doc):
         
         # Insert notification
         notification.insert(ignore_permissions=True)
+        
+        # Add note about BPJS Payment Summary
+        if hasattr(doc, 'payroll_note'):
+            timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
+            doc.payroll_note += f"\n[{timestamp}] Note: BPJS Payment Summary needs to be created manually."
+            doc.db_set('payroll_note', doc.payroll_note, update_modified=False)
         
     except Exception as e:
         log_error(
