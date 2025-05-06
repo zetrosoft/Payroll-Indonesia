@@ -54,12 +54,13 @@ def setup_accounts(doc):
         return
     doc.setup_accounts()
     
-def on_update(doc):
+def on_update(doc, method=None):
     """
     Module level on_update called by hooks
     
     Args:
         doc (obj): BPJS Settings document
+        method (str, optional): Method that called this function
     """
     if not doc:
         return
@@ -514,7 +515,7 @@ class BPJSSettings(Document):
             debug_log(f"Error in _create_bpjs_mapping for {company}: {str(e)}", "BPJS Mapping Error", trace=True)
             return None
     
-    def on_update(self):
+    def on_update(self, method=None):
         """Update related documents when settings change"""
         debug_log("Starting on_update processing", "BPJS Settings")
     
