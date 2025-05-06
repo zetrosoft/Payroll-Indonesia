@@ -611,16 +611,33 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             frappe.log_error(f"Error generating tax ID data: {str(e)}", "Tax ID Data Error")
             # Don't throw, since this is non-critical
     
-    def add_payroll_note(self, note):
-        """Add note to payroll_note field with timestamp"""
+    def add_payroll_note(self, note, section=None):
+        """
+        Add note to payroll_note field with timestamp and optional section
+    
+        Args:
+            note: Note content to add
+            section: Optional section name to organize notes
+        """
         if not hasattr(self, 'payroll_note'):
             self.payroll_note = ""
-            
+        
         # Add timestamp to note
         timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
-        
+        formatted_note = f"[{timestamp}] {note}"
+    
+        if section:
+            # Check if section already exists
+            section_marker = f"=== {section} ==="
+            if section_marker in self.payroll_note:
+                # Could implement section replacement for updates
+                pass
+            
+            # Add section header if specified
+            formatted_note = f"\n\n=== {section} ===\n{formatted_note}"
+    
         # Add new note
-        self.payroll_note += f"\n[{timestamp}] {note}"
+        self.payroll_note += f"\n{formatted_note}"
     
     def get_component_value(self, component_name, component_type):
         """
