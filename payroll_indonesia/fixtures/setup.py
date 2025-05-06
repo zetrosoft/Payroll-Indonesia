@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 13:05:12 by dannyaudian
+# Last modified: 2025-05-06 15:05:12 by dannyaudian
 
 import frappe
 from frappe import _
@@ -23,27 +23,14 @@ __all__ = [
     'setup_income_tax_slab',
     'setup_bpjs',
     'create_bpjs_settings',
-    'get_default_bpjs_values',
+    'get_default_config',
     'create_account_hooks',
     'debug_log',
     'display_installation_summary',
-    'DEFAULT_BPJS_VALUES'
 ]
 
 # Constants for default values
 DEFAULT_CONFIG_PATH = "payroll_indonesia/payroll_indonesia/config/defaults.json"
-DEFAULT_BPJS_VALUES = {
-    "kesehatan_employee_percent": 1.0,
-    "kesehatan_employer_percent": 4.0,
-    "kesehatan_max_salary": 12000000.0,
-    "jht_employee_percent": 2.0,
-    "jht_employer_percent": 3.7,
-    "jp_employee_percent": 1.0,
-    "jp_employer_percent": 2.0,
-    "jp_max_salary": 9077600.0,
-    "jkk_percent": 0.24,
-    "jkm_percent": 0.3
-}
 
 def before_install():
     """
@@ -66,8 +53,12 @@ def after_install():
     Setup requirements after installing the app with improved error handling
     
     Creates accounts, sets up tax configuration, configures BPJS and more.
+    The custom fields are handled by the fixtures automatically.
     """
     debug_log("Starting Payroll Indonesia after_install process", "Installation")
+    
+    # Load configuration defaults
+    config = get_default_config()
     
     # Track setup results
     results = {
@@ -81,7 +72,7 @@ def after_install():
     
     try:
         # Create accounts first (required for salary components)
-        results["accounts"] = create_accounts()
+        results["accounts"] = create_accounts(config)
         debug_log("Account setup completed", "Installation")
     except Exception as e:
         frappe.log_error(
@@ -92,8 +83,12 @@ def after_install():
         
     try:
         # Setup suppliers
-        results["suppliers"] = create_supplier_group()
-        debug_log("Supplier group setup completed", "Installation")
+        supplier_results = create_supplier_group()
+        # Only attempt creating BPJS supplier if supplier group creation was successful
+        if supplier_results and config.get("suppliers", {}).get("bpjs", {}):
+            supplier_results = create_bpjs_supplier(config)
+        results["suppliers"] = supplier_results
+        debug_log("Supplier setup completed", "Installation")
     except Exception as e:
         frappe.log_error(
             f"Error during supplier setup: {str(e)}\n\n"
@@ -103,7 +98,7 @@ def after_install():
         
     try:
         # Setup tax configuration
-        pph21_settings = setup_pph21_defaults()
+        pph21_settings = setup_pph21_defaults(config)
         results["pph21_settings"] = bool(pph21_settings)
         debug_log("PPh 21 setup completed", "Installation")
     except Exception as e:
@@ -115,7 +110,7 @@ def after_install():
         
     try:
         # Setup TER rates
-        results["ter_rates"] = setup_pph21_ter()
+        results["ter_rates"] = setup_pph21_ter(config)
         debug_log("TER rates setup completed", "Installation")
     except Exception as e:
         frappe.log_error(
@@ -126,7 +121,7 @@ def after_install():
         
     try:
         # Setup tax slab
-        results["tax_slab"] = setup_income_tax_slab()
+        results["tax_slab"] = setup_income_tax_slab(config)
         debug_log("Tax slab setup completed", "Installation")
     except Exception as e:
         frappe.log_error(
@@ -137,7 +132,7 @@ def after_install():
     
     try:
         # Setup BPJS
-        results["bpjs_setup"] = setup_bpjs()
+        results["bpjs_setup"] = setup_bpjs(config)
         debug_log("BPJS setup completed", "Installation")
     except Exception as e:
         frappe.log_error(
@@ -168,15 +163,16 @@ def after_install():
         )
     
     # Display installation summary
-    display_installation_summary(results)
+    display_installation_summary(results, config)
 
-def display_installation_summary(results):
+def display_installation_summary(results, config):
     """
     Display summary of installation results
     
     Args:
         results (dict): Dictionary of setup results with component names as keys
                         and success status (True/False) as values
+        config (dict): Configuration data from defaults.json
     """
     success_items = []
     failed_items = []
@@ -187,8 +183,12 @@ def display_installation_summary(results):
         else:
             failed_items.append(_(item))
     
+    # Get app version from config
+    app_version = config.get("app_info", {}).get("version", "1.0.0") if config else "1.0.0"
+    
     if success_items:
-        success_msg = _("Payroll Indonesia has been installed. Successfully configured: {0}").format(
+        success_msg = _("Payroll Indonesia v{0} has been installed. Successfully configured: {1}").format(
+            app_version,
             ", ".join(success_items)
         )
         indicator = "green" if len(failed_items) == 0 else "yellow"
@@ -208,7 +208,7 @@ def display_installation_summary(results):
             "user": frappe.session.user,
             "system": {
                 "frappe_version": frappe.__version__,
-                "app_version": frappe.get_module("payroll_indonesia").__version__
+                "app_version": app_version
             }
         }
         
@@ -258,39 +258,48 @@ def check_system_readiness():
     # Return True so installation can continue with warnings
     return True
 
-def create_accounts():
+def create_accounts(config):
     """
     Create required Accounts for Indonesian payroll management with standardized naming
     
+    Args:
+        config (dict): Configuration data from defaults.json
+        
     Returns:
         bool: True if successful, False otherwise
     """
-    # Define accounts to create with standardized names - FIXED ACCOUNT TYPES
-    accounts = [
-        # Basic expense accounts
-        {"account_name": "Beban Gaji Pokok", "parent_account": "Direct Expenses", "account_type": "Direct Expense"},
-        {"account_name": "Beban Tunjangan Makan", "parent_account": "Direct Expenses", "account_type": "Direct Expense"},
-        {"account_name": "Beban Tunjangan Transport", "parent_account": "Direct Expenses", "account_type": "Direct Expense"},
-        {"account_name": "Beban Insentif", "parent_account": "Direct Expenses", "account_type": "Direct Expense"},
-        {"account_name": "Beban Bonus", "parent_account": "Direct Expenses", "account_type": "Direct Expense"},
+    if not config:
+        debug_log("No configuration data available for creating accounts", "Account Setup")
+        return False
         
-        # BPJS expense accounts - using standardized naming with corrected account type
-        {"account_name": "BPJS JHT Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Direct Expense"},
-        {"account_name": "BPJS JP Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Direct Expense"},
-        {"account_name": "BPJS JKK Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Direct Expense"},
-        {"account_name": "BPJS JKM Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Direct Expense"},
-        {"account_name": "BPJS Kesehatan Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Direct Expense"},
+    gl_accounts = config.get("gl_accounts", {})
+    if not gl_accounts:
+        debug_log("No GL accounts configuration found in defaults.json", "Account Setup")
+        return False
+    
+    # Build account list from config
+    accounts = []
+    
+    # Add expense accounts
+    for _, account_info in gl_accounts.get("expense_accounts", {}).items():
+        accounts.append(account_info)
         
-        # Liability accounts
-        {"account_name": "Hutang PPh 21", "parent_account": "Duties and Taxes", "account_type": "Tax"},
+    # Add BPJS expense accounts
+    for _, account_info in gl_accounts.get("bpjs_expense_accounts", {}).items():
+        accounts.append(account_info)
         
-        # BPJS liability accounts - using standardized naming
-        {"account_name": "BPJS JHT Payable", "parent_account": "BPJS Payable", "account_type": "Payable"},
-        {"account_name": "BPJS JP Payable", "parent_account": "BPJS Payable", "account_type": "Payable"},
-        {"account_name": "BPJS Kesehatan Payable", "parent_account": "BPJS Payable", "account_type": "Payable"},
-        {"account_name": "BPJS JKK Payable", "parent_account": "BPJS Payable", "account_type": "Payable"},
-        {"account_name": "BPJS JKM Payable", "parent_account": "BPJS Payable", "account_type": "Payable"}
-    ]
+    # Add payable accounts
+    for _, account_info in gl_accounts.get("payable_accounts", {}).items():
+        accounts.append(account_info)
+        
+    # Add BPJS payable accounts
+    for _, account_info in gl_accounts.get("bpjs_payable_accounts", {}).items():
+        accounts.append(account_info)
+    
+    # Get parent accounts from config
+    parent_accounts = []
+    for _, parent_info in gl_accounts.get("parent_accounts", {}).items():
+        parent_accounts.append(parent_info)
     
     # Get all companies
     companies = frappe.get_all("Company", pluck="name")
@@ -313,13 +322,7 @@ def create_accounts():
             
             debug_log(f"Creating accounts for company: {company} (Abbr: {company_abbr})", "Account Setup")
             
-            # Create parent accounts for BPJS - FIXED ACCOUNT TYPES
-            parent_accounts = [
-                {"account_name": "BPJS Payable", "parent_account": "Duties and Taxes", "account_type": "Payable", "is_group": 1, "root_type": "Liability"},
-                {"account_name": "BPJS Expenses", "parent_account": "Direct Expenses", "account_type": "Direct Expense", "is_group": 1, "root_type": "Expense"}
-            ]
-            
-            # Create BPJS parent accounts first with better error handling
+            # Create parent accounts first with better error handling
             created_parents = []
             for parent_account in parent_accounts:
                 try:
@@ -344,7 +347,22 @@ def create_accounts():
                     
                     # Find parent account from the template
                     template_parent = parent_account["parent_account"]
-                    parent = find_parent_account(company, template_parent, company_abbr, parent_account["account_type"])
+                    
+                    # Get candidate list for parent account types from config
+                    candidates = []
+                    if "root_type" in parent_account:
+                        if parent_account["root_type"] == "Liability":
+                            candidates = gl_accounts.get("parent_account_candidates", {}).get("liability", [])
+                        elif parent_account["root_type"] == "Expense":
+                            candidates = gl_accounts.get("parent_account_candidates", {}).get("expense", [])
+                    
+                    parent = find_parent_account(
+                        company, 
+                        template_parent, 
+                        company_abbr, 
+                        parent_account["account_type"],
+                        candidates
+                    )
                     
                     if not parent:
                         debug_log(f"Could not find parent account {template_parent} for {company}", "Account Setup")
@@ -359,7 +377,7 @@ def create_accounts():
                         "account_type": parent_account["account_type"],
                         "root_type": parent_account["root_type"],
                         "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
-                        "is_group": 1
+                        "is_group": parent_account["is_group"]
                     })
                     
                     # Bypass permissions for installation/setup
@@ -410,7 +428,8 @@ def create_accounts():
                         company=company,
                         account_name=account["account_name"],
                         account_type=account["account_type"],
-                        parent=parent_account
+                        parent=parent_account,
+                        root_type=account.get("root_type")
                     )
                     
                     if full_account_name:
@@ -446,7 +465,7 @@ def create_accounts():
     
     return overall_success
 
-def create_account(company, account_name, account_type, parent):
+def create_account(company, account_name, account_type, parent, root_type=None):
     """
     Create GL Account if not exists
     
@@ -455,6 +474,7 @@ def create_account(company, account_name, account_type, parent):
         account_name (str): Account name without company abbreviation
         account_type (str): Account type (Payable, Receivable, etc.)
         parent (str): Parent account name
+        root_type (str, optional): Root type (Asset, Liability, etc.). If None, determined from account_type.
         
     Returns:
         str: Full account name if created or already exists, None otherwise
@@ -484,17 +504,18 @@ def create_account(company, account_name, account_type, parent):
             debug_log(f"Parent account {parent} does not exist", "Account Creation Error")
             return None
             
-        # Determine root_type based on account_type - UPDATED FOR CORRECT MAPPING
-        root_type = "Liability"  # Default
-        if account_type in ["Direct Expense", "Indirect Expense", "Expense Account"]:
-            root_type = "Expense"
-        elif account_type == "Asset":
-            root_type = "Asset"
-        elif account_type in ["Direct Income", "Indirect Income", "Income Account"]:
-            root_type = "Income"
+        # Determine root_type based on account_type if not provided
+        if not root_type:
+            root_type = "Liability"  # Default
+            if account_type in ["Direct Expense", "Indirect Expense", "Expense Account"]:
+                root_type = "Expense"
+            elif account_type == "Asset":
+                root_type = "Asset"
+            elif account_type in ["Direct Income", "Indirect Income", "Income Account"]:
+                root_type = "Income"
             
         # Create new account with explicit permissions
-        debug_log(f"Creating account: {full_account_name} (Type: {account_type}, Parent: {parent})", "Account Creation")
+        debug_log(f"Creating account: {full_account_name} (Type: {account_type}, Parent: {parent}, Root: {root_type})", "Account Creation")
         
         doc = frappe.get_doc({
             "doctype": "Account",
@@ -532,7 +553,7 @@ def create_account(company, account_name, account_type, parent):
         debug_log(f"Error creating account {account_name}: {str(e)}", "Account Creation Error")
         return None
 
-def find_parent_account(company, parent_name, company_abbr, account_type):
+def find_parent_account(company, parent_name, company_abbr, account_type, candidates=None):
     """
     Find parent account with multiple fallback options
     
@@ -541,6 +562,7 @@ def find_parent_account(company, parent_name, company_abbr, account_type):
         parent_name (str): Parent account name
         company_abbr (str): Company abbreviation
         account_type (str): Account type to find appropriate parent
+        candidates (list, optional): List of candidate parent account names to try
         
     Returns:
         str: Parent account name if found, None otherwise
@@ -567,37 +589,40 @@ def find_parent_account(company, parent_name, company_abbr, account_type):
         debug_log(f"Found parent account with company suffix: {parent}", "Account Lookup")
         return parent
     
-    # Handle BPJS parent account names
-    if parent_name == "BPJS Payable" or parent_name == "BPJS Expenses":
+    # Handle BPJS parent account names or use provided candidates
+    if parent_name == "BPJS Payable" or parent_name == "BPJS Expenses" or not candidates:
         # Get parent account based on account type
-        if "Payable" in parent_name:
-            parent_candidates = ["Duties and Taxes", "Current Liabilities", "Accounts Payable"]
+        if "Payable" in parent_name or account_type in ["Payable", "Tax"]:
+            parent_candidates = candidates or ["Duties and Taxes", "Current Liabilities", "Accounts Payable"]
             debug_log(f"Looking for liability parent among: {', '.join(parent_candidates)}", "Account Lookup")
         else:
-            # UPDATED: Look for expense parent accounts with valid account types
-            parent_candidates = ["Direct Expenses", "Indirect Expenses", "Expenses"]
+            # Look for expense parent accounts with valid account types
+            parent_candidates = candidates or ["Direct Expenses", "Indirect Expenses", "Expenses"]
             debug_log(f"Looking for expense parent among: {', '.join(parent_candidates)}", "Account Lookup")
+    else:
+        parent_candidates = candidates
+        debug_log(f"Using provided candidates for parent accounts: {', '.join(parent_candidates)}", "Account Lookup")
             
-        for candidate in parent_candidates:
-            candidate_account = frappe.db.get_value(
-                "Account", 
-                {"account_name": candidate, "company": company}, 
-                "name"
-            )
+    for candidate in parent_candidates:
+        candidate_account = frappe.db.get_value(
+            "Account", 
+            {"account_name": candidate, "company": company}, 
+            "name"
+        )
+        
+        if candidate_account:
+            debug_log(f"Found parent {candidate_account} for {parent_name}", "Account Lookup")
+            return candidate_account
             
-            if candidate_account:
-                debug_log(f"Found parent {candidate_account} for {parent_name}", "Account Lookup")
-                return candidate_account
-                
-            candidate_account = frappe.db.get_value(
-                "Account", 
-                {"name": f"{candidate} - {company_abbr}"}, 
-                "name"
-            )
-                
-            if candidate_account:
-                debug_log(f"Found parent {candidate_account} for {parent_name}", "Account Lookup")
-                return candidate_account
+        candidate_account = frappe.db.get_value(
+            "Account", 
+            {"name": f"{candidate} - {company_abbr}"}, 
+            "name"
+        )
+            
+        if candidate_account:
+            debug_log(f"Found parent {candidate_account} for {parent_name}", "Account Lookup")
+            return candidate_account
     
     # Try broad search for accounts with similar name
     similar_accounts = frappe.db.get_list(
@@ -698,10 +723,65 @@ def create_supplier_group():
         )
         return False
 
-def setup_pph21_defaults():
+def create_bpjs_supplier(config):
     """
-    Setup default PPh 21 configuration with TER method
+    Create BPJS supplier entity
     
+    Args:
+        config (dict): Configuration data from defaults.json
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        supplier_config = config.get("suppliers", {}).get("bpjs", {})
+        if not supplier_config:
+            debug_log("No BPJS supplier configuration found", "Supplier Setup")
+            return False
+            
+        supplier_name = supplier_config.get("supplier_name", "BPJS")
+        
+        # Skip if already exists
+        if frappe.db.exists("Supplier", supplier_name):
+            debug_log(f"Supplier {supplier_name} already exists", "Supplier Setup")
+            return True
+            
+        # Ensure supplier group exists
+        supplier_group = supplier_config.get("supplier_group", "Government")
+        if not frappe.db.exists("Supplier Group", supplier_group):
+            debug_log(f"Supplier group {supplier_group} does not exist", "Supplier Setup")
+            return False
+            
+        # Create supplier
+        supplier = frappe.new_doc("Supplier")
+        supplier.supplier_name = supplier_name
+        supplier.supplier_group = supplier_group
+        supplier.supplier_type = supplier_config.get("supplier_type", "Government")
+        supplier.country = supplier_config.get("country", "Indonesia")
+        supplier.default_currency = supplier_config.get("default_currency", "IDR")
+        
+        supplier.flags.ignore_permissions = True
+        supplier.insert(ignore_permissions=True)
+        
+        frappe.db.commit()
+        debug_log(f"Created supplier: {supplier_name}", "Supplier Setup")
+        return True
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Failed to create BPJS supplier: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Supplier Setup Error"
+        )
+        return False
+
+def setup_pph21_defaults(config):
+    """
+    Setup default PPh 21 configuration with TER method using config data
+    
+    Args:
+        config (dict): Configuration data from defaults.json
+        
     Returns:
         object: PPh 21 Settings document if successful, None otherwise
     """
@@ -715,27 +795,28 @@ def setup_pph21_defaults():
         else:
             settings = frappe.new_doc("PPh 21 Settings")
         
-        # Set TER as default calculation method
-        settings.calculation_method = "TER"
-        settings.use_ter = 1
+        # Set TER as default calculation method from config
+        tax_config = config.get("tax", {})
+        settings.calculation_method = tax_config.get("tax_calculation_method", "TER")
+        settings.use_ter = tax_config.get("use_ter", 1)
+        settings.use_gross_up = tax_config.get("use_gross_up", 0)
+        settings.npwp_mandatory = tax_config.get("npwp_mandatory", 0)
+        settings.biaya_jabatan_percent = tax_config.get("biaya_jabatan_percent", 5.0)
+        settings.biaya_jabatan_max = tax_config.get("biaya_jabatan_max", 500000.0)
+        settings.umr_default = tax_config.get("umr_default", 4900000.0)
         settings.ter_notes = "Tarif Efektif Rata-rata (TER) sesuai PMK-168/PMK.010/2023"
         
-        # Add PTKP values
-        ptkp_values = {
-            "TK0": 54000000,  # tidak kawin, 0 tanggungan
-            "TK1": 58500000,  # tidak kawin, 1 tanggungan
-            "TK2": 63000000,  # tidak kawin, 2 tanggungan
-            "TK3": 67500000,  # tidak kawin, 3 tanggungan
-            "K0": 58500000,   # kawin, 0 tanggungan
-            "K1": 63000000,   # kawin, 1 tanggungan
-            "K2": 67500000,   # kawin, 2 tanggungan
-            "K3": 72000000,   # kawin, 3 tanggungan
-            "HB0": 112500000, # kawin penghasilan istri digabung, 0 tanggungan
-            "HB1": 117000000, # kawin penghasilan istri digabung, 1 tanggungan
-            "HB2": 121500000, # kawin penghasilan istri digabung, 2 tanggungan
-            "HB3": 126000000  # kawin penghasilan istri digabung, 3 tanggungan
-        }
-        
+        # Add PTKP values from config
+        ptkp_values = config.get("ptkp", {})
+        if not ptkp_values:
+            debug_log("No PTKP values found in config, using defaults", "PPh 21 Setup")
+            # Fallback to defaults
+            ptkp_values = {
+                "TK0": 54000000, "TK1": 58500000, "TK2": 63000000, "TK3": 67500000,
+                "K0": 58500000, "K1": 63000000, "K2": 67500000, "K3": 72000000,
+                "HB0": 112500000, "HB1": 117000000, "HB2": 121500000, "HB3": 126000000
+            }
+            
         # Add PTKP values
         for status, amount in ptkp_values.items():
             # Create description
@@ -755,16 +836,20 @@ def setup_pph21_defaults():
                 "description": description
             })
         
-        # Add tax brackets
-        brackets = [
-            {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
-            {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
-            {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
-            {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
-            {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
-        ]
+        # Add tax brackets from config
+        tax_brackets = config.get("tax_brackets", [])
+        if not tax_brackets:
+            debug_log("No tax brackets found in config, using defaults", "PPh 21 Setup")
+            # Fallback to defaults
+            tax_brackets = [
+                {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
+                {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
+                {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
+                {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
+                {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
+            ]
         
-        for bracket in brackets:
+        for bracket in tax_brackets:
             settings.append("bracket_table", {
                 "income_from": flt(bracket["income_from"]),
                 "income_to": flt(bracket["income_to"]),
@@ -781,6 +866,13 @@ def setup_pph21_defaults():
             
         # Commit changes
         frappe.db.commit()
+        
+        # Run on_update method to validate settings if exists
+        try:
+            if hasattr(settings, 'on_update'):
+                settings.on_update()
+        except Exception as e:
+            debug_log(f"Non-critical error during settings on_update: {str(e)}", "PPh 21 Setup")
             
         debug_log("PPh 21 Settings configured successfully", "PPh 21 Setup")
         return settings
@@ -793,10 +885,13 @@ def setup_pph21_defaults():
         )
         return None
 
-def setup_pph21_ter():
+def setup_pph21_ter(config):
     """
-    Setup default TER rates based on PMK-168/PMK.010/2023
+    Setup default TER rates based on PMK-168/PMK.010/2023 using config data
     
+    Args:
+        config (dict): Configuration data from defaults.json
+        
     Returns:
         bool: True if successful, False otherwise
     """
@@ -818,8 +913,12 @@ def setup_pph21_ter():
                 "TER Setup Error"
             )
         
-        # Load TER rates from JSON file
-        ter_rates = get_ter_rates()
+        # Get TER rates from config
+        ter_rates = config.get("ter_rates", {})
+        if not ter_rates:
+            debug_log("No TER rates found in config, loading from separate file", "TER Setup")
+            ter_rates = get_ter_rates()
+            
         if not ter_rates:
             debug_log("No TER rates found", "TER Setup Error")
             return False
@@ -847,23 +946,43 @@ def setup_pph21_ter():
                     else:
                         description = f"{status} Rp{rate_data['income_from']:,.0f}-Rp{rate_data['income_to']:,.0f}"
                     
-                    # Create TER entry with is_highest_bracket flag for entries with income_to=0
-                    ter_entry = frappe.get_doc({
-                        "doctype": "PPh 21 TER Table",
-                        "status_pajak": status,
-                        "income_from": flt(rate_data["income_from"]),
-                        "income_to": flt(rate_data["income_to"]),
-                        "rate": flt(rate_data["rate"]),
-                        "description": description,
-                        "is_highest_bracket": 1 if is_highest else 0  # Set the flag for highest bracket
-                    })
+                    # Check if entry already exists
+                    existing = frappe.db.exists(
+                        "PPh 21 TER Table",
+                        {
+                            "status_pajak": status,
+                            "income_from": flt(rate_data["income_from"]),
+                            "income_to": flt(rate_data["income_to"])
+                        }
+                    )
                     
-                    # Add debug message to confirm highest bracket setting
-                    if is_highest:
-                        debug_log(f"Setting highest bracket flag for {status} with rate {rate_data['rate']}", "TER Setup")
-                    
-                    ter_entry.flags.ignore_permissions = True
-                    ter_entry.insert(ignore_permissions=True)
+                    if existing:
+                        # Update existing entry
+                        ter_entry = frappe.get_doc("PPh 21 TER Table", existing)
+                        ter_entry.rate = flt(rate_data["rate"])
+                        ter_entry.description = description
+                        ter_entry.is_highest_bracket = 1 if is_highest else 0
+                        ter_entry.flags.ignore_permissions = True
+                        ter_entry.save(ignore_permissions=True)
+                        debug_log(f"Updated TER rate for {status} with range {rate_data['income_from']}-{rate_data['income_to']}", "TER Setup")
+                    else:
+                        # Create TER entry with is_highest_bracket flag for entries with income_to=0
+                        ter_entry = frappe.get_doc({
+                            "doctype": "PPh 21 TER Table",
+                            "status_pajak": status,
+                            "income_from": flt(rate_data["income_from"]),
+                            "income_to": flt(rate_data["income_to"]),
+                            "rate": flt(rate_data["rate"]),
+                            "description": description,
+                            "is_highest_bracket": 1 if is_highest else 0  # Set the flag for highest bracket
+                        })
+                        
+                        # Add debug message to confirm highest bracket setting
+                        if is_highest:
+                            debug_log(f"Setting highest bracket flag for {status} with rate {rate_data['rate']}", "TER Setup")
+                        
+                        ter_entry.flags.ignore_permissions = True
+                        ter_entry.insert(ignore_permissions=True)
                     
                     count += 1
                 except Exception as e:
@@ -875,7 +994,7 @@ def setup_pph21_ter():
         
         # Commit all changes
         frappe.db.commit()
-        debug_log(f"Created {count} TER rates successfully", "TER Setup")
+        debug_log(f"Processed {count} TER rates successfully", "TER Setup")
         return count > 0
             
     except Exception as e:
@@ -888,7 +1007,7 @@ def setup_pph21_ter():
 
 def get_ter_rates():
     """
-    Get TER rates either from file or hardcoded defaults
+    Get TER rates from file if not provided in config
     
     Returns:
         dict: TER rates by status
@@ -907,7 +1026,7 @@ def get_ter_rates():
         debug_log(f"Error loading TER rates from file: {str(e)}", "TER Setup Error")
         
     debug_log("Using hardcoded TER rates", "TER Setup")
-    # Return hardcoded minimal rates (TK0 & K0 only for brevity)
+    # Return hardcoded minimal rates as fallback
     return {
         "TK0": [
             {"income_from": 0, "income_to": 4500000, "rate": 0},
@@ -921,27 +1040,23 @@ def get_ter_rates():
             {"income_from": 15000000, "income_to": 20000000, "rate": 5.5},
             {"income_from": 20000000, "income_to": 500000000, "rate": 7.5},
             {"income_from": 500000000, "income_to": 0, "rate": 10.0}
-        ],
-        "K0": [
-            {"income_from": 0, "income_to": 4875000, "rate": 0},
-            {"income_from": 4875000, "income_to": 5500000, "rate": 0.5},
-            {"income_from": 5500000, "income_to": 6500000, "rate": 1.0},
-            {"income_from": 6500000, "income_to": 7500000, "rate": 1.75},
-            {"income_from": 7500000, "income_to": 8500000, "rate": 2.25},
-            {"income_from": 8500000, "income_to": 9500000, "rate": 2.75},
-            {"income_from": 9500000, "income_to": 11000000, "rate": 3.25},
-            {"income_from": 11000000, "income_to": 15500000, "rate": 4.0},
-            {"income_from": 15500000, "income_to": 21500000, "rate": 5.0},
-            {"income_from": 21500000, "income_to": 500000000, "rate": 7.0},
-            {"income_from": 500000000, "income_to": 0, "rate": 9.5}
         ]
     }
 
-def setup_income_tax_slab():
-    """Create Income Tax Slab for Indonesia"""
+def setup_income_tax_slab(config):
+    """
+    Create Income Tax Slab for Indonesia using config data
+    
+    Args:
+        config (dict): Configuration data from defaults.json
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
         # Skip if already exists
         if frappe.db.exists("Income Tax Slab", {"currency": "IDR", "is_default": 1}):
+            debug_log("Income Tax Slab already exists", "Tax Slab Setup")
             return True
         
         # Get company
@@ -951,24 +1066,39 @@ def setup_income_tax_slab():
             if companies:
                 company = companies[0]
             else:
+                debug_log("No company found for income tax slab", "Tax Slab Setup Error")
                 return False
+        
+        # Get tax brackets from config
+        tax_brackets = config.get("tax_brackets", [])
+        if not tax_brackets:
+            debug_log("No tax brackets found in config, using defaults", "Tax Slab Setup")
+            # Fallback to defaults
+            tax_brackets = [
+                {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
+                {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
+                {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
+                {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
+                {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
+            ]
         
         # Create tax slab
         tax_slab = frappe.new_doc("Income Tax Slab")
-        tax_slab.name = "Indonesia Income Tax"  # Add this line
+        tax_slab.name = "Indonesia Income Tax"
         tax_slab.title = "Indonesia Income Tax"
         tax_slab.effective_from = getdate("2023-01-01")
         tax_slab.company = company
-        tax_slab.currency = "IDR"
+        tax_slab.currency = config.get("defaults", {}).get("currency", "IDR")
         tax_slab.is_default = 1
         tax_slab.disabled = 0
 
         # Add tax brackets
-        tax_slab.append("slabs", {"from_amount": 0, "to_amount": 60000000, "percent_deduction": 5})
-        tax_slab.append("slabs", {"from_amount": 60000000, "to_amount": 250000000, "percent_deduction": 15})
-        tax_slab.append("slabs", {"from_amount": 250000000, "to_amount": 500000000, "percent_deduction": 25})
-        tax_slab.append("slabs", {"from_amount": 500000000, "to_amount": 5000000000, "percent_deduction": 30})
-        tax_slab.append("slabs", {"from_amount": 5000000000, "to_amount": 0, "percent_deduction": 35})
+        for bracket in tax_brackets:
+            tax_slab.append("slabs", {
+                "from_amount": flt(bracket["income_from"]), 
+                "to_amount": flt(bracket["income_to"]), 
+                "percent_deduction": flt(bracket["tax_rate"])
+            })
             
         # Save with flags
         tax_slab.flags.ignore_permissions = True
@@ -976,40 +1106,44 @@ def setup_income_tax_slab():
         tax_slab.insert()
         frappe.db.commit()
         
-        frappe.logger().info("Created Income Tax Slab for Indonesia")
+        debug_log(f"Created Income Tax Slab for Indonesia with company {company}", "Tax Slab Setup")
         return True
         
     except Exception as e:
         frappe.log_error(f"Error creating Income Tax Slab: {str(e)}", "Tax Slab Setup Error")
         return False
 
-def setup_bpjs():
+def setup_bpjs(config):
     """
-    Setup BPJS configurations and account mappings for all companies
+    Setup BPJS configurations and account mappings for all companies using config data
     
-    Creates BPJS Settings document and ensures BPJS Account Mapping for all companies
-    is automatically created during application installation.
-    
+    Args:
+        config (dict): Configuration data from defaults.json
+        
     Returns:
         bool: True if successful, False otherwise
     """
     try:
         # Create BPJS Settings
-        settings = create_bpjs_settings()
+        settings = create_bpjs_settings(config)
         if not settings:
             debug_log("Failed to create BPJS Settings", "BPJS Setup Error")
             return False
         
         debug_log("Created BPJS Settings successfully", "BPJS Setup")
             
-        # Let BPJS Settings handle account setup
-        settings.setup_accounts()
+        # Run setup_accounts method if exists
+        if hasattr(settings, 'setup_accounts'):
+            settings.setup_accounts()
         
         # Get all companies
         companies = frappe.get_all("Company", pluck="name")
         if not companies:
             debug_log("No companies found for BPJS account mapping", "BPJS Setup Warning")
             return True  # Return True as settings were created successfully
+        
+        # Get account mapping configuration
+        bpjs_account_mapping = config.get("gl_accounts", {}).get("bpjs_account_mapping", {})
         
         # Track success and failures
         success_count = 0
@@ -1029,7 +1163,7 @@ def setup_bpjs():
                 
                 # Create default mapping for this company
                 from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
-                mapping = create_default_mapping(company)
+                mapping = create_default_mapping(company, bpjs_account_mapping)
                 
                 if mapping:
                     debug_log(f"Successfully created BPJS account mapping for {company}", "BPJS Setup")
@@ -1083,10 +1217,13 @@ def setup_bpjs():
         )
         return False
 
-def create_bpjs_settings():
+def create_bpjs_settings(config):
     """
-    Create and configure BPJS Settings
+    Create and configure BPJS Settings using config data
     
+    Args:
+        config (dict): Configuration data from defaults.json
+        
     Returns:
         object: BPJS Settings document if successful, None otherwise
     """
@@ -1096,18 +1233,34 @@ def create_bpjs_settings():
             debug_log("BPJS Settings already exists, retrieving", "BPJS Setup")
             return frappe.get_doc("BPJS Settings", "BPJS Settings")
             
-        # Load defaults from config or use hardcoded values
-        values = get_default_bpjs_values()
-        debug_log(f"Creating new BPJS Settings with default values", "BPJS Setup")
+        # Load values from config
+        bpjs_config = config.get("bpjs", {})
+        if not bpjs_config:
+            debug_log("No BPJS config found, using defaults", "BPJS Setup")
+            # Fallback to defaults
+            bpjs_config = {
+                "kesehatan_employee_percent": 1.0,
+                "kesehatan_employer_percent": 4.0,
+                "kesehatan_max_salary": 12000000.0,
+                "jht_employee_percent": 2.0,
+                "jht_employer_percent": 3.7,
+                "jp_employee_percent": 1.0,
+                "jp_employer_percent": 2.0,
+                "jp_max_salary": 9077600.0,
+                "jkk_percent": 0.24,
+                "jkm_percent": 0.3
+            }
+            
+        debug_log(f"Creating new BPJS Settings with values from config", "BPJS Setup")
             
         # Create settings
         settings = frappe.new_doc("BPJS Settings")
         
-        # Set values
-        for key, value in values.items():
+        # Set values from config
+        for key, value in bpjs_config.items():
             if hasattr(settings, key):
                 settings.set(key, flt(value))
-                
+        
         # Bypass validation during setup
         settings.flags.ignore_validate = True
         settings.flags.ignore_permissions = True
@@ -1127,39 +1280,33 @@ def create_bpjs_settings():
         )
         return None
 
-def get_default_bpjs_values():
+def get_default_config():
     """
-    Get default BPJS values from config file or use defaults
+    Get configuration data from defaults.json
     
     Returns:
-        dict: Default BPJS values
+        dict: Configuration data
     """
     try:
-        # Try to load from file
+        # Check if file exists
         config_path = frappe.get_app_path("payroll_indonesia", DEFAULT_CONFIG_PATH)
-        debug_log(f"Looking for BPJS default values at: {config_path}", "BPJS Setup")
+        debug_log(f"Looking for configuration at: {config_path}", "Config")
         
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
-                values = json.load(f)
-                
-                # Validate required keys
-                missing_keys = []
-                for key in DEFAULT_BPJS_VALUES:
-                    if key not in values:
-                        values[key] = DEFAULT_BPJS_VALUES[key]
-                        missing_keys.append(key)
-                
-                if missing_keys:
-                    debug_log(f"Some keys were missing in config file and were set to defaults: {', '.join(missing_keys)}", "BPJS Setup")
-                        
-                debug_log("Loaded BPJS default values from file", "BPJS Setup")
-                return values
+                config = json.load(f)
+                debug_log("Loaded configuration from defaults.json", "Config")
+                return config
     except Exception as e:
-        debug_log(f"Error loading BPJS defaults from file: {str(e)}", "BPJS Setup Error")
+        debug_log(f"Error loading configuration: {str(e)}", "Config Error")
+        frappe.log_error(
+            f"Error loading configuration: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Configuration Error"
+        )
         
-    debug_log("Using hardcoded BPJS default values", "BPJS Setup")
-    return DEFAULT_BPJS_VALUES
+    debug_log("Using empty configuration", "Config")
+    return {}
 
 def create_account_hooks():
     """
@@ -1176,7 +1323,7 @@ def create_account_hooks():
             f.write("""# -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 13:05:12 by dannyaudian
+# Last modified: 2025-05-06 15:05:12 by dannyaudian
 
 import frappe
 from frappe.utils import now_datetime
