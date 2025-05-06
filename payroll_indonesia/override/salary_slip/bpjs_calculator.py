@@ -255,11 +255,7 @@ def verify_bpjs_components(doc):
 
 def add_bpjs_info_to_note(doc, bpjs_values):
     """
-    Add BPJS calculation details to payroll note
-    
-    Args:
-        doc: Salary slip document
-        bpjs_values: BPJS calculation results
+    Add BPJS calculation details to payroll note with duplication check
     """
     try:
         # Initialize payroll_note if needed
@@ -268,8 +264,14 @@ def add_bpjs_info_to_note(doc, bpjs_values):
         elif doc.payroll_note is None:
             doc.payroll_note = ""
             
-        # Add BPJS calculation details
-        doc.payroll_note += "\n\n=== BPJS Calculation ===\n"
+        # Check if BPJS calculation section already exists
+        if "=== BPJS Calculation ===" in doc.payroll_note:
+            debug_log(f"BPJS calculation info already exists in payroll_note, skipping")
+            return
+            
+        # Add BPJS calculation details with section markers
+        doc.payroll_note += "\n\n<!-- BPJS_CALCULATION_START -->\n"
+        doc.payroll_note += "=== BPJS Calculation ===\n"
         
         # Only add components with values
         if bpjs_values["kesehatan_employee"] > 0:
@@ -283,6 +285,7 @@ def add_bpjs_info_to_note(doc, bpjs_values):
             
         # Add total
         doc.payroll_note += f"Total BPJS: Rp {flt(bpjs_values['total_employee']):,.0f}\n"
+        doc.payroll_note += "<!-- BPJS_CALCULATION_END -->\n"
         
     except Exception as e:
         # Log error but continue
