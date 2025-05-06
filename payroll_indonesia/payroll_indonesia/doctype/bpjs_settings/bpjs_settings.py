@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 15:51:10 by dannyaudian
+# Last modified: 2025-05-06 17:19:21 by dannyaudian
 
 from __future__ import unicode_literals
 import frappe
@@ -147,6 +147,7 @@ class BPJSSettings(Document):
                         frappe.throw(_(error_msg))
         else:
             # Fallback to hardcoded validations
+            bpjs_defaults = get_default_config("bpjs")
             validations = [
                 ("kesehatan_employee_percent", 0, 5, "BPJS Kesehatan employee percentage must be between 0 and 5%"),
                 ("kesehatan_employer_percent", 0, 10, "BPJS Kesehatan employer percentage must be between 0 and 10%"),
@@ -183,11 +184,15 @@ class BPJSSettings(Document):
                         frappe.throw(_(error_msg))
         else:
             # Fallback to hardcoded validations
-            if flt(self.kesehatan_max_salary) <= 0:
-                frappe.throw(_("BPJS Kesehatan maximum salary must be greater than 0"))
-                
-            if flt(self.jp_max_salary) <= 0:
-                frappe.throw(_("JP maximum salary must be greater than 0"))
+            bpjs_config = get_default_config("bpjs")
+            
+            for field, label in [
+                ('kesehatan_max_salary', "BPJS Kesehatan maximum salary"), 
+                ('jp_max_salary', "JP maximum salary")
+            ]:
+                value = flt(self.get(field))
+                if value <= 0:
+                    frappe.throw(_(f"{label} must be greater than 0"))
     
     def validate_account_types(self):
         """Validate that BPJS accounts are of the correct type"""
@@ -239,6 +244,9 @@ class BPJSSettings(Document):
                 "skipped": []
             }
             
+            # Get configuration
+            config = get_default_config()
+            
             # Loop through companies and create accounts
             for company in companies:
                 try:
@@ -269,39 +277,70 @@ class BPJSSettings(Document):
                     debug_log(f"  - Liability parent: {liability_parent}", "BPJS Setup")
                     debug_log(f"  - Expense parent: {expense_parent}", "BPJS Setup")
                 
-                    # Define BPJS liability accounts with standardized names
-                    config = get_default_config()
+                    # Define BPJS liability accounts with standardized names from config
                     bpjs_payable_accounts = config.get("gl_accounts", {}).get("bpjs_payable_accounts", {})
                     
-                    # If no config found, use hardcoded accounts
+                    # If no config found, use defaults from accounts defined in config parent_accounts
                     if not bpjs_payable_accounts:
-                        bpjs_liability_accounts = {
-                            "kesehatan_account": {
-                                "account_name": "BPJS Kesehatan Payable",
-                                "account_type": "Payable",
-                                "field": "kesehatan_account"
-                            },
-                            "jht_account": {
-                                "account_name": "BPJS JHT Payable",
-                                "account_type": "Payable",
-                                "field": "jht_account"
-                            },
-                            "jp_account": {
-                                "account_name": "BPJS JP Payable",
-                                "account_type": "Payable",
-                                "field": "jp_account"
-                            },
-                            "jkk_account": {
-                                "account_name": "BPJS JKK Payable",
-                                "account_type": "Payable",
-                                "field": "jkk_account"
-                            },
-                            "jkm_account": {
-                                "account_name": "BPJS JKM Payable",
-                                "account_type": "Payable",
-                                "field": "jkm_account"
+                        parent_accounts_config = config.get("gl_accounts", {}).get("parent_accounts", {})
+                        if "bpjs_payable" in parent_accounts_config:
+                            # Build from parent account config if available
+                            bpjs_liability_accounts = {
+                                "kesehatan_account": {
+                                    "account_name": "BPJS Kesehatan Payable",
+                                    "account_type": "Payable",
+                                    "field": "kesehatan_account"
+                                },
+                                "jht_account": {
+                                    "account_name": "BPJS JHT Payable",
+                                    "account_type": "Payable",
+                                    "field": "jht_account"
+                                },
+                                "jp_account": {
+                                    "account_name": "BPJS JP Payable",
+                                    "account_type": "Payable",
+                                    "field": "jp_account"
+                                },
+                                "jkk_account": {
+                                    "account_name": "BPJS JKK Payable",
+                                    "account_type": "Payable",
+                                    "field": "jkk_account"
+                                },
+                                "jkm_account": {
+                                    "account_name": "BPJS JKM Payable",
+                                    "account_type": "Payable",
+                                    "field": "jkm_account"
+                                }
                             }
-                        }
+                        else:
+                            # Absolute fallback to hardcoded accounts
+                            bpjs_liability_accounts = {
+                                "kesehatan_account": {
+                                    "account_name": "BPJS Kesehatan Payable",
+                                    "account_type": "Payable",
+                                    "field": "kesehatan_account"
+                                },
+                                "jht_account": {
+                                    "account_name": "BPJS JHT Payable",
+                                    "account_type": "Payable",
+                                    "field": "jht_account"
+                                },
+                                "jp_account": {
+                                    "account_name": "BPJS JP Payable",
+                                    "account_type": "Payable",
+                                    "field": "jp_account"
+                                },
+                                "jkk_account": {
+                                    "account_name": "BPJS JKK Payable",
+                                    "account_type": "Payable",
+                                    "field": "jkk_account"
+                                },
+                                "jkm_account": {
+                                    "account_name": "BPJS JKM Payable",
+                                    "account_type": "Payable",
+                                    "field": "jkm_account"
+                                }
+                            }
                     else:
                         # Build from config
                         bpjs_liability_accounts = {}
@@ -347,6 +386,7 @@ class BPJSSettings(Document):
                             for key, account_info in expense_accounts_from_config.items():
                                 bpjs_expense_accounts[key] = account_info.get("account_name")
                         else:
+                            # Fallback to hardcoded expense accounts
                             bpjs_expense_accounts = {
                                 "kesehatan_employer_expense": "BPJS Kesehatan Employer Expense",
                                 "jht_employer_expense": "BPJS JHT Employer Expense",
@@ -437,7 +477,18 @@ class BPJSSettings(Document):
                 
             # Import create_default_mapping function
             try:
-                from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
+                # Import conditionally to avoid circular imports
+                module_path = "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping"
+                try:
+                    module = frappe.get_module(module_path)
+                    create_default_mapping = getattr(module, "create_default_mapping", None)
+                except (ImportError, AttributeError) as e:
+                    frappe.log_error(f"Failed to import create_default_mapping: {str(e)}", "BPJS Mapping Error")
+                    return None
+
+                if not create_default_mapping:
+                    frappe.log_error("create_default_mapping function not found", "BPJS Mapping Error")
+                    return None
                 
                 # Get account mapping config
                 config = get_default_config()
@@ -452,10 +503,6 @@ class BPJSSettings(Document):
                 else:
                     debug_log(f"Failed to create BPJS mapping for {company}", "BPJS Mapping Error")
                     return None
-            except ImportError:
-                frappe.logger().warning("Could not import create_default_mapping, skipping mapping creation")
-                debug_log("Could not import create_default_mapping, skipping mapping creation", "BPJS Mapping Error")
-                return None
             except Exception as e:
                 frappe.log_error(
                     f"Error creating mapping for {company}: {str(e)}\n\n"
@@ -517,24 +564,45 @@ class BPJSSettings(Document):
             config = get_default_config()
             bpjs_components_map = config.get("bpjs_settings", {}).get("bpjs_components", {})
             
-            # Fallback to hardcoded mapping if not in config
-            if not bpjs_components_map:
-                bpjs_components = {
-                    "BPJS Kesehatan Employee": self.kesehatan_employee_percent,
-                    "BPJS Kesehatan Employer": self.kesehatan_employer_percent,
-                    "BPJS JHT Employee": self.jht_employee_percent,
-                    "BPJS JHT Employer": self.jht_employer_percent,
-                    "BPJS JP Employee": self.jp_employee_percent,
-                    "BPJS JP Employer": self.jp_employer_percent,
-                    "BPJS JKK": self.jkk_percent,
-                    "BPJS JKM": self.jkm_percent
-                }
-            else:
+            # Use config to build components or fallback
+            if bpjs_components_map:
                 # Build components from config mapping
                 bpjs_components = {}
                 for component_name, field_name in bpjs_components_map.items():
                     if hasattr(self, field_name):
                         bpjs_components[component_name] = self.get(field_name)
+            else:
+                # Fallback to using BPJS config for field names
+                bpjs_config = get_default_config("bpjs")
+                if bpjs_config:
+                    # Map component names to config field names
+                    component_fields = {
+                        "BPJS Kesehatan Employee": "kesehatan_employee_percent",
+                        "BPJS Kesehatan Employer": "kesehatan_employer_percent",
+                        "BPJS JHT Employee": "jht_employee_percent",
+                        "BPJS JHT Employer": "jht_employer_percent",
+                        "BPJS JP Employee": "jp_employee_percent",
+                        "BPJS JP Employer": "jp_employer_percent",
+                        "BPJS JKK": "jkk_percent",
+                        "BPJS JKM": "jkm_percent"
+                    }
+                    
+                    # Build components
+                    bpjs_components = {}
+                    for component_name, field_name in component_fields.items():
+                        bpjs_components[component_name] = self.get(field_name)
+                else:
+                    # Ultimate fallback to direct properties
+                    bpjs_components = {
+                        "BPJS Kesehatan Employee": self.kesehatan_employee_percent,
+                        "BPJS Kesehatan Employer": self.kesehatan_employer_percent,
+                        "BPJS JHT Employee": self.jht_employee_percent,
+                        "BPJS JHT Employer": self.jht_employer_percent,
+                        "BPJS JP Employee": self.jp_employee_percent,
+                        "BPJS JP Employer": self.jp_employer_percent,
+                        "BPJS JKK": self.jkk_percent,
+                        "BPJS JKM": self.jkm_percent
+                    }
         
             # Count statistics
             updated_count = 0
@@ -698,8 +766,9 @@ class BPJSSettings(Document):
         config = get_default_config()
         app_info = config.get("app_info", {"version": "1.0.0"})
         
-        # Fields to export
-        fields_to_export = [
+        # Get fields to export from config or use defaults
+        bpjs_config = get_default_config("bpjs")
+        fields_to_export = list(bpjs_config.keys()) if bpjs_config else [
             "kesehatan_employee_percent",
             "kesehatan_employer_percent",
             "kesehatan_max_salary",

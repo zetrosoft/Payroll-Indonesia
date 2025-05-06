@@ -1,20 +1,19 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 15:51:10 by dannyaudian
+# Last modified: 2025-05-06 17:12:30 by dannyaudian
 
 import frappe
 import json
 import os
 from frappe import _
-from frappe.utils import flt, now_datetime
+from frappe.utils import flt, now_datetime, getdate
+import functools
 
 __all__ = [
-    'validate_settings', 
-    'setup_accounts',
     'get_default_config',
     'find_parent_account',
-    'create_account',
+    'create_account', 
     'create_parent_liability_account',
     'create_parent_expense_account',
     'retry_bpjs_mapping',
@@ -22,66 +21,50 @@ __all__ = [
 ]
 
 # Config handling functions
-def get_default_config():
+def get_default_config(section=None):
     """
     Load configuration from defaults.json with caching
     
+    Args:
+        section (str, optional): Specific section to retrieve from config
+        
     Returns:
         dict: Configuration data from defaults.json or empty dict if not found/error
     """
     # Try to get from cache first
-    config = frappe.cache().get_value("payroll_indonesia_config")
+    cache_key = "payroll_indonesia_config"
+    if section:
+        cache_key += f"_{section}"
+    
+    config = frappe.cache().get_value(cache_key)
     if config:
         return config
         
     try:
         config_path = frappe.get_app_path("payroll_indonesia", "config", "defaults.json")
-        if os.path.exists(config_path):
-            with open(config_path) as f:
-                config = json.load(f)
-                # Cache for 24 hours (86400 seconds)
-                frappe.cache().set_value("payroll_indonesia_config", config, expires_in_sec=86400)
-                return config
+        if not os.path.exists(config_path):
+            frappe.log_error(
+                f"Config file not found at {config_path}",
+                "Config Error"
+            )
+            return {} if section is None else {}
+        
+        with open(config_path) as f:
+            all_config = json.load(f)
+            
+            # Cache full config for 24 hours (86400 seconds)
+            frappe.cache().set_value("payroll_indonesia_config", all_config, expires_in_sec=86400)
+            
+            # Return and cache requested section if specified
+            if section:
+                section_data = all_config.get(section, {})
+                frappe.cache().set_value(f"payroll_indonesia_config_{section}", section_data, expires_in_sec=86400)
+                return section_data
+                
+            return all_config
     except Exception as e:
         frappe.log_error(f"Error loading configuration: {str(e)}", "Configuration Error")
-    
-    return {}
-
-# Validation functions for hooks.py
-def validate_settings(doc, method=None):
-    """Wrapper for BPJSSettings.validate method with protection against recursion"""
-    # Skip if already being validated
-    if getattr(doc, "_validated", False):
-        return
-        
-    # Mark as being validated to prevent recursion
-    doc._validated = True
-    
-    try:
-        # Call the instance methods
-        doc.validate_data_types()
-        doc.validate_percentages()
-        doc.validate_max_salary()
-        doc.validate_account_types()
-    finally:
-        # Always clean up flag
-        doc._validated = False
-    
-def setup_accounts(doc, method=None):
-    """Wrapper for BPJSSettings.setup_accounts method with protection against recursion"""
-    # Skip if already being processed
-    if getattr(doc, "_setup_running", False):
-        return
-        
-    # Mark as being processed to prevent recursion
-    doc._setup_running = True
-    
-    try:
-        # Call the instance method
-        doc.setup_accounts()
-    finally:
-        # Always clean up flag
-        doc._setup_running = False
+        return {} if section is None else {}
 
 # Account functions
 def find_parent_account(company, parent_name, company_abbr, account_type, candidates=None):
@@ -276,7 +259,6 @@ def create_account(company, account_name, account_type, parent):
         
         # Verify account was created
         if frappe.db.exists("Account", full_account_name):
-            frappe.msgprint(_(f"Created account: {full_account_name}"))
             debug_log(f"Successfully created account: {full_account_name}", "Account Creation")
             return full_account_name
         else:
@@ -286,7 +268,7 @@ def create_account(company, account_name, account_type, parent):
         frappe.log_error(
             f"Error creating account {account_name} for {company}: {str(e)}\n\n"
             f"Traceback: {frappe.get_traceback()}", 
-            "BPJS Account Creation Error"
+            "Account Creation Error"
         )
         debug_log(f"Error creating account {account_name}: {str(e)}", "Account Creation Error", trace=True)
         return None
@@ -415,7 +397,7 @@ def create_parent_liability_account(company):
         frappe.log_error(
             f"Critical error in create_parent_liability_account for {company}: {str(e)}\n\n"
             f"Traceback: {frappe.get_traceback()}", 
-            "BPJS Account Creation Error"
+            "Account Creation Error"
         )
         return None
 
@@ -543,7 +525,7 @@ def create_parent_expense_account(company):
         frappe.log_error(
             f"Critical error in create_parent_expense_account for {company}: {str(e)}\n\n"
             f"Traceback: {frappe.get_traceback()}", 
-            "BPJS Account Creation Error"
+            "Account Creation Error"
         )
         return None
 
@@ -560,7 +542,18 @@ def retry_bpjs_mapping(companies):
         return
         
     try:
-        from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
+        # Import conditionally to avoid circular imports
+        module_path = "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping"
+        try:
+            module = frappe.get_module(module_path)
+            create_default_mapping = getattr(module, "create_default_mapping", None)
+        except (ImportError, AttributeError) as e:
+            frappe.log_error(f"Failed to import create_default_mapping: {str(e)}", "BPJS Mapping Error")
+            return
+
+        if not create_default_mapping:
+            frappe.log_error("create_default_mapping function not found", "BPJS Mapping Error")
+            return
         
         # Get account mapping config
         config = get_default_config()
