@@ -227,9 +227,6 @@ def validate_required_components(doc):
 def ensure_bpjs_components(doc):
     """
     Ensure BPJS components are properly calculated and set
-    
-    Args:
-        doc (obj): Salary Slip document
     """
     try:
         # Skip if employee is not set
@@ -298,8 +295,6 @@ def ensure_bpjs_components(doc):
                 doc.total_bpjs = flt(bpjs_values.get("total_employee", 0))
                 debug_log(f"Set total_bpjs to {doc.total_bpjs}", employee=doc.employee)
                 
-            # Add note about BPJS calculation
-            add_bpjs_note(doc, bpjs_values)
             
         except Exception as e:
             debug_log(f"Error calculating BPJS for {doc.employee}: {str(e)}", trace=True, employee=doc.employee)
