@@ -9,6 +9,16 @@ from frappe.utils import getdate, flt, now_datetime
 import json
 import os
 
+# Import utility functions from centralized utils module
+from payroll_indonesia.utils import (
+    get_default_config,
+    debug_log,
+    create_account,
+    find_parent_account,
+    create_parent_liability_account,
+    create_parent_expense_account
+)
+
 __all__ = [
     'before_install',
     'after_install',
@@ -37,6 +47,7 @@ def before_install():
             f"Traceback: {frappe.get_traceback()}",
             "Payroll Indonesia Installation Error"
         )
+        debug_log(f"Error during before_install: {str(e)}", "Payroll Indonesia Installation Error", trace=True)
 
 def after_install():
     """
@@ -45,8 +56,6 @@ def after_install():
     Creates accounts, sets up tax configuration, configures BPJS and more.
     The custom fields are handled by the fixtures automatically.
     """
-    # Import needed utility functions
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import get_default_config, debug_log
     
     debug_log("Starting Payroll Indonesia after_install process", "Installation")
     
@@ -72,6 +81,7 @@ def after_install():
             f"Traceback: {frappe.get_traceback()}",
             "Account Setup Error"
         )
+        debug_log(f"Error during account setup: {str(e)}", "Account Setup Error", trace=True)
         
     try:
         # Setup suppliers
@@ -87,6 +97,7 @@ def after_install():
             f"Traceback: {frappe.get_traceback()}",
             "Supplier Setup Error"
         )
+        debug_log(f"Error during supplier setup: {str(e)}", "Supplier Setup Error", trace=True)
         
     try:
         # Setup tax configuration and TER rates
@@ -99,6 +110,7 @@ def after_install():
             f"Traceback: {frappe.get_traceback()}",
             "PPh 21 Setup Error"
         )
+        debug_log(f"Error during PPh 21 setup: {str(e)}", "PPh 21 Setup Error", trace=True)
     
     try:
         # Setup salary components
@@ -110,6 +122,7 @@ def after_install():
             f"Traceback: {frappe.get_traceback()}",
             "Salary Components Setup Error"
         )
+        debug_log(f"Error during salary components setup: {str(e)}", "Salary Components Setup Error", trace=True)
         
     try:
         # Setup BPJS - Use module function to create a single instance
@@ -122,6 +135,7 @@ def after_install():
             f"Traceback: {frappe.get_traceback()}",
             "BPJS Setup Error"
         )
+        debug_log(f"Error during BPJS setup: {str(e)}", "BPJS Setup Error", trace=True)
         
     # Commit all changes
     try:
@@ -132,6 +146,7 @@ def after_install():
             f"Traceback: {frappe.get_traceback()}",
             "Installation Database Error"
         )
+        debug_log(f"Error committing changes: {str(e)}", "Installation Database Error", trace=True)
     
     # Display installation summary
     display_installation_summary(results, config)
@@ -142,7 +157,6 @@ def after_sync():
     
     Updates BPJS settings if they exist
     """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import get_default_config, debug_log
     
     try:
         debug_log("Starting after_sync process", "App Sync")
@@ -159,6 +173,7 @@ def after_sync():
             f"Traceback: {frappe.get_traceback()}",
             "Payroll Indonesia Sync Error"
         )
+        debug_log(f"Error during after_sync: {str(e)}", "Payroll Indonesia Sync Error", trace=True)
 
 def check_system_readiness():
     """
@@ -167,7 +182,6 @@ def check_system_readiness():
     Returns:
         bool: True if ready, False otherwise
     """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import debug_log
     
     # Check if required DocTypes exist
     required_core_doctypes = [
@@ -186,12 +200,14 @@ def check_system_readiness():
             f"Required DocTypes missing: {', '.join(missing_doctypes)}",
             "System Readiness Check"
         )
+        debug_log(f"Required DocTypes missing: {', '.join(missing_doctypes)}", "System Readiness Check", trace=True)
         
     # Check if company exists
     companies = frappe.get_all("Company")
     if not companies:
         debug_log("No company found. Some setup steps may fail.", "System Readiness Check")
         frappe.log_error("No company found", "System Readiness Check")
+        debug_log("No company found", "System Readiness Check", trace=True)
     else:
         # Check if each company has an abbreviation
         for company in companies:
@@ -199,6 +215,7 @@ def check_system_readiness():
             if not abbr:
                 debug_log(f"Company {company.name} has no abbreviation set", "System Readiness Check")
                 frappe.log_error(f"Company {company.name} has no abbreviation", "System Readiness Check")
+                debug_log(f"Company {company.name} has no abbreviation", "System Readiness Check", trace=True)
         
     # Return True so installation can continue with warnings
     return True
@@ -213,10 +230,6 @@ def setup_accounts(config):
     Returns:
         bool: True if successful, False otherwise
     """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import (
-        debug_log, create_account, find_parent_account, 
-        create_parent_liability_account, create_parent_expense_account
-    )
     
     if not config:
         debug_log("No configuration data available for creating accounts", "Account Setup")
@@ -302,6 +315,7 @@ def setup_accounts(config):
                         f"Traceback: {frappe.get_traceback()}",
                         "Account Creation Error"
                     )
+                    debug_log(f"Error creating account {account['account_name']} for {company}: {str(e)}", "Account Creation Error", trace=True)
                     failed_accounts.append(account["account_name"])
                     overall_success = False
             
@@ -319,6 +333,7 @@ def setup_accounts(config):
                 f"Traceback: {frappe.get_traceback()}",
                 "Account Creation Error"
             )
+            debug_log(f"Error setting up accounts for company {company}: {str(e)}", "Account Creation Error", trace=True)
             overall_success = False
     
     return overall_success
@@ -330,7 +345,6 @@ def create_supplier_group():
     Returns:
         bool: True if successful, False otherwise
     """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import debug_log
     
     try:
         # Skip if already exists
@@ -385,6 +399,7 @@ def create_supplier_group():
             f"Traceback: {frappe.get_traceback()}",
             "Supplier Setup Error"
         )
+        debug_log(f"Failed to create supplier group: {str(e)}", "Supplier Setup Error", trace=True)
         return False
 
 def create_bpjs_supplier(config):
@@ -397,7 +412,6 @@ def create_bpjs_supplier(config):
     Returns:
         bool: True if successful, False otherwise
     """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import debug_log
     
     try:
         supplier_config = config.get("suppliers", {}).get("bpjs", {})
@@ -443,6 +457,7 @@ def create_bpjs_supplier(config):
             f"Traceback: {frappe.get_traceback()}",
             "Supplier Setup Error"
         )
+        debug_log(f"Failed to create BPJS supplier: {str(e)}", "Supplier Setup Error", trace=True)
         return False
 
 def setup_pph21(config):
@@ -455,7 +470,6 @@ def setup_pph21(config):
     Returns:
         bool: True if successful, False otherwise
     """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import debug_log
     
     try:
         # Setup PPh 21 Settings first
@@ -477,6 +491,7 @@ def setup_pph21(config):
             f"Traceback: {frappe.get_traceback()}",
             "PPh 21 Setup Error"
         )
+        debug_log(f"Error in PPh 21 setup: {str(e)}", "PPh 21 Setup Error", trace=True)
         return False
 
 def setup_pph21_defaults(config):
@@ -489,7 +504,6 @@ def setup_pph21_defaults(config):
     Returns:
         object: PPh 21 Settings document if successful, None otherwise
     """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import debug_log
     
     try:
         # Check if already exists
@@ -582,6 +596,7 @@ def setup_pph21_defaults(config):
             f"Traceback: {frappe.get_traceback()}",
             "PPh 21 Setup Error"
         )
+        debug_log(f"Error setting up PPh 21: {str(e)}", "PPh 21 Setup Error", trace=True)
         return None
 
 def setup_pph21_ter(config):
@@ -594,7 +609,6 @@ def setup_pph21_ter(config):
     Returns:
         bool: True if successful, False otherwise
     """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import debug_log
     
     try:
         # Skip if DocType doesn't exist
@@ -613,6 +627,7 @@ def setup_pph21_ter(config):
                 f"Traceback: {frappe.get_traceback()}",
                 "TER Setup Error"
             )
+            debug_log(f"Error clearing existing TER rates: {str(e)}", "TER Setup Error", trace=True)
         
         # Get TER rates from config
         ter_rates = config.get("ter_rates", {})
@@ -683,6 +698,7 @@ def setup_pph21_ter(config):
                         f"Traceback: {frappe.get_traceback()}",
                         "TER Rate Error"
                     )
+                    debug_log(f"Error creating TER rate for {status} with rate {rate_data['rate']}: {str(e)}", "TER Rate Error", trace=True)
         
         # Commit all changes
         frappe.db.commit()
@@ -695,6 +711,7 @@ def setup_pph21_ter(config):
             f"Traceback: {frappe.get_traceback()}",
             "TER Setup Error"
         )
+        debug_log(f"Error setting up TER rates: {str(e)}", "TER Setup Error", trace=True)
         return False
 
 def setup_income_tax_slab(config):
@@ -707,7 +724,6 @@ def setup_income_tax_slab(config):
     Returns:
         bool: True if successful, False otherwise
     """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import debug_log
     
     try:
         # Skip if already exists
@@ -744,144 +760,4 @@ def setup_income_tax_slab(config):
         tax_slab.title = "Indonesia Income Tax"
         tax_slab.effective_from = getdate("2023-01-01")
         tax_slab.company = company
-        tax_slab.currency = config.get("defaults", {}).get("currency", "IDR")
-        tax_slab.is_default = 1
-        tax_slab.disabled = 0
-
-        # Add tax brackets
-        for bracket in tax_brackets:
-            tax_slab.append("slabs", {
-                "from_amount": flt(bracket["income_from"]), 
-                "to_amount": flt(bracket["income_to"]), 
-                "percent_deduction": flt(bracket["tax_rate"])
-            })
-            
-        # Save with flags
-        tax_slab.flags.ignore_permissions = True
-        tax_slab.flags.ignore_mandatory = True
-        tax_slab.insert()
-        frappe.db.commit()
-        
-        debug_log(f"Created Income Tax Slab for Indonesia with company {company}", "Tax Slab Setup")
-        return True
-        
-    except Exception as e:
-        frappe.log_error(f"Error creating Income Tax Slab: {str(e)}", "Tax Slab Setup Error")
-        return False
-
-def setup_salary_components(config):
-    """
-    Create salary components from config
-    
-    Args:
-        config (dict): Configuration data from defaults.json
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import debug_log
-    
-    try:
-        # Get salary component configuration
-        component_config = config.get("salary_components", {})
-        if not component_config:
-            debug_log("No salary component configuration found", "Salary Components Setup")
-            return False
-            
-        earnings = component_config.get("earnings", [])
-        deductions = component_config.get("deductions", [])
-        
-        created_count = 0
-        
-        # Create earnings components
-        for component in earnings:
-            if not frappe.db.exists("Salary Component", component.get("name")):
-                comp_doc = frappe.new_doc("Salary Component")
-                comp_doc.salary_component = component.get("name")
-                comp_doc.salary_component_abbr = component.get("abbr")
-                comp_doc.type = "Earning"
-                comp_doc.is_tax_applicable = component.get("is_tax_applicable", True)
-                comp_doc.flags.ignore_permissions = True
-                comp_doc.insert()
-                created_count += 1
-                debug_log(f"Created earning component: {component.get('name')}", "Salary Components Setup")
-        
-        # Create deductions components
-        for component in deductions:
-            if not frappe.db.exists("Salary Component", component.get("name")):
-                comp_doc = frappe.new_doc("Salary Component")
-                comp_doc.salary_component = component.get("name")
-                comp_doc.salary_component_abbr = component.get("abbr")
-                comp_doc.type = "Deduction"
-                comp_doc.variable_based_on_taxable_salary = component.get("variable_based_on_taxable_salary", False)
-                comp_doc.statistical_component = component.get("statistical_component", False)
-                comp_doc.flags.ignore_permissions = True
-                comp_doc.insert()
-                created_count += 1
-                debug_log(f"Created deduction component: {component.get('name')}", "Salary Components Setup")
-        
-        frappe.db.commit()
-        debug_log(f"Created {created_count} salary components", "Salary Components Setup")
-        return created_count > 0 or (len(earnings) + len(deductions) == 0)  # True if created or if none needed
-        
-    except Exception as e:
-        frappe.log_error(
-            f"Error setting up salary components: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Salary Components Setup Error"
-        )
-        return False
-
-def display_installation_summary(results, config):
-    """
-    Display summary of installation results
-    
-    Args:
-        results (dict): Dictionary of setup results with component names as keys
-                        and success status (True/False) as values
-        config (dict): Configuration data from defaults.json
-    """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import debug_log
-    
-    success_items = []
-    failed_items = []
-    
-    for item, success in results.items():
-        if success:
-            success_items.append(_(item))
-        else:
-            failed_items.append(_(item))
-    
-    # Get app version from config
-    app_version = config.get("app_info", {}).get("version", "1.0.0") if config else "1.0.0"
-    
-    if success_items:
-        success_msg = _("Payroll Indonesia v{0} has been installed. Successfully configured: {1}").format(
-            app_version,
-            ", ".join(success_items)
-        )
-        indicator = "green" if len(failed_items) == 0 else "yellow"
-        frappe.msgprint(success_msg, indicator=indicator, title=_("Installation Complete"))
-    
-    if failed_items:
-        failed_msg = _("The following components had setup issues: {0}. Please check the error logs.").format(
-            ", ".join(failed_items)
-        )
-        frappe.msgprint(failed_msg, indicator="red", title=_("Setup Issues"))
-        
-        # Log diagnostic information
-        diagnostic_info = {
-            "success": success_items,
-            "failed": failed_items,
-            "timestamp": now_datetime().strftime('%Y-%m-%d %H:%M:%S'),
-            "user": frappe.session.user,
-            "system": {
-                "frappe_version": frappe.__version__,
-                "app_version": app_version
-            }
-        }
-        
-        frappe.log_error(
-            f"Installation summary: {json.dumps(diagnostic_info, indent=2)}",
-            "Payroll Indonesia Installation Summary"
-        )
+        tax_slab.currency = config.get("defaults", {}).get("currency",
