@@ -1,7 +1,9 @@
+
+
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 17:19:21 by dannyaudian
+# Last modified: 2025-05-06 18:30:15 by dannyaudian
 
 from __future__ import unicode_literals
 import frappe
@@ -10,10 +12,10 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, getdate, now_datetime
 
-# Import utility functions from utils.py
-from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import (
+# Import utility functions from central utils module
+from payroll_indonesia.payroll_indonesia.utils import (
     get_default_config, debug_log, find_parent_account, create_account,
-    create_parent_liability_account, create_parent_expense_account
+    create_parent_liability_account, create_parent_expense_account, retry_bpjs_mapping
 )
 
 __all__ = [
@@ -70,15 +72,7 @@ def on_update(doc):
     except Exception as e:
         frappe.log_error(f"Error in on_update: {str(e)}\n\n{frappe.get_traceback()}", "BPJS Settings On Update Error")
 
-def retry_bpjs_mapping(companies):
-    """
-    Wrapper for utility function that retries failed BPJS mapping creation
-    
-    Args:
-        companies (list): List of company names to retry mapping for
-    """
-    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import retry_bpjs_mapping as retry_mapping
-    retry_mapping(companies)
+# No longer need to define retry_bpjs_mapping here, will use the central utility function directly
 
 class BPJSSettings(Document):
     def validate(self):
@@ -733,7 +727,7 @@ class BPJSSettings(Document):
                 debug_log(f"Scheduling retry for failed companies: {', '.join(failed_companies)}", "BPJS Settings")
                 try:
                     frappe.enqueue(
-                        method="payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.retry_bpjs_mapping",
+                        method="payroll_indonesia.payroll_indonesia.utils.retry_bpjs_mapping",  # Use central utils function
                         companies=failed_companies,
                         queue="long",
                         timeout=1500
