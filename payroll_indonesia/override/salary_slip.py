@@ -71,7 +71,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     - BPJS calculations (Kesehatan, JHT, JP, JKK, JKM)
     - PPh 21 tax calculations with gross or gross-up methods
     - TER (Tax Equal Rate) method support per PMK-168/PMK.010/2023
-    - Integration with BPJS Payment Summary
     - Integration with Employee Tax Summary
     """
     def validate(self):
@@ -249,8 +248,9 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     def queue_document_creation(self):
         """
         Queue creation of related documents after salary slip submission:
-        - Employee Tax Summary
-        - BPJS Payment Summary (if BPJS components exist)
+        - Employee Tax Summary only
+
+        BPJS Payment Summary is now handled manually via its doctype
         
         Optimized version with job_name parameters to avoid duplicates.
         """
@@ -258,14 +258,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             # Generate unique job identifiers
             job_prefix = hashlib.md5(f"{self.name}_{now_datetime()}".encode()).hexdigest()[:8]
             is_test = bool(getattr(frappe.flags, 'in_test', False))
-            
-            # Check for BPJS components - optimized version
-            bpjs_amounts = self._get_component_amounts(["BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee"])
-            has_bpjs = any(amount > 0 for amount in bpjs_amounts.values())
-            
-            # Check if using TER
-            is_using_ter = getattr(self, 'is_using_ter', 0)
-            ter_rate = getattr(self, 'ter_rate', 0)
             
             # Log start of document creation
             start_time = now_datetime()
@@ -275,7 +267,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             # Prepare note about queued documents
             queued_docs = ["Employee Tax Summary"]
             
-            # 1. Queue Employee Tax Summary creation (always created)
+            # Queue Employee Tax Summary creation (always created)
             job_id = f"tax_summary_{job_prefix}_{self.name}"
             
             # Check if job already exists in the queue
@@ -290,22 +282,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                     salary_slip=self.name
                 )
         
-            # 2. Queue BPJS Payment Summary if needed
-            if has_bpjs:
-                job_id = f"bpjs_summary_{job_prefix}_{self.name}"
-                queued_docs.append("BPJS Payment Summary")
-                
-                if not self._job_exists(job_id):
-                    enqueue(
-                        method="payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.create_from_salary_slip",
-                        queue="long",
-                        timeout=600,
-                        is_async=True, 
-                        job_name=job_id,
-                        now=is_test,
-                        salary_slip=self.name
-                    )
-            
             # Add note to salary slip's payroll_note field with details
             if hasattr(self, 'payroll_note'):
                 timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
@@ -324,6 +300,9 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 
                 # Use db_set to avoid another full save
                 self.db_set('payroll_note', self.payroll_note, update_modified=False)
+                
+                # Add note about BPJS Payment Summary
+                self.add_payroll_note("BPJS Payment Summary harus dibuat secara manual dari doctype BPJS Payment Summary.")
             
             # Calculate and log execution time for queuing
             end_time = now_datetime()
@@ -429,19 +408,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             # Generate unique job identifiers
             job_prefix = hashlib.md5(f"cancel_{self.name}_{now_datetime()}".encode()).hexdigest()[:8]
             
-            # Schedule update for BPJS Payment Summary
-            job_id = f"bpjs_cancel_{job_prefix}_{self.name}"
-            enqueue(
-                method="payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.update_on_salary_slip_cancel",
-                queue="long",
-                timeout=600,
-                is_async=True,
-                job_name=job_id,
-                now=is_test,
-                **{"salary_slip": self.name, "month": month, "year": year}
-            )
-            
-            # Schedule update for Employee Tax Summary
+            # Only schedule update for Employee Tax Summary
             job_id = f"tax_cancel_{job_prefix}_{self.name}"
             enqueue(
                 method="payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
@@ -457,6 +424,9 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
             note = f"[{timestamp}] Cancel berhasil: Pembaruan dokumen terkait telah dijadwalkan."
             self.add_payroll_note(note)
+            
+            # Add note about BPJS Payment Summary
+            self.add_payroll_note("BPJS Payment Summary perlu diupdate secara manual jika sudah dibuat sebelumnya.")
             
             debug_log(f"queue_document_updates_on_cancel completed for {self.name}", employee=employee_info)
             
