@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 02:59:00 by dannyaudian
+# Last modified: 2025-05-06 02:19:57 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -71,9 +71,13 @@ doc_events = {
         "validate": "payroll_indonesia.override.salary_slip_functions.validate_salary_slip",
         "on_submit": [
             "payroll_indonesia.override.salary_slip_functions.on_submit_salary_slip",
+            "payroll_indonesia.override.salary_slip_functions.wrapper_create_from_employee_tax_summary",
             "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries"
         ],
-        "on_cancel": "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
+        "on_cancel": [
+            "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
+            "payroll_indonesia.override.salary_slip_functions.wrapper_update_on_salary_slip_cancel_employee_tax_summary"
+        ],
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip"
     },
     "BPJS Account Mapping": {
@@ -241,7 +245,7 @@ scheduler_events = {
     ],
     "monthly": [
         "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries",
-        "payroll_indonesia.payroll_indonesia.bpjs.monthly_tasks.create_bpjs_summaries"
+        # Removed auto creation of BPJS summaries
     ],
     "yearly": [
         "payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"
@@ -376,10 +380,7 @@ module_info = {
     "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary": "Employee Tax Summary Controller",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary": "BPJS Payment Summary Controller",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api": "BPJS Payment API",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_integration": "BPJS Payment Integration",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils": "BPJS Payment Utilities",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks": "BPJS Payment Hooks",
-    "payroll_indonesia.payroll_indonesia.setup": "BPJS Setup Module"
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils": "BPJS Payment Utilities"
 }
 
 # Whitelist for Client-side API Calls
