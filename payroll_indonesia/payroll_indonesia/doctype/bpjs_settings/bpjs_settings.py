@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 03:32:10 by dannyaudian
+# Last modified: 2025-05-06 15:51:10 by dannyaudian
 
 from __future__ import unicode_literals
 import frappe
@@ -9,17 +9,18 @@ import os
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, getdate, now_datetime
-from payroll_indonesia.fixtures.setup import find_parent_account
+
+# Import utility functions from utils.py
+from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import (
+    get_default_config, debug_log, find_parent_account, create_account,
+    create_parent_liability_account, create_parent_expense_account
+)
 
 __all__ = [
     'validate',
     'setup_accounts',
     'on_update',
-    'create_account',
-    'create_parent_liability_account',
-    'create_parent_expense_account',
     'retry_bpjs_mapping',
-    'debug_log',
     'BPJSSettings'
 ]
 
@@ -69,410 +70,15 @@ def on_update(doc):
     except Exception as e:
         frappe.log_error(f"Error in on_update: {str(e)}\n\n{frappe.get_traceback()}", "BPJS Settings On Update Error")
 
-# HELPER FUNCTIONS
-def create_account(company, account_name, account_type, parent):
-    """
-    Create GL Account if not exists with standardized naming
-    
-    Args:
-        company (str): Company name
-        account_name (str): Account name without company abbreviation
-        account_type (str): Account type (Payable, Expense, etc.)
-        parent (str): Parent account name
-        
-    Returns:
-        str: Full account name if created or already exists, None otherwise
-    """
-    try:
-        # Validate inputs
-        if not company or not account_name or not account_type or not parent:
-            frappe.throw(_("Missing required parameters for account creation"))
-            
-        abbr = frappe.get_cached_value('Company', company, 'abbr')
-        if not abbr:
-            frappe.throw(_("Company {0} does not have an abbreviation").format(company))
-            
-        # Ensure account name doesn't already include the company abbreviation
-        pure_account_name = account_name.replace(f" - {abbr}", "")
-        full_account_name = f"{pure_account_name} - {abbr}"
-        
-        # Check if account already exists
-        if frappe.db.exists("Account", full_account_name):
-            debug_log(f"Account {full_account_name} already exists", "Account Creation")
-            
-            # Verify account properties are correct
-            account_doc = frappe.db.get_value(
-                "Account", 
-                full_account_name, 
-                ["account_type", "parent_account", "company", "is_group"], 
-                as_dict=1
-            )
-            
-            if (account_doc.account_type != account_type or 
-                account_doc.parent_account != parent or 
-                account_doc.company != company):
-                debug_log(
-                    f"Account {full_account_name} exists but has different properties. "
-                    f"Expected: type={account_type}, parent={parent}, company={company}. "
-                    f"Found: type={account_doc.account_type}, parent={account_doc.parent_account}, "
-                    f"company={account_doc.company}", 
-                    "Account Warning"
-                )
-                # We don't change existing account properties, just return the name
-                
-            return full_account_name
-            
-        # Verify parent account exists
-        if not frappe.db.exists("Account", parent):
-            frappe.throw(_("Parent account {0} does not exist").format(parent))
-            
-        # Create new account with explicit permissions
-        debug_log(f"Creating account: {full_account_name} (Type: {account_type}, Parent: {parent})", "Account Creation")
-        
-        doc = frappe.get_doc({
-            "doctype": "Account",
-            "account_name": pure_account_name,
-            "company": company,
-            "parent_account": parent,
-            "account_type": account_type,
-            "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
-            "is_group": 0,
-            "root_type": "Liability" if account_type in ["Payable", "Liability"] else "Expense"
-        })
-        
-        # Bypass permissions and mandatory checks during setup
-        doc.flags.ignore_permissions = True
-        doc.flags.ignore_mandatory = True
-        doc.insert(ignore_permissions=True)
-        
-        # Commit database changes immediately
-        frappe.db.commit()
-        
-        # Verify account was created
-        if frappe.db.exists("Account", full_account_name):
-            frappe.msgprint(_(f"Created account: {full_account_name}"))
-            debug_log(f"Successfully created account: {full_account_name}", "Account Creation")
-            return full_account_name
-        else:
-            frappe.throw(_("Failed to create account {0} despite no errors").format(full_account_name))
-        
-    except Exception as e:
-        frappe.log_error(
-            f"Error creating account {account_name} for {company}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}", 
-            "BPJS Account Creation Error"
-        )
-        debug_log(f"Error creating account {account_name}: {str(e)}", "Account Creation Error", trace=True)
-        return None
-
-def create_parent_liability_account(company):
-    """
-    Create or get parent liability account for BPJS accounts
-    
-    Args:
-        company (str): Company name
-        
-    Returns:
-        str: Parent account name if created or already exists, None otherwise
-    """
-    try:
-        # Validate company
-        if not company:
-            frappe.throw(_("Company is required to create parent liability account"))
-            
-        abbr = frappe.get_cached_value('Company', company, 'abbr')
-        if not abbr:
-            frappe.throw(_("Company {0} does not have an abbreviation").format(company))
-        
-        parent_name = f"BPJS Payable - {abbr}"
-        
-        # Check if account already exists
-        if frappe.db.exists("Account", parent_name):
-            # Verify the account is a group account
-            is_group = frappe.db.get_value("Account", parent_name, "is_group")
-            if not is_group:
-                # Convert to group account if needed
-                try:
-                    account_doc = frappe.get_doc("Account", parent_name)
-                    account_doc.is_group = 1
-                    account_doc.flags.ignore_permissions = True
-                    account_doc.save()
-                    frappe.db.commit()
-                    debug_log(f"Updated {parent_name} to be a group account", "Account Fix")
-                except Exception as e:
-                    frappe.log_error(
-                        f"Could not convert {parent_name} to group account: {str(e)}", 
-                        "Account Creation Error"
-                    )
-                    # Continue and return the account name anyway
-            
-            debug_log(f"Parent liability account {parent_name} already exists", "Account Creation")
-            return parent_name
-            
-        # Find a suitable parent account with explicit error handling
-        parent_candidates = [
-            f"Duties and Taxes - {abbr}",
-            f"Accounts Payable - {abbr}",
-            f"Current Liabilities - {abbr}"
-        ]
-        
-        parent_account = None
-        for candidate in parent_candidates:
-            if frappe.db.exists("Account", candidate):
-                parent_account = candidate
-                debug_log(f"Found parent account {parent_account} for BPJS Payable", "Account Creation")
-                break
-        
-        if not parent_account:
-            # Try to find any liability group account as fallback
-            liability_accounts = frappe.get_all(
-                "Account",
-                filters={"company": company, "is_group": 1, "root_type": "Liability"},
-                order_by="lft",
-                limit=1
-            )
-            
-            if liability_accounts:
-                parent_account = liability_accounts[0].name
-                debug_log(f"Using fallback liability parent account: {parent_account}", "Account Creation")
-            else:
-                frappe.throw(_("No suitable liability parent account found for creating BPJS accounts in company {0}").format(company))
-                return None
-            
-        # Create parent account with explicit error handling
-        try:
-            debug_log(f"Creating parent liability account {parent_name} under {parent_account}", "Account Creation")
-            
-            doc = frappe.get_doc({
-                "doctype": "Account",
-                "account_name": "BPJS Payable",
-                "parent_account": parent_account,
-                "company": company,
-                "account_type": "Payable",
-                "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
-                "is_group": 1,
-                "root_type": "Liability"
-            })
-            
-            # Bypass permissions and mandatory checks during setup
-            doc.flags.ignore_permissions = True
-            doc.flags.ignore_mandatory = True
-            doc.insert(ignore_permissions=True)
-            
-            # Commit database changes immediately
-            frappe.db.commit()
-            
-            # Verify account was created
-            if frappe.db.exists("Account", parent_name):
-                debug_log(f"Successfully created parent liability account: {parent_name}", "Account Creation")
-                return parent_name
-            else:
-                frappe.throw(_("Failed to create parent liability account {0} despite no errors").format(parent_name))
-                
-        except Exception as e:
-            frappe.log_error(
-                f"Error creating parent liability account {parent_name}: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}", 
-                "Account Creation Error"
-            )
-            debug_log(f"Error creating parent liability account for {company}: {str(e)}", "Account Creation Error", trace=True)
-            return None
-            
-    except Exception as e:
-        frappe.log_error(
-            f"Critical error in create_parent_liability_account for {company}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}", 
-            "BPJS Account Creation Error"
-        )
-        return None
-
-def create_parent_expense_account(company):
-    """
-    Create or get parent expense account for BPJS accounts
-    
-    Args:
-        company (str): Company name
-        
-    Returns:
-        str: Parent account name if created or already exists, None otherwise
-    """
-    try:
-        # Validate company
-        if not company:
-            frappe.throw(_("Company is required to create parent expense account"))
-            
-        abbr = frappe.get_cached_value('Company', company, 'abbr')
-        if not abbr:
-            frappe.throw(_("Company {0} does not have an abbreviation").format(company))
-        
-        parent_name = f"BPJS Expenses - {abbr}"
-        
-        # Check if account already exists
-        if frappe.db.exists("Account", parent_name):
-            # Verify the account is a group account
-            is_group = frappe.db.get_value("Account", parent_name, "is_group")
-            if not is_group:
-                # Convert to group account if needed
-                try:
-                    account_doc = frappe.get_doc("Account", parent_name)
-                    account_doc.is_group = 1
-                    account_doc.flags.ignore_permissions = True
-                    account_doc.save()
-                    frappe.db.commit()
-                    debug_log(f"Updated {parent_name} to be a group account", "Account Fix")
-                except Exception as e:
-                    frappe.log_error(
-                        f"Could not convert {parent_name} to group account: {str(e)}", 
-                        "Account Creation Error"
-                    )
-                    # Continue and return the account name anyway
-            
-            debug_log(f"Parent expense account {parent_name} already exists", "Account Creation")
-            return parent_name
-            
-        # Find a suitable parent account with explicit error handling
-        parent_candidates = [
-            f"Direct Expenses - {abbr}",
-            f"Indirect Expenses - {abbr}",
-            f"Expenses - {abbr}"
-        ]
-        
-        parent_account = None
-        for candidate in parent_candidates:
-            if frappe.db.exists("Account", candidate):
-                parent_account = candidate
-                debug_log(f"Found parent account {parent_account} for BPJS Expenses", "Account Creation")
-                break
-        
-        if not parent_account:
-            # Try to find any expense group account as fallback
-            expense_accounts = frappe.get_all(
-                "Account",
-                filters={"company": company, "is_group": 1, "root_type": "Expense"},
-                order_by="lft",
-                limit=1
-            )
-            
-            if expense_accounts:
-                parent_account = expense_accounts[0].name
-                debug_log(f"Using fallback expense parent account: {parent_account}", "Account Creation")
-            else:
-                frappe.throw(_("No suitable expense parent account found for creating BPJS accounts in company {0}").format(company))
-                return None
-            
-        # Create parent account with explicit error handling
-        try:
-            debug_log(f"Creating parent expense account {parent_name} under {parent_account}", "Account Creation")
-            
-            doc = frappe.get_doc({
-                "doctype": "Account",
-                "account_name": "BPJS Expenses",
-                "parent_account": parent_account,
-                "company": company,
-                "account_type": "Expense",
-                "account_currency": frappe.get_cached_value('Company', company, 'default_currency'),
-                "is_group": 1,
-                "root_type": "Expense"
-            })
-            
-            # Bypass permissions and mandatory checks during setup
-            doc.flags.ignore_permissions = True
-            doc.flags.ignore_mandatory = True
-            doc.insert(ignore_permissions=True)
-            
-            # Commit database changes immediately
-            frappe.db.commit()
-            
-            # Verify account was created
-            if frappe.db.exists("Account", parent_name):
-                debug_log(f"Successfully created parent expense account: {parent_name}", "Account Creation")
-                return parent_name
-            else:
-                frappe.throw(_("Failed to create parent expense account {0} despite no errors").format(parent_name))
-                
-        except Exception as e:
-            frappe.log_error(
-                f"Error creating parent expense account {parent_name}: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}", 
-                "Account Creation Error"
-            )
-            debug_log(f"Error creating parent expense account for {company}: {str(e)}", "Account Creation Error", trace=True)
-            return None
-            
-    except Exception as e:
-        frappe.log_error(
-            f"Critical error in create_parent_expense_account for {company}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}", 
-            "BPJS Account Creation Error"
-        )
-        return None
-
 def retry_bpjs_mapping(companies):
     """
-    Background job to retry failed BPJS mapping creation
-    Called via frappe.enqueue() from ensure_bpjs_mapping_for_all_companies
+    Wrapper for utility function that retries failed BPJS mapping creation
     
     Args:
         companies (list): List of company names to retry mapping for
     """
-    if not companies:
-        return
-        
-    try:
-        from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
-        
-        for company in companies:
-            try:
-                if not frappe.db.exists("BPJS Account Mapping", {"company": company}):
-                    debug_log(f"Retrying BPJS Account Mapping creation for {company}", "BPJS Mapping Retry")
-                    mapping_name = create_default_mapping(company)
-                    
-                    if mapping_name:
-                        frappe.logger().info(f"Successfully created BPJS Account Mapping for {company} on retry")
-                        debug_log(f"Successfully created BPJS Account Mapping for {company} on retry", "BPJS Mapping Retry")
-                    else:
-                        frappe.logger().warning(f"Failed again to create BPJS Account Mapping for {company}")
-                        debug_log(f"Failed again to create BPJS Account Mapping for {company}", "BPJS Mapping Retry Error")
-            except Exception as e:
-                frappe.log_error(
-                    f"Error creating BPJS Account Mapping for {company} on retry: {str(e)}\n\n"
-                    f"Traceback: {frappe.get_traceback()}", 
-                    "BPJS Mapping Retry Error"
-                )
-                debug_log(f"Error in retry for company {company}: {str(e)}", "BPJS Mapping Retry Error", trace=True)
-                
-    except Exception as e:
-        frappe.log_error(
-            f"Error in retry_bpjs_mapping: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}", 
-            "BPJS Mapping Retry Error"
-        )
-
-def debug_log(message, title=None, max_length=500, trace=False):
-    """
-    Debug logging helper with consistent format
-    
-    Args:
-        message (str): Message to log
-        title (str, optional): Optional title/context for the log
-        max_length (int, optional): Maximum message length (default: 500)
-        trace (bool, optional): Whether to include traceback (default: False)
-    """
-    timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
-    
-    if os.environ.get("DEBUG_BPJS") or trace:
-        # Truncate if message is too long to avoid memory issues
-        message = str(message)[:max_length]
-        
-        if title:
-            log_message = f"[{timestamp}] [{title}] {message}"
-        else:
-            log_message = f"[{timestamp}] {message}"
-            
-        frappe.logger().debug(f"[BPJS DEBUG] {log_message}")
-        
-        if trace:
-            frappe.logger().debug(f"[BPJS DEBUG] [TRACE] {frappe.get_traceback()[:max_length]}")
+    from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils import retry_bpjs_mapping as retry_mapping
+    retry_mapping(companies)
 
 class BPJSSettings(Document):
     def validate(self):
@@ -487,13 +93,30 @@ class BPJSSettings(Document):
     
     def validate_data_types(self):
         """Validate that all numeric fields contain valid numbers"""
-        numeric_fields = [
-            "kesehatan_employee_percent", "kesehatan_employer_percent",
-            "jht_employee_percent", "jht_employer_percent",
-            "jp_employee_percent", "jp_employer_percent",
-            "jkk_percent", "jkm_percent",
-            "kesehatan_max_salary", "jp_max_salary"
-        ]
+        # Get numeric fields from config
+        config = get_default_config()
+        
+        # Combine fields from percentage validations and salary thresholds
+        numeric_fields = []
+        validation_rules = config.get("bpjs_settings", {}).get("validation_rules", {})
+        
+        for rule in validation_rules.get("percentage_ranges", []):
+            if "field" in rule and rule["field"] not in numeric_fields:
+                numeric_fields.append(rule["field"])
+                
+        for rule in validation_rules.get("salary_thresholds", []):
+            if "field" in rule and rule["field"] not in numeric_fields:
+                numeric_fields.append(rule["field"])
+        
+        # Fallback to hardcoded fields if config not available
+        if not numeric_fields:
+            numeric_fields = [
+                "kesehatan_employee_percent", "kesehatan_employer_percent",
+                "jht_employee_percent", "jht_employer_percent",
+                "jp_employee_percent", "jp_employer_percent",
+                "jkk_percent", "jkm_percent",
+                "kesehatan_max_salary", "jp_max_salary"
+            ]
         
         for field in numeric_fields:
             try:
@@ -504,34 +127,77 @@ class BPJSSettings(Document):
                 frappe.throw(_(f"Value of {field} must be a number"))
     
     def validate_percentages(self):
-        """Validate BPJS percentage ranges"""
-        validations = [
-            ("kesehatan_employee_percent", 0, 5, "BPJS Kesehatan employee percentage must be between 0 and 5%"),
-            ("kesehatan_employer_percent", 0, 10, "BPJS Kesehatan employer percentage must be between 0 and 10%"),
-            ("jht_employee_percent", 0, 5, "JHT employee percentage must be between 0 and 5%"),
-            ("jht_employer_percent", 0, 10, "JHT employer percentage must be between 0 and 10%"),
-            ("jp_employee_percent", 0, 5, "JP employee percentage must be between 0 and 5%"),
-            ("jp_employer_percent", 0, 5, "JP employer percentage must be between 0 and 5%"),
-            ("jkk_percent", 0, 5, "JKK percentage must be between 0 and 5%"),
-            ("jkm_percent", 0, 5, "JKM percentage must be between 0 and 5%")
-        ]
+        """Validate BPJS percentage ranges using config"""
+        # Get validation rules from config
+        config = get_default_config()
+        validation_rules = config.get("bpjs_settings", {}).get("validation_rules", {})
+        percentage_rules = validation_rules.get("percentage_ranges", [])
         
-        for field, min_val, max_val, message in validations:
-            value = flt(self.get(field))
-            if value < min_val or value > max_val:
-                frappe.throw(_(message))
+        if percentage_rules:
+            # Use rules from config
+            for rule in percentage_rules:
+                field = rule.get("field")
+                min_val = rule.get("min", 0)
+                max_val = rule.get("max", 5)
+                error_msg = rule.get("error_msg", f"{field} must be between {min_val}% and {max_val}%")
+                
+                if hasattr(self, field):
+                    value = flt(self.get(field))
+                    if value < min_val or value > max_val:
+                        frappe.throw(_(error_msg))
+        else:
+            # Fallback to hardcoded validations
+            validations = [
+                ("kesehatan_employee_percent", 0, 5, "BPJS Kesehatan employee percentage must be between 0 and 5%"),
+                ("kesehatan_employer_percent", 0, 10, "BPJS Kesehatan employer percentage must be between 0 and 10%"),
+                ("jht_employee_percent", 0, 5, "JHT employee percentage must be between 0 and 5%"),
+                ("jht_employer_percent", 0, 10, "JHT employer percentage must be between 0 and 10%"),
+                ("jp_employee_percent", 0, 5, "JP employee percentage must be between 0 and 5%"),
+                ("jp_employer_percent", 0, 5, "JP employer percentage must be between 0 and 5%"),
+                ("jkk_percent", 0, 5, "JKK percentage must be between 0 and 5%"),
+                ("jkm_percent", 0, 5, "JKM percentage must be between 0 and 5%")
+            ]
+            
+            for field, min_val, max_val, message in validations:
+                value = flt(self.get(field))
+                if value < min_val or value > max_val:
+                    frappe.throw(_(message))
     
     def validate_max_salary(self):
-        """Validate maximum salary thresholds"""
-        if flt(self.kesehatan_max_salary) <= 0:
-            frappe.throw(_("BPJS Kesehatan maximum salary must be greater than 0"))
-            
-        if flt(self.jp_max_salary) <= 0:
-            frappe.throw(_("JP maximum salary must be greater than 0"))
+        """Validate maximum salary thresholds using config"""
+        # Get validation rules from config
+        config = get_default_config()
+        validation_rules = config.get("bpjs_settings", {}).get("validation_rules", {})
+        salary_rules = validation_rules.get("salary_thresholds", [])
+        
+        if salary_rules:
+            # Use rules from config
+            for rule in salary_rules:
+                field = rule.get("field")
+                min_val = rule.get("min", 0)
+                error_msg = rule.get("error_msg", f"{field} must be greater than {min_val}")
+                
+                if hasattr(self, field):
+                    value = flt(self.get(field))
+                    if value <= min_val:
+                        frappe.throw(_(error_msg))
+        else:
+            # Fallback to hardcoded validations
+            if flt(self.kesehatan_max_salary) <= 0:
+                frappe.throw(_("BPJS Kesehatan maximum salary must be greater than 0"))
+                
+            if flt(self.jp_max_salary) <= 0:
+                frappe.throw(_("JP maximum salary must be greater than 0"))
     
     def validate_account_types(self):
         """Validate that BPJS accounts are of the correct type"""
-        account_fields = ["kesehatan_account", "jht_account", "jp_account", "jkk_account", "jkm_account"]
+        # Get account fields from config
+        config = get_default_config()
+        account_fields = config.get("bpjs_settings", {}).get("account_fields", [])
+        
+        # Fallback to hardcoded fields
+        if not account_fields:
+            account_fields = ["kesehatan_account", "jht_account", "jp_account", "jkk_account", "jkm_account"]
         
         for field in account_fields:
             account = self.get(field)
@@ -604,33 +270,48 @@ class BPJSSettings(Document):
                     debug_log(f"  - Expense parent: {expense_parent}", "BPJS Setup")
                 
                     # Define BPJS liability accounts with standardized names
-                    bpjs_liability_accounts = {
-                        "kesehatan_account": {
-                            "account_name": "BPJS Kesehatan Payable",
-                            "account_type": "Payable",
-                            "field": "kesehatan_account"
-                        },
-                        "jht_account": {
-                            "account_name": "BPJS JHT Payable",
-                            "account_type": "Payable",
-                            "field": "jht_account"
-                        },
-                        "jp_account": {
-                            "account_name": "BPJS JP Payable",
-                            "account_type": "Payable",
-                            "field": "jp_account"
-                        },
-                        "jkk_account": {
-                            "account_name": "BPJS JKK Payable",
-                            "account_type": "Payable",
-                            "field": "jkk_account"
-                        },
-                        "jkm_account": {
-                            "account_name": "BPJS JKM Payable",
-                            "account_type": "Payable",
-                            "field": "jkm_account"
+                    config = get_default_config()
+                    bpjs_payable_accounts = config.get("gl_accounts", {}).get("bpjs_payable_accounts", {})
+                    
+                    # If no config found, use hardcoded accounts
+                    if not bpjs_payable_accounts:
+                        bpjs_liability_accounts = {
+                            "kesehatan_account": {
+                                "account_name": "BPJS Kesehatan Payable",
+                                "account_type": "Payable",
+                                "field": "kesehatan_account"
+                            },
+                            "jht_account": {
+                                "account_name": "BPJS JHT Payable",
+                                "account_type": "Payable",
+                                "field": "jht_account"
+                            },
+                            "jp_account": {
+                                "account_name": "BPJS JP Payable",
+                                "account_type": "Payable",
+                                "field": "jp_account"
+                            },
+                            "jkk_account": {
+                                "account_name": "BPJS JKK Payable",
+                                "account_type": "Payable",
+                                "field": "jkk_account"
+                            },
+                            "jkm_account": {
+                                "account_name": "BPJS JKM Payable",
+                                "account_type": "Payable",
+                                "field": "jkm_account"
+                            }
                         }
-                    }
+                    else:
+                        # Build from config
+                        bpjs_liability_accounts = {}
+                        for key, account_info in bpjs_payable_accounts.items():
+                            field_name = key.replace("payable", "account")
+                            bpjs_liability_accounts[field_name] = {
+                                "account_name": account_info.get("account_name"),
+                                "account_type": "Payable",
+                                "field": field_name
+                            }
                 
                     # Create liability accounts and update settings
                     created_liability_accounts = []
@@ -657,15 +338,22 @@ class BPJSSettings(Document):
                         else:
                             debug_log(f"Failed to create account {account_info['account_name']}", "BPJS Setup Error")
                 
-                    # Define expense accounts with standardized names
+                    # Define expense accounts with standardized names from config
                     if expense_parent:
-                        bpjs_expense_accounts = {
-                            "kesehatan_employer_expense": "BPJS Kesehatan Employer Expense",
-                            "jht_employer_expense": "BPJS JHT Employer Expense",
-                            "jp_employer_expense": "BPJS JP Employer Expense",
-                            "jkk_employer_expense": "BPJS JKK Employer Expense",
-                            "jkm_employer_expense": "BPJS JKM Employer Expense"
-                        }
+                        bpjs_expense_accounts = {}
+                        expense_accounts_from_config = config.get("gl_accounts", {}).get("bpjs_expense_accounts", {})
+                        
+                        if expense_accounts_from_config:
+                            for key, account_info in expense_accounts_from_config.items():
+                                bpjs_expense_accounts[key] = account_info.get("account_name")
+                        else:
+                            bpjs_expense_accounts = {
+                                "kesehatan_employer_expense": "BPJS Kesehatan Employer Expense",
+                                "jht_employer_expense": "BPJS JHT Employer Expense",
+                                "jp_employer_expense": "BPJS JP Employer Expense",
+                                "jkk_employer_expense": "BPJS JKK Employer Expense",
+                                "jkm_employer_expense": "BPJS JKM Employer Expense"
+                            }
                         
                         # Create expense accounts (these won't be stored in BPJS Settings but in the mapping)
                         created_expense_accounts = []
@@ -751,8 +439,12 @@ class BPJSSettings(Document):
             try:
                 from payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping import create_default_mapping
                 
+                # Get account mapping config
+                config = get_default_config()
+                account_mapping = config.get("gl_accounts", {}).get("bpjs_account_mapping", {})
+                
                 debug_log(f"Creating new BPJS Account Mapping for {company}", "BPJS Mapping")
-                mapping_name = create_default_mapping(company)
+                mapping_name = create_default_mapping(company, account_mapping)
                 
                 if mapping_name:
                     debug_log(f"Created BPJS mapping: {mapping_name}", f"Company: {company}")
@@ -796,8 +488,9 @@ class BPJSSettings(Document):
                 f"Error in BPJSSettings.on_update: {str(e)}\n\n"
                 f"Traceback: {frappe.get_traceback()}", 
                 "BPJS Settings Update Error"
-        )
-        debug_log(f"Error in on_update: {str(e)}", "BPJS Settings Update Error", trace=True)
+            )
+            debug_log(f"Error in on_update: {str(e)}", "BPJS Settings Update Error", trace=True)
+
     def update_salary_structures(self):
         """
         Update BPJS components in active salary structures
@@ -820,17 +513,28 @@ class BPJSSettings(Document):
             # Log for debug
             debug_log(f"Found {len(salary_structures)} active salary structures", "BPJS Settings")
         
-            # Get list of BPJS components to update with standardized names
-            bpjs_components = {
-                "BPJS Kesehatan Employee": self.kesehatan_employee_percent,
-                "BPJS Kesehatan Employer": self.kesehatan_employer_percent,
-                "BPJS JHT Employee": self.jht_employee_percent,
-                "BPJS JHT Employer": self.jht_employer_percent,
-                "BPJS JP Employee": self.jp_employee_percent,
-                "BPJS JP Employer": self.jp_employer_percent,
-                "BPJS JKK": self.jkk_percent,
-                "BPJS JKM": self.jkm_percent
-            }
+            # Get list of BPJS components to update from config
+            config = get_default_config()
+            bpjs_components_map = config.get("bpjs_settings", {}).get("bpjs_components", {})
+            
+            # Fallback to hardcoded mapping if not in config
+            if not bpjs_components_map:
+                bpjs_components = {
+                    "BPJS Kesehatan Employee": self.kesehatan_employee_percent,
+                    "BPJS Kesehatan Employer": self.kesehatan_employer_percent,
+                    "BPJS JHT Employee": self.jht_employee_percent,
+                    "BPJS JHT Employer": self.jht_employer_percent,
+                    "BPJS JP Employee": self.jp_employee_percent,
+                    "BPJS JP Employer": self.jp_employer_percent,
+                    "BPJS JKK": self.jkk_percent,
+                    "BPJS JKM": self.jkm_percent
+                }
+            else:
+                # Build components from config mapping
+                bpjs_components = {}
+                for component_name, field_name in bpjs_components_map.items():
+                    if hasattr(self, field_name):
+                        bpjs_components[component_name] = self.get(field_name)
         
             # Count statistics
             updated_count = 0
@@ -990,6 +694,10 @@ class BPJSSettings(Document):
         Returns:
             dict: Dictionary of exportable settings
         """
+        # Get app info from config
+        config = get_default_config()
+        app_info = config.get("app_info", {"version": "1.0.0"})
+        
         # Fields to export
         fields_to_export = [
             "kesehatan_employee_percent",
@@ -1004,8 +712,14 @@ class BPJSSettings(Document):
             "jkm_percent"
         ]
         
-        result = {}
+        result = {
+            "app_info": app_info,
+            "export_date": now_datetime().strftime('%Y-%m-%d %H:%M:%S'),
+            "export_user": frappe.session.user,
+            "settings": {}
+        }
+        
         for field in fields_to_export:
-            result[field] = flt(self.get(field))
+            result["settings"][field] = flt(self.get(field))
             
         return result
