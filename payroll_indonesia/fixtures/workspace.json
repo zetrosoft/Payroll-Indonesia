@@ -2,289 +2,79 @@
   "doctype": "Workspace",
   "name": "Payroll Indonesia",
   "category": "Modules",
-  "content": "[{\"type\":\"header\",\"data\":{\"text\":\"Payroll Indonesia\",\"col\":12}},{\"type\":\"spacer\",\"data\":{\"col\":12}},{\"type\":\"card\",\"data\":{\"card_name\":\"Master Data\",\"col\":4}},{\"type\":\"card\",\"data\":{\"card_name\":\"Struktur Gaji\",\"col\":4}},{\"type\":\"card\",\"data\":{\"card_name\":\"Dokumen Penggajian\",\"col\":4}},{\"type\":\"card\",\"data\":{\"card_name\":\"Pengaturan\",\"col\":4}},{\"type\":\"card\",\"data\":{\"card_name\":\"Laporan & Ringkasan\",\"col\":4}}]",
-  "creation": "2025-05-06 07:29:39",
-  "docstatus": 0,
   "icon": "hr",
-  "is_hidden": 0,
-  "is_standard": 1,
   "label": "Payroll Indonesia",
-  "links": [
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Master Data",
-      "onboard": 0,
-      "type": "Card Break"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Employee",
-      "link_to": "Employee",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Jabatan",
-      "link_to": "Jabatan",
-      "link_type": "DocType", 
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Golongan",
-      "link_to": "Golongan",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Struktur Gaji",
-      "onboard": 0,
-      "type": "Card Break"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Salary Structure",
-      "link_to": "Salary Structure",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Salary Structure Assignment",
-      "link_to": "Salary Structure Assignment", 
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Salary Component",
-      "link_to": "Salary Component",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Dokumen Penggajian",
-      "onboard": 0,
-      "type": "Card Break"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Salary Slip",
-      "link_to": "Salary Slip",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "BPJS Payment Summary",
-      "link_to": "BPJS Payment Summary",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Payroll Entry",
-      "link_to": "Payroll Entry",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Pengaturan",
-      "onboard": 0,
-      "type": "Card Break"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "PPh 21 Settings",
-      "link_to": "PPh 21 Settings",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "BPJS Settings",
-      "link_to": "BPJS Settings",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "BPJS Account Mapping",
-      "link_to": "BPJS Account Mapping",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "HR Settings",
-      "link_to": "HR Settings",
-      "link_type": "DocType",
-      "onboard": 0,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Laporan & Ringkasan",
-      "onboard": 0,
-      "type": "Card Break"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 0,
-      "label": "Employee Tax Summary",
-      "link_to": "Employee Tax Summary",
-      "link_type": "DocType",
-      "onboard": 1,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 1,
-      "label": "PPh 21 Monthly Report",
-      "link_to": "PPh 21 Monthly Report",
-      "link_type": "Report",
-      "onboard": 0,
-      "type": "Link"
-    },
-    {
-      "hidden": 0,
-      "is_query_report": 1,
-      "label": "BPJS Monthly Report", 
-      "link_to": "BPJS Monthly Report",
-      "link_type": "Report",
-      "onboard": 0,
-      "type": "Link"
-    }
-  ],
-  "modified": "2025-05-06 07:29:39",
-  "modified_by": "Administrator",
   "module": "Payroll Indonesia",
-  "owner": "Administrator",
-  "parent_page": "HR",
+  "is_standard": 1,
+  "is_hidden": 0,
   "public": 1,
+  "parent_page": "HR",
+
+  "content": [
+    { "type": "header",  "data": { "text": "Payroll Indonesia", "col": 12 } },
+    { "type": "spacer",  "data": { "col": 12 } },
+
+    { "type": "card",    "data": { "card_name": "Master Data",            "col": 4 } },
+    { "type": "card",    "data": { "card_name": "Struktur Gaji",          "col": 4 } },
+    { "type": "card",    "data": { "card_name": "Dokumen Penggajian",     "col": 4 } },
+    { "type": "card",    "data": { "card_name": "Pengaturan",             "col": 4 } },
+    { "type": "card",    "data": { "card_name": "Laporan & Ringkasan",    "col": 4 } }
+  ],
+
+  "links": [
+    { "type": "Card Break", "label": "Master Data" },
+
+    { "type": "Link", "label": "Employee",   "link_to": "Employee",   "link_type": "DocType", "onboard": 1 },
+    { "type": "Link", "label": "Jabatan",    "link_to": "Jabatan",    "link_type": "DocType", "onboard": 1 },
+    { "type": "Link", "label": "Golongan",   "link_to": "Golongan",   "link_type": "DocType", "onboard": 1 },
+
+    { "type": "Card Break", "label": "Struktur Gaji" },
+
+    { "type": "Link", "label": "Salary Structure",            "link_to": "Salary Structure",            "link_type": "DocType", "onboard": 1 },
+    { "type": "Link", "label": "Salary Structure Assignment", "link_to": "Salary Structure Assignment", "link_type": "DocType", "onboard": 1 },
+    { "type": "Link", "label": "Salary Component",            "link_to": "Salary Component",            "link_type": "DocType", "onboard": 1 },
+
+    { "type": "Card Break", "label": "Dokumen Penggajian" },
+
+    { "type": "Link", "label": "Salary Slip",          "link_to": "Salary Slip",          "link_type": "DocType", "onboard": 1 },
+    { "type": "Link", "label": "BPJS Payment Summary", "link_to": "BPJS Payment Summary", "link_type": "DocType", "onboard": 1 },
+    { "type": "Link", "label": "Payroll Entry",        "link_to": "Payroll Entry",        "link_type": "DocType", "onboard": 1 },
+
+    { "type": "Card Break", "label": "Pengaturan" },
+
+    { "type": "Link", "label": "PPh 21 Settings",     "link_to": "PPh 21 Settings",     "link_type": "DocType", "onboard": 1 },
+    { "type": "Link", "label": "BPJS Settings",       "link_to": "BPJS Settings",       "link_type": "DocType", "onboard": 1 },
+    { "type": "Link", "label": "BPJS Account Mapping","link_to": "BPJS Account Mapping","link_type": "DocType", "onboard": 1 },
+    { "type": "Link", "label": "HR Settings",         "link_to": "HR Settings",         "link_type": "DocType", "onboard": 0 },
+
+    { "type": "Card Break", "label": "Laporan & Ringkasan" },
+
+    { "type": "Link", "label": "Employee Tax Summary", "link_to": "Employee Tax Summary", "link_type": "DocType", "onboard": 1 },
+    { "type": "Link", "label": "PPh 21 Monthly Report","link_to": "PPh 21 Monthly Report","link_type": "Report",  "is_query_report": 1 },
+    { "type": "Link", "label": "BPJS Monthly Report",  "link_to": "BPJS Monthly Report",  "link_type": "Report",  "is_query_report": 1 }
+  ],
+
   "quick_lists": [
-    {
-      "document_type": "Salary Slip",
-      "label": "Draft Salary Slips",
-      "filter_by": "docstatus,=,0"
-    },
-    {
-      "document_type": "BPJS Payment Summary",
-      "label": "Draft BPJS Payments",
-      "filter_by": "docstatus,=,0"
-    },
-    {
-      "document_type": "BPJS Account Mapping",
-      "label": "Active BPJS Mappings",
-      "filter_by": "docstatus,=,1"
-    },
-    {
-      "document_type": "Salary Structure",
-      "label": "Active Salary Structures",
-      "filter_by": "docstatus,=,1"
-    },
-    {
-      "document_type": "Employee Tax Summary",
-      "label": "Current Year Tax Summaries",
-      "filter_by": "docstatus,<,2"
-    }
+    { "document_type": "Salary Slip",           "label": "Draft Salary Slips",     "filter_by": "docstatus,=,0" },
+    { "document_type": "BPJS Payment Summary",  "label": "Draft BPJS Payments",    "filter_by": "docstatus,=,0" },
+    { "document_type": "BPJS Account Mapping",  "label": "Active BPJS Mappings",   "filter_by": "docstatus,=,1" },
+    { "document_type": "Salary Structure",      "label": "Active Salary Structures","filter_by": "docstatus,=,1" },
+    { "document_type": "Employee Tax Summary",  "label": "Current Year Tax Summaries","filter_by": "docstatus,<,2" }
   ],
-  "roles": [
-    {
-      "role": "HR Manager"
-    },
-    {
-      "role": "HR User"
-    },
-    {
-      "role": "Employee"
-    }
-  ],
-  "sequence_id": 7,
+
   "shortcuts": [
-    {
-      "color": "blue",
-      "doc_view": "List",
-      "label": "Salary Slips",
-      "link_to": "Salary Slip",
-      "type": "DocType"
-    },
-    {
-      "color": "purple",
-      "doc_view": "List", 
-      "label": "Employees",
-      "link_to": "Employee",
-      "type": "DocType"
-    },
-    {
-      "color": "green",
-      "doc_view": "List",
-      "label": "Salary Structures",
-      "link_to": "Salary Structure",
-      "type": "DocType"
-    },
-    {
-      "color": "red",
-      "doc_view": "List",
-      "label": "BPJS Mappings",
-      "link_to": "BPJS Account Mapping",
-      "type": "DocType"
-    },
-    {
-      "color": "yellow",
-      "doc_view": "List",
-      "label": "BPJS Settings",
-      "link_to": "BPJS Settings",
-      "type": "DocType"
-    },
-    {
-      "color": "grey",
-      "doc_view": "List",
-      "label": "Positions",
-      "link_to": "Jabatan",
-      "type": "DocType"
-    },
-    {
-      "color": "orange",
-      "doc_view": "List",
-      "label": "Tax Summaries",
-      "link_to": "Employee Tax Summary",
-      "type": "DocType"
-    }
+    { "type": "DocType", "label": "Salary Slips",     "link_to": "Salary Slip",          "doc_view": "List", "color": "blue" },
+    { "type": "DocType", "label": "Employees",       "link_to": "Employee",             "doc_view": "List", "color": "purple" },
+    { "type": "DocType", "label": "Salary Structures","link_to": "Salary Structure",     "doc_view": "List", "color": "green" },
+    { "type": "DocType", "label": "BPJS Mappings",   "link_to": "BPJS Account Mapping", "doc_view": "List", "color": "red" },
+    { "type": "DocType", "label": "BPJS Settings",   "link_to": "BPJS Settings",        "doc_view": "List", "color": "yellow" },
+    { "type": "DocType", "label": "Positions",       "link_to": "Jabatan",              "doc_view": "List", "color": "grey" },
+    { "type": "DocType", "label": "Tax Summaries",   "link_to": "Employee Tax Summary", "doc_view": "List", "color": "orange" }
   ],
-  "title": "Payroll Indonesia"
+
+  "roles": [
+    { "role": "HR Manager" },
+    { "role": "HR User" },
+    { "role": "Employee" }
+  ]
 }
