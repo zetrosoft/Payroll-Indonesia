@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 07:35:26 by dannyaudian
+# Last modified: 2025-05-06 03:54:51 by dannyaudian
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, cint
+from frappe.utils import flt, getdate, cint, now_datetime
 
 from .base import update_component_amount, get_component_amount
-from .ter_calculator import calculate_monthly_pph_with_ter, get_ter_rate
 
 def calculate_tax_components(doc, employee):
     """Calculate tax related components"""
@@ -16,7 +15,10 @@ def calculate_tax_components(doc, employee):
         # Handle NPWP Gabung Suami case
         if hasattr(employee, 'gender') and employee.gender == "Female" and hasattr(employee, 'npwp_gabung_suami') and cint(employee.get("npwp_gabung_suami")):
             doc.is_final_gabung_suami = 1
-            doc.payroll_note = "Pajak final digabung dengan NPWP suami"
+            # Use add_tax_info_to_note instead of direct assignment
+            add_tax_info_to_note(doc, "PROGRESSIVE", {
+                "message": "Pajak final digabung dengan NPWP suami"
+            })
             return
 
         # Calculate Biaya Jabatan (5% of gross, max 500k)
@@ -34,7 +36,7 @@ def calculate_tax_components(doc, employee):
         else:
             # IMPROVED: Strategy selection is already done in the controller
             # This function just handles the calculation based on the month
-            check_and_apply_selected_method(doc, employee)
+            calculate_monthly_pph_progressive(doc, employee)
 
         # Initialize total_bpjs to 0 if None to prevent NoneType subtraction error
         if doc.total_bpjs is None:
@@ -45,57 +47,57 @@ def calculate_tax_components(doc, employee):
     
     except Exception as e:
         frappe.log_error(
-            f"Tax Calculation Error for Employee {employee.name}: {str(e)}",
+            f"Tax Calculation Error for Employee {employee.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
             "Tax Calculation Error"
         )
         # Convert to user-friendly error
         frappe.throw(_("Error calculating tax components: {0}").format(str(e)))
 
-def check_and_apply_selected_method(doc, employee):
-    """
-    Check which method has been selected (TER attribute already set)
-    and perform any necessary adjustments
-    """
-    # The actual tax calculation is now handled in controller by the selected strategy
-    # This function only does method-specific post-processing if needed
-    pass
-
-def calculate_monthly_pph_with_ter(doc, employee):
-    """Calculate PPh 21 using TER method"""
+def calculate_monthly_pph_progressive(doc, employee):
+    """Calculate PPh 21 using progressive rates - for regular months"""
     try:
-        # Validate employee status_pajak
+        # Get PPh 21 Settings
+        pph_settings = frappe.get_single("PPh 21 Settings")
+        
+        # Get PTKP value
         if not hasattr(employee, 'status_pajak') or not employee.status_pajak:
             employee.status_pajak = "TK0"  # Default to TK0 if not set
             frappe.msgprint(_("Warning: Employee tax status not set, using TK0 as default"))
 
-        # Get TER rate based on status and gross income
-        ter_rate = get_ter_rate(employee.status_pajak, doc.gross_pay)
+        # Get annual values
+        monthly_netto = doc.netto
+        annual_netto = monthly_netto * 12
+        ptkp = get_ptkp_amount(pph_settings, employee.status_pajak)
+        pkp = max(annual_netto - ptkp, 0)
 
-        # Calculate tax using TER
-        monthly_tax = doc.gross_pay * ter_rate
-
-        # Save TER info
-        doc.is_using_ter = 1
-        doc.ter_rate = ter_rate * 100  # Convert to percentage for display
+        # Calculate annual PPh
+        annual_pph, tax_details = calculate_progressive_tax(pkp, pph_settings)
+        
+        # Calculate monthly PPh
+        monthly_pph = annual_pph / 12
 
         # Update PPh 21 component
-        update_component_amount(doc, "PPh 21", monthly_tax, "deductions")
+        update_component_amount(doc, "PPh 21", monthly_pph, "deductions")
 
-        # Update note with TER info
-        doc.payroll_note += "\n\n=== Perhitungan PPh 21 dengan TER ==="
-        doc.payroll_note += f"\nStatus Pajak: {employee.status_pajak}"
-        doc.payroll_note += f"\nPenghasilan Bruto: Rp {doc.gross_pay:,.0f}"
-        doc.payroll_note += f"\nTarif Efektif Rata-rata: {ter_rate * 100:.2f}%"
-        doc.payroll_note += f"\nPPh 21 Sebulan: Rp {monthly_tax:,.0f}"
-        doc.payroll_note += "\n\nSesuai PMK 168/2023 tentang Tarif Efektif Rata-rata"
+        # Add tax info to note
+        add_tax_info_to_note(doc, "PROGRESSIVE", {
+            "status_pajak": employee.status_pajak,
+            "monthly_netto": monthly_netto,
+            "annual_netto": annual_netto,
+            "ptkp": ptkp,
+            "pkp": pkp,
+            "tax_details": tax_details,
+            "annual_pph": annual_pph,
+            "monthly_pph": monthly_pph
+        })
 
     except Exception as e:
         frappe.log_error(
-            f"TER Calculation Error for Employee {employee.name}: {str(e)}",
-            "TER Calculation Error"
+            f"Progressive Tax Calculation Error for Employee {employee.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+            "Progressive Tax Calculation Error"
         )
-        frappe.throw(_("Error calculating PPh 21 with TER: {0}").format(str(e)))
-        
+        frappe.throw(_("Error calculating PPh 21 with progressive method: {0}").format(str(e)))
+
 def calculate_december_pph(doc, employee):
     """Calculate year-end tax correction for December"""
     try:
@@ -142,27 +144,182 @@ def calculate_december_pph(doc, employee):
             "deductions"
         )
 
-        # Set detailed December note
-        set_december_note(
-            doc,
-            annual_gross=annual_gross,
-            annual_biaya_jabatan=annual_biaya_jabatan,
-            annual_bpjs=annual_bpjs,
-            annual_netto=annual_netto,
-            ptkp=ptkp,
-            pkp=pkp,
-            tax_details=tax_details,
-            annual_pph=annual_pph,
-            ytd_pph=ytd.get("pph21", 0),
-            correction=correction
-        )
+        # Add tax info to note with special December data
+        add_tax_info_to_note(doc, "PROGRESSIVE_DECEMBER", {
+            "status_pajak": employee.status_pajak,
+            "annual_gross": annual_gross,
+            "annual_biaya_jabatan": annual_biaya_jabatan,
+            "annual_bpjs": annual_bpjs,
+            "annual_netto": annual_netto,
+            "ptkp": ptkp,
+            "pkp": pkp,
+            "tax_details": tax_details,
+            "annual_pph": annual_pph,
+            "ytd_pph": ytd.get("pph21", 0),
+            "correction": correction
+        })
         
     except Exception as e:
         frappe.log_error(
-            f"December PPh Calculation Error for Employee {employee.name}: {str(e)}",
+            f"December PPh Calculation Error for Employee {employee.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
             "December PPh Error"
         )
         frappe.throw(_("Error calculating December PPh 21 correction: {0}").format(str(e)))
+
+def add_tax_info_to_note(doc, tax_method, values):
+    """
+    Add tax calculation details to payroll note with consistent formatting and
+    section management to avoid duplication.
+    
+    Args:
+        doc: Salary slip document
+        tax_method: "PROGRESSIVE", "TER", or "PROGRESSIVE_DECEMBER"
+        values: Dictionary with calculation values
+    """
+    try:
+        # Initialize payroll_note if needed
+        if not hasattr(doc, 'payroll_note'):
+            doc.payroll_note = ""
+        elif doc.payroll_note is None:
+            doc.payroll_note = ""
+            
+        # Check if Tax calculation section already exists and remove it if found
+        start_marker = "<!-- TAX_CALCULATION_START -->"
+        end_marker = "<!-- TAX_CALCULATION_END -->"
+        
+        if start_marker in doc.payroll_note and end_marker in doc.payroll_note:
+            start_idx = doc.payroll_note.find(start_marker)
+            end_idx = doc.payroll_note.find(end_marker) + len(end_marker)
+            
+            # Remove the existing section
+            doc.payroll_note = doc.payroll_note[:start_idx] + doc.payroll_note[end_idx:]
+        
+        # Add new tax calculation with section markers
+        note_content = [
+            "\n\n<!-- TAX_CALCULATION_START -->",
+        ]
+        
+        if tax_method == "TER":
+            # TER method
+            note_content.extend([
+                "=== Perhitungan PPh 21 dengan TER ===",
+                f"Status Pajak: {values.get('status_pajak', 'TK0')}",
+                f"Penghasilan Bruto: Rp {values.get('gross_pay', 0):,.0f}",
+                f"Tarif Efektif Rata-rata: {values.get('ter_rate', 0):.2f}%",
+                f"PPh 21 Sebulan: Rp {values.get('monthly_tax', 0):,.0f}",
+                "",
+                "Sesuai PMK 168/2023 tentang Tarif Efektif Rata-rata"
+            ])
+            
+        elif tax_method == "PROGRESSIVE_DECEMBER":
+            # Progressive method - December with correction
+            note_content.extend([
+                "=== Perhitungan PPh 21 Tahunan ===",
+                f"Penghasilan Bruto Setahun: Rp {values.get('annual_gross', 0):,.0f}",
+                f"Biaya Jabatan: Rp {values.get('annual_biaya_jabatan', 0):,.0f}",
+                f"Total BPJS: Rp {values.get('annual_bpjs', 0):,.0f}",
+                f"Penghasilan Neto: Rp {values.get('annual_netto', 0):,.0f}",
+                f"PTKP: Rp {values.get('ptkp', 0):,.0f}",
+                f"PKP: Rp {values.get('pkp', 0):,.0f}",
+                "",
+                "Perhitungan Per Lapisan Pajak:"
+            ])
+            
+            # Add tax bracket details if available
+            tax_details = values.get('tax_details', [])
+            if tax_details:
+                for d in tax_details:
+                    rate = flt(d.get('rate', 0))
+                    taxable = flt(d.get('taxable', 0))
+                    tax = flt(d.get('tax', 0))
+                    note_content.append(
+                        f"- Lapisan {rate:.0f}%: "
+                        f"Rp {taxable:,.0f} × {rate:.0f}% = "
+                        f"Rp {tax:,.0f}"
+                    )
+            else:
+                note_content.append("- (Tidak ada rincian pajak)")
+                
+            # Add summary values
+            annual_pph = flt(values.get('annual_pph', 0))
+            ytd_pph = flt(values.get('ytd_pph', 0))
+            correction = flt(values.get('correction', 0))
+            
+            note_content.extend([
+                "",
+                f"Total PPh 21 Setahun: Rp {annual_pph:,.0f}",
+                f"PPh 21 Sudah Dibayar: Rp {ytd_pph:,.0f}",
+                f"Koreksi Desember: Rp {correction:,.0f}",
+                f"({'Kurang Bayar' if correction > 0 else 'Lebih Bayar'})",
+                "",
+                "Metode perhitungan Desember menggunakan metode progresif sesuai PMK 168/2023"
+            ])
+            
+        elif tax_method == "PROGRESSIVE":
+            # Regular progressive method
+            note_content.extend([
+                "=== Perhitungan PPh 21 dengan Metode Progresif ===",
+                f"Status Pajak: {values.get('status_pajak', 'TK0')}",
+                f"Penghasilan Neto Sebulan: Rp {values.get('monthly_netto', 0):,.0f}",
+                f"Penghasilan Neto Setahun: Rp {values.get('annual_netto', 0):,.0f}",
+                f"PTKP: Rp {values.get('ptkp', 0):,.0f}",
+                f"PKP: Rp {values.get('pkp', 0):,.0f}",
+                "",
+                "PPh 21 Tahunan:"
+            ])
+            
+            # Add tax bracket details if available
+            tax_details = values.get('tax_details', [])
+            if tax_details:
+                for d in tax_details:
+                    rate = flt(d.get('rate', 0))
+                    taxable = flt(d.get('taxable', 0))
+                    tax = flt(d.get('tax', 0))
+                    note_content.append(
+                        f"- Lapisan {rate:.0f}%: "
+                        f"Rp {taxable:,.0f} × {rate:.0f}% = "
+                        f"Rp {tax:,.0f}"
+                    )
+            else:
+                note_content.append("- (Tidak ada rincian pajak)")
+                
+            # Add monthly PPh
+            annual_pph = flt(values.get('annual_pph', 0))
+            monthly_pph = flt(values.get('monthly_pph', 0))
+            note_content.extend([
+                "",
+                f"Total PPh 21 Setahun: Rp {annual_pph:,.0f}",
+                f"PPh 21 Sebulan: Rp {monthly_pph:,.0f}"
+            ])
+        
+        else:
+            # Simple message (e.g., for NPWP Gabung Suami case)
+            if "message" in values:
+                note_content.extend([
+                    "=== Informasi Pajak ===",
+                    values.get("message", "")
+                ])
+            else:
+                note_content.extend([
+                    "=== Informasi Pajak ===",
+                    "Tidak ada perhitungan PPh 21 yang dilakukan."
+                ])
+        
+        # Add end marker
+        note_content.append("<!-- TAX_CALCULATION_END -->")
+        
+        # Add the formatted note to payroll_note
+        doc.payroll_note += "\n" + "\n".join(note_content)
+        
+    except Exception as e:
+        # Log error but continue
+        frappe.log_error(
+            f"Error adding tax info to note: {str(e)}\nTraceback: {frappe.get_traceback()}",
+            "Tax Note Error"
+        )
+        # Add a simple note to indicate there was an error
+        if hasattr(doc, 'payroll_note'):
+            doc.payroll_note += f"\n\nError adding tax calculation details: {str(e)}"
 
 def calculate_progressive_tax(pkp, pph_settings=None):
     """Calculate tax using progressive rates"""
@@ -232,10 +389,58 @@ def calculate_progressive_tax(pkp, pph_settings=None):
         
     except Exception as e:
         frappe.log_error(
-            f"Progressive Tax Calculation Error for PKP {pkp}: {str(e)}",
+            f"Progressive Tax Calculation Error for PKP {pkp}: {str(e)}\nTraceback: {frappe.get_traceback()}",
             "Tax Bracket Calculation Error"
         )
         frappe.throw(_("Error calculating progressive tax brackets: {0}").format(str(e)))
+
+def get_ptkp_amount(pph_settings, status_pajak):
+    """Get PTKP amount based on tax status"""
+    try:
+        # Get PTKP from settings
+        ptkp_table = pph_settings.ptkp_table if hasattr(pph_settings, 'ptkp_table') else []
+        
+        # If not found, query from database
+        if not ptkp_table:
+            ptkp_table = frappe.db.sql("""
+                SELECT tax_status, amount
+                FROM `tabPPh 21 PTKP`
+                WHERE parent = 'PPh 21 Settings'
+            """, as_dict=1)
+        
+        # Find matching status
+        for ptkp in ptkp_table:
+            if ptkp.tax_status == status_pajak:
+                return flt(ptkp.amount)
+        
+        # If not found, try to match prefix (TK0 -> TK)
+        prefix = status_pajak[:2] if len(status_pajak) >= 2 else status_pajak
+        for ptkp in ptkp_table:
+            if ptkp.tax_status.startswith(prefix):
+                return flt(ptkp.amount)
+        
+        # Default values if not found
+        default_ptkp = {
+            "TK": 54000000,
+            "K": 58500000,
+            "HB": 54000000
+        }
+        
+        # Return default based on prefix
+        for key, value in default_ptkp.items():
+            if status_pajak.startswith(key):
+                return value
+                
+        # Last resort - TK0
+        return 54000000  # Default for TK0
+    
+    except Exception as e:
+        frappe.log_error(
+            f"Error getting PTKP amount for {status_pajak}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+            "PTKP Calculation Error"
+        )
+        # Return default PTKP for TK0
+        return 54000000
 
 def get_ytd_totals_from_tax_summary(doc, year):
     """
@@ -371,14 +576,22 @@ def get_ytd_totals(doc, year):
 def set_basic_payroll_note(doc, employee):
     """Set basic payroll note with component details"""
     try:
+        # Check if payroll_note already has content
+        if hasattr(doc, 'payroll_note') and doc.payroll_note:
+            # Don't overwrite existing note, add to it
+            return
+            
         status_pajak = employee.status_pajak if hasattr(employee, 'status_pajak') and employee.status_pajak else "TK0"
         
         doc.payroll_note = "\n".join([
+            "<!-- BASIC_INFO_START -->",
+            "=== Informasi Dasar ===",
             f"Status Pajak: {status_pajak}",
             f"Penghasilan Bruto: Rp {doc.gross_pay:,.0f}",
             f"Biaya Jabatan: Rp {doc.biaya_jabatan:,.0f}",
             f"BPJS (JHT+JP+Kesehatan): Rp {doc.total_bpjs:,.0f}",
-            f"Penghasilan Neto: Rp {doc.netto:,.0f}"
+            f"Penghasilan Neto: Rp {doc.netto:,.0f}",
+            "<!-- BASIC_INFO_END -->"
         ])
     except Exception as e:
         frappe.log_error(
@@ -388,65 +601,6 @@ def set_basic_payroll_note(doc, employee):
         # Just set a basic note
         doc.payroll_note = f"Penghasilan Bruto: Rp {doc.gross_pay:,.0f}"
         frappe.msgprint(_("Error setting detailed payroll note: {0}").format(str(e)))
-
-def set_december_note(doc, **kwargs):
-    """Set detailed December correction note"""
-    try:
-        # Build the note with proper error handling
-        note_parts = [
-            "=== Perhitungan PPh 21 Tahunan ===",
-            f"Penghasilan Bruto Setahun: Rp {kwargs.get('annual_gross', 0):,.0f}",
-            f"Biaya Jabatan: Rp {kwargs.get('annual_biaya_jabatan', 0):,.0f}",
-            f"Total BPJS: Rp {kwargs.get('annual_bpjs', 0):,.0f}",
-            f"Penghasilan Neto: Rp {kwargs.get('annual_netto', 0):,.0f}",
-            f"PTKP: Rp {kwargs.get('ptkp', 0):,.0f}",
-            f"PKP: Rp {kwargs.get('pkp', 0):,.0f}",
-            "",
-            "Perhitungan Per Lapisan Pajak:"
-        ]
-        
-        # Add tax bracket details if available
-        tax_details = kwargs.get('tax_details', [])
-        if tax_details:
-            for d in tax_details:
-                rate = flt(d.get('rate', 0))
-                taxable = flt(d.get('taxable', 0))
-                tax = flt(d.get('tax', 0))
-                note_parts.append(
-                    f"- Lapisan {rate:.0f}%: "
-                    f"Rp {taxable:,.0f} × {rate:.0f}% = "
-                    f"Rp {tax:,.0f}"
-                )
-        else:
-            note_parts.append("- (Tidak ada rincian pajak)")
-            
-        # Add summary values
-        annual_pph = flt(kwargs.get('annual_pph', 0))
-        ytd_pph = flt(kwargs.get('ytd_pph', 0))
-        correction = flt(kwargs.get('correction', 0))
-        
-        note_parts.extend([
-            "",
-            f"Total PPh 21 Setahun: Rp {annual_pph:,.0f}",
-            f"PPh 21 Sudah Dibayar: Rp {ytd_pph:,.0f}",
-            f"Koreksi Desember: Rp {correction:,.0f}",
-            f"({'Kurang Bayar' if correction > 0 else 'Lebih Bayar'})"
-        ])
-
-        # Add note about using progressive method for annual correction
-        note_parts.append("\n\nMetode perhitungan Desember menggunakan metode progresif sesuai PMK 168/2023")
-        
-        # Set the note
-        doc.payroll_note = "\n".join(note_parts)
-        
-    except Exception as e:
-        frappe.log_error(
-            f"Error setting December payroll note for {doc.employee}: {str(e)}",
-            "December Note Error"
-        )
-        # Set a basic note
-        doc.payroll_note = "Perhitungan koreksi PPh 21 tahunan"
-        frappe.msgprint(_("Error setting detailed December note: {0}").format(str(e)))
 
 def is_december(doc):
     """Check if salary slip is for December"""
