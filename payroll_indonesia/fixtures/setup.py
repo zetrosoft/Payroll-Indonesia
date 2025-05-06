@@ -714,6 +714,8 @@ def setup_pph21_ter(config):
         debug_log(f"Error setting up TER rates: {str(e)}", "TER Setup Error", trace=True)
         return False
 
+
+
 def setup_income_tax_slab(config):
     """
     Create Income Tax Slab for Indonesia using config data
@@ -745,7 +747,20 @@ def setup_income_tax_slab(config):
         tax_brackets = config.get("tax_brackets", [])
         if not tax_brackets:
             debug_log("No tax brackets found in config, using defaults", "Tax Slab Setup")
-                {"income_from": 0, "income_to": 60000000, "tax_rate
+            # Fallback to defaults
+            tax_brackets = [
+                {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
+                {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
+                {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
+                {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
+                {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
+            ]
+        
+        # Create tax slab
+        tax_slab = frappe.new_doc("Income Tax Slab")
+        tax_slab.name = "Indonesia Income Tax"
+        tax_slab.title = "Indonesia Income Tax"
+        tax_slab.effective_from = getdate("2023-01-01")
         tax_slab.company = company
         tax_slab.currency = config.get("defaults", {}).get("currency", "IDR")
         tax_slab.is_default = 1
