@@ -328,7 +328,7 @@ def create_salary_components():
         frappe.log_error(f"Error creating salary components: {str(e)}", "Setup")
         return False
 
-# Fungsi untuk update salary structure secara terjadwal
+
 def update_salary_structures():
     """Task terjadwal untuk memperbarui salary structure"""
     try:

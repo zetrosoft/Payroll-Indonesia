@@ -149,6 +149,22 @@ def create_income_tax_slab():
             pass
             
         return None
+            
+    except Exception as e:
+        frappe.db.rollback()
+        debug_log(f"Error creating Income Tax Slab: {str(e)}", "Tax Slab Error")
+        frappe.log_error(f"Error creating Income Tax Slab: {str(e)}\n\n{frappe.get_traceback()}", "Tax Slab Error")
+        
+        # Last resort - check if any tax slabs exist already
+        try:
+            existing_slabs = frappe.get_all("Income Tax Slab", limit=1)
+            if existing_slabs:
+                debug_log(f"Using existing tax slab as last resort: {existing_slabs[0].name}", "Tax Slab")
+                return existing_slabs[0].name
+        except:
+            pass
+            
+        return None
 
 def get_default_tax_slab():
     """
