@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 02:19:57 by dannyaudian
+# Last modified: 2025-05-06 16:12:30 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -55,10 +55,10 @@ doc_events = {
         "on_update": "payroll_indonesia.payroll_indonesia.tax.pph21_settings.on_update"
     },
     "BPJS Settings": {
-        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.validate",
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils.validate_settings",
         "on_update": [
             "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.on_update",
-            "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.setup_accounts"
+            "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils.setup_accounts"
         ]
     },
     "Payroll Entry": {
@@ -363,7 +363,7 @@ rest_export = {
 debug_tools = [
     "payroll_indonesia.override.salary_slip.diagnose_salary_slip_submission",
     "payroll_indonesia.override.salary_slip.manually_create_related_documents",
-    "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.debug_log",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils.debug_log",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.diagnose_accounts"
 ]
 
@@ -376,6 +376,7 @@ module_info = {
     "payroll_indonesia.override.salary_slip.ter_calculator": "TER Method Calculator (PMK-168)",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping": "BPJS Account Mapping Controller",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings": "BPJS Settings Controller",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.utils": "BPJS Settings Utilities",
     "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation": "BPJS Calculation Module",
     "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary": "Employee Tax Summary Controller",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary": "BPJS Payment Summary Controller",
