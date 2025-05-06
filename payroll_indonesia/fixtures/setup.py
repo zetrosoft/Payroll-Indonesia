@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 03:38:05 by dannyaudian
+# Last modified: 2025-05-06 13:05:12 by dannyaudian
 
 import frappe
 from frappe import _
@@ -265,21 +265,21 @@ def create_accounts():
     Returns:
         bool: True if successful, False otherwise
     """
-    # Define accounts to create with standardized names
+    # Define accounts to create with standardized names - FIXED ACCOUNT TYPES
     accounts = [
         # Basic expense accounts
-        {"account_name": "Beban Gaji Pokok", "parent_account": "Direct Expenses", "account_type": "Expense"},
-        {"account_name": "Beban Tunjangan Makan", "parent_account": "Direct Expenses", "account_type": "Expense"},
-        {"account_name": "Beban Tunjangan Transport", "parent_account": "Direct Expenses", "account_type": "Expense"},
-        {"account_name": "Beban Insentif", "parent_account": "Direct Expenses", "account_type": "Expense"},
-        {"account_name": "Beban Bonus", "parent_account": "Direct Expenses", "account_type": "Expense"},
+        {"account_name": "Beban Gaji Pokok", "parent_account": "Direct Expenses", "account_type": "Direct Expense"},
+        {"account_name": "Beban Tunjangan Makan", "parent_account": "Direct Expenses", "account_type": "Direct Expense"},
+        {"account_name": "Beban Tunjangan Transport", "parent_account": "Direct Expenses", "account_type": "Direct Expense"},
+        {"account_name": "Beban Insentif", "parent_account": "Direct Expenses", "account_type": "Direct Expense"},
+        {"account_name": "Beban Bonus", "parent_account": "Direct Expenses", "account_type": "Direct Expense"},
         
-        # BPJS expense accounts - using standardized naming
-        {"account_name": "BPJS JHT Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Expense"},
-        {"account_name": "BPJS JP Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Expense"},
-        {"account_name": "BPJS JKK Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Expense"},
-        {"account_name": "BPJS JKM Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Expense"},
-        {"account_name": "BPJS Kesehatan Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Expense"},
+        # BPJS expense accounts - using standardized naming with corrected account type
+        {"account_name": "BPJS JHT Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Direct Expense"},
+        {"account_name": "BPJS JP Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Direct Expense"},
+        {"account_name": "BPJS JKK Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Direct Expense"},
+        {"account_name": "BPJS JKM Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Direct Expense"},
+        {"account_name": "BPJS Kesehatan Employer Expense", "parent_account": "BPJS Expenses", "account_type": "Direct Expense"},
         
         # Liability accounts
         {"account_name": "Hutang PPh 21", "parent_account": "Duties and Taxes", "account_type": "Tax"},
@@ -313,10 +313,10 @@ def create_accounts():
             
             debug_log(f"Creating accounts for company: {company} (Abbr: {company_abbr})", "Account Setup")
             
-            # Create parent accounts for BPJS
+            # Create parent accounts for BPJS - FIXED ACCOUNT TYPES
             parent_accounts = [
                 {"account_name": "BPJS Payable", "parent_account": "Duties and Taxes", "account_type": "Payable", "is_group": 1, "root_type": "Liability"},
-                {"account_name": "BPJS Expenses", "parent_account": "Direct Expenses", "account_type": "Expense", "is_group": 1, "root_type": "Expense"}
+                {"account_name": "BPJS Expenses", "parent_account": "Direct Expenses", "account_type": "Direct Expense", "is_group": 1, "root_type": "Expense"}
             ]
             
             # Create BPJS parent accounts first with better error handling
@@ -484,17 +484,14 @@ def create_account(company, account_name, account_type, parent):
             debug_log(f"Parent account {parent} does not exist", "Account Creation Error")
             return None
             
-        # Determine root_type based on account_type
-        if account_type in ["Payable", "Receivable", "Tax", "Liability"]:
-            root_type = "Liability"
+        # Determine root_type based on account_type - UPDATED FOR CORRECT MAPPING
+        root_type = "Liability"  # Default
+        if account_type in ["Direct Expense", "Indirect Expense", "Expense Account"]:
+            root_type = "Expense"
         elif account_type == "Asset":
             root_type = "Asset"
-        elif account_type == "Expense":
-            root_type = "Expense"
-        elif account_type == "Income":
+        elif account_type in ["Direct Income", "Indirect Income", "Income Account"]:
             root_type = "Income"
-        else:
-            root_type = "Asset"  # Default fallback
             
         # Create new account with explicit permissions
         debug_log(f"Creating account: {full_account_name} (Type: {account_type}, Parent: {parent})", "Account Creation")
@@ -577,6 +574,7 @@ def find_parent_account(company, parent_name, company_abbr, account_type):
             parent_candidates = ["Duties and Taxes", "Current Liabilities", "Accounts Payable"]
             debug_log(f"Looking for liability parent among: {', '.join(parent_candidates)}", "Account Lookup")
         else:
+            # UPDATED: Look for expense parent accounts with valid account types
             parent_candidates = ["Direct Expenses", "Indirect Expenses", "Expenses"]
             debug_log(f"Looking for expense parent among: {', '.join(parent_candidates)}", "Account Lookup")
             
@@ -616,7 +614,13 @@ def find_parent_account(company, parent_name, company_abbr, account_type):
         return similar_accounts[0].name
         
     # Try any group account of correct type as fallback
-    root_type = "Expense" if account_type == "Expense" else "Liability"
+    # Use correct mapping for account types
+    root_type = "Expense"  # Default for expense accounts
+    if account_type in ["Payable", "Receivable", "Tax"]:
+        root_type = "Liability"
+    elif account_type in ["Direct Income", "Indirect Income", "Income Account"]:
+        root_type = "Income"
+    
     debug_log(f"Searching for any {root_type} group account as fallback", "Account Lookup")
     
     parents = frappe.get_all(
@@ -825,8 +829,16 @@ def setup_pph21_ter():
         status_list = list(ter_rates.keys())
         
         for status in status_list:
-            for rate_data in ter_rates[status]:
+            # Determine the highest bracket for each status
+            status_rates = ter_rates[status]
+            status_rates_count = len(status_rates)
+            
+            for idx, rate_data in enumerate(status_rates):
                 try:
+                    # Check if this is the highest bracket
+                    # It's highest if it's the last item or if income_to is 0
+                    is_highest = (idx == status_rates_count - 1) or (rate_data["income_to"] == 0)
+                    
                     # Create description
                     if rate_data["income_to"] == 0:
                         description = f"{status} > Rp{rate_data['income_from']:,.0f}"
@@ -835,14 +847,20 @@ def setup_pph21_ter():
                     else:
                         description = f"{status} Rp{rate_data['income_from']:,.0f}-Rp{rate_data['income_to']:,.0f}"
                     
+                    # Create TER entry with is_highest_bracket flag for entries with income_to=0
                     ter_entry = frappe.get_doc({
                         "doctype": "PPh 21 TER Table",
                         "status_pajak": status,
                         "income_from": flt(rate_data["income_from"]),
                         "income_to": flt(rate_data["income_to"]),
                         "rate": flt(rate_data["rate"]),
-                        "description": description
+                        "description": description,
+                        "is_highest_bracket": 1 if is_highest else 0  # Set the flag for highest bracket
                     })
+                    
+                    # Add debug message to confirm highest bracket setting
+                    if is_highest:
+                        debug_log(f"Setting highest bracket flag for {status} with rate {rate_data['rate']}", "TER Setup")
                     
                     ter_entry.flags.ignore_permissions = True
                     ter_entry.insert(ignore_permissions=True)
@@ -1158,14 +1176,15 @@ def create_account_hooks():
             f.write("""# -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 03:38:05 by dannyaudian
+# Last modified: 2025-05-06 13:05:12 by dannyaudian
 
 import frappe
 from frappe.utils import now_datetime
 
 def account_on_update(doc, method=None):
     \"\"\"Hook when accounts are updated\"\"\"
-    if doc.account_type in ["Payable", "Expense", "Liability"] and ("BPJS" in doc.account_name):
+    # FIXED: Updated account types to match valid options
+    if doc.account_type in ["Payable", "Direct Expense", "Indirect Expense", "Expense Account", "Liability"] and ("BPJS" in doc.account_name):
         # Update BPJS mappings
         update_bpjs_mappings(doc)
 
