@@ -714,6 +714,8 @@ def setup_pph21_ter(config):
         debug_log(f"Error setting up TER rates: {str(e)}", "TER Setup Error", trace=True)
         return False
 
+# ... rest of code here ...
+
 def setup_income_tax_slab(config):
     """
     Create Income Tax Slab for Indonesia using config data
@@ -760,4 +762,234 @@ def setup_income_tax_slab(config):
         tax_slab.title = "Indonesia Income Tax"
         tax_slab.effective_from = getdate("2023-01-01")
         tax_slab.company = company
-        tax_slab.currency = config.get("defaults", {}).get("currency",
+        tax_slab.currency = config.get("defaults", {}).get("currency", "IDR")
+        tax_slab.is_default = 1
+        tax_slab.disabled = 0
+        
+        # Add tax brackets
+        for bracket in tax_brackets:
+            from_amount = flt(bracket["income_from"])
+            to_amount = flt(bracket["income_to"])
+            percent = flt(bracket["tax_rate"])
+            
+            tax_slab.append("slabs", {
+                "from_amount": from_amount,
+                "to_amount": to_amount,
+                "percent_deduction": percent
+            })
+        
+        # Save with flags to bypass validation
+        tax_slab.flags.ignore_permissions = True
+        tax_slab.flags.ignore_mandatory = True
+        tax_slab.insert()
+        
+        debug_log(f"Created income tax slab: {tax_slab.name}", "Tax Slab Setup")
+        return True
+        
+    except Exception as e:
+        # Try an alternative approach
+        try:
+            # Import the utility function that handles this more robustly
+            from payroll_indonesia.utilities.tax_slab import create_income_tax_slab
+            result = create_income_tax_slab()
+            
+            if result:
+                debug_log("Created income tax slab via utility function", "Tax Slab Setup")
+                return True
+                
+            frappe.log_error(
+                f"Failed to create income tax slab: {str(e)}\n\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "Tax Slab Setup Error"
+            )
+            debug_log(f"Failed to create income tax slab: {str(e)}", "Tax Slab Setup Error", trace=True)
+            return False
+            
+        except Exception as backup_error:
+            frappe.log_error(
+                f"Both methods failed to create income tax slab. Original error: {str(e)}\n"
+                f"Backup method error: {str(backup_error)}\n\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "Tax Slab Setup Critical Error"
+            )
+            debug_log(f"Critical error creating income tax slab: {str(backup_error)}", "Tax Slab Setup Error", trace=True)
+            return False
+
+def setup_salary_components(config):
+    """
+    Create or update salary components using config data
+    
+    Args:
+        config (dict): Configuration data from defaults.json
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Get components from config
+        components = config.get("salary_components", {})
+        if not components:
+            debug_log("No salary components found in config", "Salary Component Setup")
+            return False
+            
+        # Process earnings and deductions
+        success_count = 0
+        total_count = 0
+        
+        # Get all companies for account assignment
+        companies = frappe.get_all("Company", pluck="name")
+        
+        # Process all component types
+        for component_type in ["earnings", "deductions"]:
+            if component_type not in components:
+                continue
+                
+            # Process each component definition
+            for comp_key, comp_data in components[component_type].items():
+                try:
+                    total_count += 1
+                    
+                    # Check if component already exists
+                    component_name = comp_data.get("component_name", comp_key)
+                    
+                    if frappe.db.exists("Salary Component", component_name):
+                        component = frappe.get_doc("Salary Component", component_name)
+                        # Update existing component
+                        is_new = False
+                    else:
+                        # Create new component
+                        component = frappe.new_doc("Salary Component")
+                        component.salary_component = component_name
+                        is_new = True
+                    
+                    # Set basic properties
+                    component.description = comp_data.get("description", "")
+                    component.type = comp_data.get("type", "Earning" if component_type == "earnings" else "Deduction")
+                    
+                    # Set tax properties if provided
+                    if "is_tax_applicable" in comp_data:
+                        component.is_tax_applicable = comp_data.get("is_tax_applicable")
+                        
+                    if "variable_based_on_taxable_salary" in comp_data:
+                        component.variable_based_on_taxable_salary = comp_data.get("variable_based_on_taxable_salary")
+                        
+                    if "statistical_component" in comp_data:
+                        component.statistical_component = comp_data.get("statistical_component")
+                        
+                    if "do_not_include_in_total" in comp_data:
+                        component.do_not_include_in_total = comp_data.get("do_not_include_in_total")
+                        
+                    if "exempted" in comp_data:
+                        component.exempted = comp_data.get("exempted")
+                        
+                    # Set roundoff
+                    component.round_to_the_nearest_integer = comp_data.get("round_to_the_nearest_integer", 1)
+                    
+                    # Set accounts if specified in config
+                    accounts_updated = False
+                    accounts_data = comp_data.get("accounts", [])
+                    
+                    # Clear existing accounts if we have new ones to add
+                    if accounts_data and is_new:
+                        component.accounts = []
+                        
+                    # Add accounts for each company
+                    for company in companies:
+                        company_abbr = frappe.get_cached_value("Company", company, "abbr")
+                        if not company_abbr:
+                            continue
+                            
+                        # Try to find account name using suffixes
+                        for account_data in accounts_data:
+                            account_suffix = account_data.get("account")
+                            if not account_suffix:
+                                continue
+                                
+                            # Construct account name with company abbr
+                            full_account_name = f"{account_suffix} - {company_abbr}"
+                            
+                            # Check if account exists
+                            if frappe.db.exists("Account", full_account_name):
+                                # Check if this account is already linked to the component
+                                exists = False
+                                for acc in component.accounts:
+                                    if acc.company == company and acc.account == full_account_name:
+                                        exists = True
+                                        break
+                                        
+                                if not exists:
+                                    # Add new account
+                                    component.append("accounts", {
+                                        "company": company,
+                                        "account": full_account_name
+                                    })
+                                    accounts_updated = True
+                    
+                    # Save component
+                    component.flags.ignore_permissions = True
+                    
+                    if is_new:
+                        component.insert(ignore_permissions=True)
+                        debug_log(f"Created salary component: {component_name}", "Salary Component Setup")
+                    elif accounts_updated:
+                        component.save(ignore_permissions=True)
+                        debug_log(f"Updated salary component accounts: {component_name}", "Salary Component Setup")
+                        
+                    success_count += 1
+                    
+                except Exception as e:
+                    frappe.log_error(
+                        f"Error creating/updating salary component {comp_key}: {str(e)}\n\n"
+                        f"Traceback: {frappe.get_traceback()}",
+                        "Salary Component Setup Error"
+                    )
+                    debug_log(f"Error creating/updating salary component {comp_key}: {str(e)}", "Salary Component Setup Error", trace=True)
+        
+        # Setup default salary structure
+        try:
+            from payroll_indonesia.override.salary_structure import create_salary_components, create_default_salary_structure
+            # Create components required for default structure
+            create_salary_components()
+            # Create default structure
+            create_default_salary_structure()
+            debug_log("Created default salary structure", "Salary Component Setup")
+        except Exception as e:
+            frappe.log_error(
+                f"Error creating default salary structure: {str(e)}\n\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "Salary Structure Setup Error"
+            )
+            debug_log(f"Error creating default salary structure: {str(e)}", "Salary Structure Setup Error", trace=True)
+        
+        # Log summary
+        debug_log(f"Processed {success_count} of {total_count} salary components successfully", "Salary Component Setup")
+        return success_count > 0
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error setting up salary components: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Salary Component Setup Error"
+        )
+        debug_log(f"Error setting up salary components: {str(e)}", "Salary Component Setup Error", trace=True)
+        return False
+
+def display_installation_summary(results, config):
+    """
+    Display installation summary
+    
+    Args:
+        results (dict): Results of each setup step
+        config (dict): Configuration data
+    """
+    
+    debug_log(
+        f"\n=== PAYROLL INDONESIA INSTALLATION SUMMARY ===\n"
+        f"Accounts setup: {'Success' if results.get('accounts') else 'Failed'}\n"
+        f"Suppliers setup: {'Success' if results.get('suppliers') else 'Failed'}\n"
+        f"PPh 21 settings: {'Success' if results.get('pph21_settings') else 'Failed'}\n"
+        f"Salary components: {'Success' if results.get('salary_components') else 'Failed'}\n"
+        f"BPJS settings: {'Success' if results.get('bpjs_setup') else 'Failed'}\n"
+        f"===================================\n",
+        "Installation Summary"
+    )
