@@ -17,7 +17,7 @@ required_apps = ["erpnext", "hrms"]
 
 # Setup functions - delegated to setup_module.py
 before_install = "payroll_indonesia.fixtures.setup.before_install"
-after_install = "payroll_indonesia.payroll_indonesia.fixtures.setup.after_install"
+after_install = "payroll_indonesia.fixtures.setup.after_install"
 
 # JS files for doctypes
 doctype_js = {
