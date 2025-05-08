@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 17:26:07 by dannyaudian
+# Last modified: 2025-05-08 09:58:46 by dannyaudian
 
 import frappe
 from frappe import _
@@ -167,6 +167,22 @@ def after_sync():
             from payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings import update_bpjs_settings
             updated = update_bpjs_settings()
             debug_log(f"Updated BPJS Settings: {updated}", "App Sync")
+            
+        # Ensure TER settings are updated for PMK 168/2023
+        if frappe.db.exists("DocType", "PPh 21 Settings") and frappe.db.exists("PPh 21 Settings", "PPh 21 Settings"):
+            # Check if we need to update TER settings
+            config = get_default_config()
+            if config and "ptkp_to_ter_mapping" in config:
+                update_ptkp_ter_mapping(config)
+                debug_log("Updated PTKP to TER mapping for PMK 168/2023", "App Sync")
+                
+            # Update TER rates if needed
+            if config and "ter_rates" in config:
+                # Check if TER rates are already in new format (TER A, TER B, TER C)
+                has_new_format = frappe.db.exists("PPh 21 TER Table", {"status_pajak": ["in", ["TER A", "TER B", "TER C"]]})
+                if not has_new_format:
+                    setup_pph21_ter(config, force_update=True)
+                    debug_log("Updated TER rates to PMK 168/2023 format", "App Sync")
     except Exception as e:
         frappe.log_error(
             f"Error during after_sync: {str(e)}\n\n"
@@ -174,6 +190,83 @@ def after_sync():
             "Payroll Indonesia Sync Error"
         )
         debug_log(f"Error during after_sync: {str(e)}", "Payroll Indonesia Sync Error", trace=True)
+
+def update_ptkp_ter_mapping(config):
+    """
+    Update or create PTKP to TER mapping based on PMK 168/2023
+    
+    Args:
+        config (dict): Configuration data from defaults.json
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Get mapping from config
+        ptkp_to_ter_mapping = config.get("ptkp_to_ter_mapping", {})
+        if not ptkp_to_ter_mapping:
+            debug_log("No PTKP to TER mapping found in config", "TER Mapping Update")
+            return False
+            
+        # Get or create mapping DocType
+        mapping_doctype = "PTKP TER Mapping"
+        if not frappe.db.exists("DocType", mapping_doctype):
+            debug_log(f"{mapping_doctype} DocType does not exist", "TER Mapping Update")
+            return False
+            
+        # Delete existing mappings
+        try:
+            frappe.db.sql(f"DELETE FROM `tab{mapping_doctype}`")
+            frappe.db.commit()
+            debug_log("Cleared existing PTKP to TER mappings", "TER Mapping Update")
+        except Exception as e:
+            frappe.log_error(
+                f"Error clearing existing PTKP to TER mappings: {str(e)}",
+                "TER Mapping Error"
+            )
+            debug_log(f"Error clearing existing PTKP to TER mappings: {str(e)}", "TER Mapping Error", trace=True)
+            
+        # Create new mappings
+        count = 0
+        for ptkp_status, ter_category in ptkp_to_ter_mapping.items():
+            try:
+                mapping = frappe.new_doc(mapping_doctype)
+                mapping.ptkp_status = ptkp_status
+                mapping.ter_category = ter_category
+                
+                # Add description based on TER category
+                if ter_category == "TER A":
+                    mapping.description = "PTKP TK/0 (Rp 54 juta/tahun)"
+                elif ter_category == "TER B":
+                    mapping.description = "PTKP K/0, TK/1, TK/2, K/1 (Rp 58,5-63 juta/tahun)" 
+                elif ter_category == "TER C":
+                    mapping.description = "PTKP dengan nilai lebih tinggi (> Rp 63 juta/tahun)"
+                else:
+                    mapping.description = f"Pemetaan {ptkp_status} ke {ter_category}"
+                
+                mapping.flags.ignore_permissions = True
+                mapping.insert(ignore_permissions=True)
+                count += 1
+            except Exception as e:
+                frappe.log_error(
+                    f"Error creating mapping for {ptkp_status} to {ter_category}: {str(e)}",
+                    "TER Mapping Error"
+                )
+                debug_log(f"Error creating mapping for {ptkp_status} to {ter_category}: {str(e)}", "TER Mapping Error", trace=True)
+                
+        # Commit changes
+        frappe.db.commit()
+        debug_log(f"Created {count} PTKP to TER mappings for PMK 168/2023", "TER Mapping Update")
+        return count > 0
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error updating PTKP to TER mapping: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "TER Mapping Error"
+        )
+        debug_log(f"Error updating PTKP to TER mapping: {str(e)}", "TER Mapping Error", trace=True)
+        return False
 
 def check_system_readiness():
     """
@@ -478,7 +571,7 @@ def setup_pph21(config):
             debug_log("Failed to setup PPh 21 defaults", "PPh 21 Setup Error")
             return False
             
-        # Setup TER rates
+        # Setup TER rates using PMK 168/2023 format
         ter_result = setup_pph21_ter(config)
         
         # Setup income tax slab
@@ -524,7 +617,7 @@ def setup_pph21_defaults(config):
         settings.biaya_jabatan_percent = tax_config.get("biaya_jabatan_percent", 5.0)
         settings.biaya_jabatan_max = tax_config.get("biaya_jabatan_max", 500000.0)
         settings.umr_default = tax_config.get("umr_default", 4900000.0)
-        settings.ter_notes = "Tarif Efektif Rata-rata (TER) sesuai PMK-168/PMK.010/2023"
+        settings.ter_notes = "Tarif Efektif Rata-rata (TER) sesuai PMK-168/PMK.010/2023 dengan 3 kategori (TER A, B, C)"
         
         # Add PTKP values from config
         ptkp_values = config.get("ptkp", {})
@@ -550,10 +643,16 @@ def setup_pph21_defaults(config):
             elif status.startswith("HB"):
                 description = f"Kawin (Penghasilan Istri Digabung), {tanggungan} Tanggungan"
                 
+            # Get associated TER category
+            ter_category = ""
+            ptkp_to_ter_mapping = config.get("ptkp_to_ter_mapping", {})
+            if ptkp_to_ter_mapping and status in ptkp_to_ter_mapping:
+                ter_category = f" → {ptkp_to_ter_mapping[status]} (PMK 168/2023)"
+                
             settings.append("ptkp_table", {
                 "status_pajak": status,
                 "ptkp_amount": flt(amount),
-                "description": description
+                "description": f"{description}{ter_category}"
             })
         
         # Add tax brackets from config
@@ -587,7 +686,7 @@ def setup_pph21_defaults(config):
         # Commit changes
         frappe.db.commit()
             
-        debug_log("PPh 21 Settings configured successfully", "PPh 21 Setup")
+        debug_log("PPh 21 Settings configured successfully with PMK 168/2023 notes", "PPh 21 Setup")
         return settings
         
     except Exception as e:
@@ -599,12 +698,13 @@ def setup_pph21_defaults(config):
         debug_log(f"Error setting up PPh 21: {str(e)}", "PPh 21 Setup Error", trace=True)
         return None
 
-def setup_pph21_ter(config):
+def setup_pph21_ter(config, force_update=False):
     """
     Setup default TER rates based on PMK-168/PMK.010/2023 using config data
     
     Args:
         config (dict): Configuration data from defaults.json
+        force_update (bool): Force update even if entries exist
         
     Returns:
         bool: True if successful, False otherwise
@@ -615,6 +715,16 @@ def setup_pph21_ter(config):
         if not frappe.db.exists("DocType", "PPh 21 TER Table"):
             debug_log("PPh 21 TER Table DocType doesn't exist", "TER Setup Error")
             return False
+        
+        # Check if already setup with new categories
+        if not force_update:
+            cat_a_exists = frappe.db.exists("PPh 21 TER Table", {"status_pajak": "TER A"})
+            cat_b_exists = frappe.db.exists("PPh 21 TER Table", {"status_pajak": "TER B"})  
+            cat_c_exists = frappe.db.exists("PPh 21 TER Table", {"status_pajak": "TER C"})
+            
+            if cat_a_exists and cat_b_exists and cat_c_exists:
+                debug_log("TER categories already setup for PMK 168/2023", "TER Setup")
+                return True
         
         # Clear existing TER rates
         try:
@@ -644,18 +754,27 @@ def setup_pph21_ter(config):
             status_rates = ter_rates[status]
             status_rates_count = len(status_rates)
             
+            # Add description prefix based on TER category
+            category_description = ""
+            if status == "TER A":
+                category_description = "PTKP TK/0 (Rp 54 juta/tahun) - "
+            elif status == "TER B":
+                category_description = "PTKP K/0, TK/1, TK/2, K/1 (Rp 58,5-63 juta/tahun) - "
+            elif status == "TER C":
+                category_description = "PTKP nilai tinggi (> Rp 63 juta/tahun) - "
+            
             for idx, rate_data in enumerate(status_rates):
                 try:
                     # Check if this is the highest bracket
-                    is_highest = (idx == status_rates_count - 1) or (rate_data["income_to"] == 0)
+                    is_highest = (idx == status_rates_count - 1) or (rate_data["income_to"] == 0) or ("is_highest_bracket" in rate_data and rate_data["is_highest_bracket"])
                     
                     # Create description
                     if rate_data["income_to"] == 0:
-                        description = f"{status} > Rp{rate_data['income_from']:,.0f}"
+                        description = f"{category_description}{status} > Rp{rate_data['income_from']:,.0f}"
                     elif rate_data["income_from"] == 0:
-                        description = f"{status} ≤ Rp{rate_data['income_to']:,.0f}"
+                        description = f"{category_description}{status} ≤ Rp{rate_data['income_to']:,.0f}"
                     else:
-                        description = f"{status} Rp{rate_data['income_from']:,.0f}-Rp{rate_data['income_to']:,.0f}"
+                        description = f"{category_description}{status} Rp{rate_data['income_from']:,.0f}-Rp{rate_data['income_to']:,.0f}"
                     
                     # Check if entry already exists
                     existing = frappe.db.exists(
@@ -673,6 +792,7 @@ def setup_pph21_ter(config):
                         ter_entry.rate = flt(rate_data["rate"])
                         ter_entry.description = description
                         ter_entry.is_highest_bracket = 1 if is_highest else 0
+                        ter_entry.pmk_168 = 1  # Flag for PMK 168/2023
                         ter_entry.flags.ignore_permissions = True
                         ter_entry.save(ignore_permissions=True)
                         debug_log(f"Updated TER rate for {status}", "TER Setup")
@@ -685,7 +805,8 @@ def setup_pph21_ter(config):
                             "income_to": flt(rate_data["income_to"]),
                             "rate": flt(rate_data["rate"]),
                             "description": description,
-                            "is_highest_bracket": 1 if is_highest else 0
+                            "is_highest_bracket": 1 if is_highest else 0,
+                            "pmk_168": 1  # Flag for PMK 168/2023
                         })
                         
                         ter_entry.flags.ignore_permissions = True
@@ -702,7 +823,7 @@ def setup_pph21_ter(config):
         
         # Commit all changes
         frappe.db.commit()
-        debug_log(f"Processed {count} TER rates successfully", "TER Setup")
+        debug_log(f"Processed {count} TER rates successfully for PMK 168/2023", "TER Setup")
         return count > 0
             
     except Exception as e:
@@ -713,8 +834,6 @@ def setup_pph21_ter(config):
         )
         debug_log(f"Error setting up TER rates: {str(e)}", "TER Setup Error", trace=True)
         return False
-
-
 
 def setup_income_tax_slab(config):
     """
@@ -845,12 +964,16 @@ def setup_salary_components(config):
                 continue
                 
             # Process each component definition
-            for comp_key, comp_data in components[component_type].items():
+            for comp_data in components[component_type]:
                 try:
                     total_count += 1
                     
                     # Check if component already exists
-                    component_name = comp_data.get("component_name", comp_key)
+                    component_name = comp_data.get("name")
+                    
+                    if not component_name:
+                        debug_log(f"Component name is missing in config", "Salary Component Setup Error")
+                        continue
                     
                     if frappe.db.exists("Salary Component", component_name):
                         component = frappe.get_doc("Salary Component", component_name)
@@ -863,8 +986,8 @@ def setup_salary_components(config):
                         is_new = True
                     
                     # Set basic properties
-                    component.description = comp_data.get("description", "")
-                    component.type = comp_data.get("type", "Earning" if component_type == "earnings" else "Deduction")
+                    component.salary_component_abbr = comp_data.get("abbr", component_name[:3].upper())
+                    component.type = "Earning" if component_type == "earnings" else "Deduction"
                     
                     # Set tax properties if provided
                     if "is_tax_applicable" in comp_data:
@@ -882,48 +1005,19 @@ def setup_salary_components(config):
                     if "exempted" in comp_data:
                         component.exempted = comp_data.get("exempted")
                         
-                    # Set roundoff
-                    component.round_to_the_nearest_integer = comp_data.get("round_to_the_nearest_integer", 1)
-                    
-                    # Set accounts if specified in config
-                    accounts_updated = False
-                    accounts_data = comp_data.get("accounts", [])
-                    
-                    # Clear existing accounts if we have new ones to add
-                    if accounts_data and is_new:
-                        component.accounts = []
+                    # Set description with PMK 168/2023 reference for PPh 21 component
+                    if component_name == "PPh 21":
+                        component.description = "PPh 21 (PMK 168/2023)"
                         
-                    # Add accounts for each company
-                    for company in companies:
-                        company_abbr = frappe.get_cached_value("Company", company, "abbr")
-                        if not company_abbr:
-                            continue
-                            
-                        # Try to find account name using suffixes
-                        for account_data in accounts_data:
-                            account_suffix = account_data.get("account")
-                            if not account_suffix:
-                                continue
-                                
-                            # Construct account name with company abbr
-                            full_account_name = f"{account_suffix} - {company_abbr}"
-                            
-                            # Check if account exists
-                            if frappe.db.exists("Account", full_account_name):
-                                # Check if this account is already linked to the component
-                                exists = False
-                                for acc in component.accounts:
-                                    if acc.company == company and acc.account == full_account_name:
-                                        exists = True
-                                        break
-                                        
-                                if not exists:
-                                    # Add new account
-                                    component.append("accounts", {
-                                        "company": company,
-                                        "account": full_account_name
-                                    })
-                                    accounts_updated = True
+                        # Set TER flag if supports_ter is in the component data
+                        if "supports_ter" in comp_data and comp_data.get("supports_ter"):
+                            # Check if custom field exists
+                            if frappe.db.exists("Custom Field", "Salary Component-supports_ter"):
+                                component.supports_ter = 1
+                                component.description += " dengan dukungan TER A,B,C"
+                    
+                    # Set roundoff
+                    component.round_to_the_nearest_integer = 1
                     
                     # Save component
                     component.flags.ignore_permissions = True
@@ -931,19 +1025,19 @@ def setup_salary_components(config):
                     if is_new:
                         component.insert(ignore_permissions=True)
                         debug_log(f"Created salary component: {component_name}", "Salary Component Setup")
-                    elif accounts_updated:
+                    else:
                         component.save(ignore_permissions=True)
-                        debug_log(f"Updated salary component accounts: {component_name}", "Salary Component Setup")
+                        debug_log(f"Updated salary component: {component_name}", "Salary Component Setup")
                         
                     success_count += 1
                     
                 except Exception as e:
                     frappe.log_error(
-                        f"Error creating/updating salary component {comp_key}: {str(e)}\n\n"
+                        f"Error creating/updating salary component {comp_data.get('name', 'unknown')}: {str(e)}\n\n"
                         f"Traceback: {frappe.get_traceback()}",
                         "Salary Component Setup Error"
                     )
-                    debug_log(f"Error creating/updating salary component {comp_key}: {str(e)}", "Salary Component Setup Error", trace=True)
+                    debug_log(f"Error creating/updating salary component {comp_data.get('name', 'unknown')}: {str(e)}", "Salary Component Setup Error", trace=True)
         
         # Setup default salary structure
         try:
@@ -990,6 +1084,8 @@ def display_installation_summary(results, config):
         f"PPh 21 settings: {'Success' if results.get('pph21_settings') else 'Failed'}\n"
         f"Salary components: {'Success' if results.get('salary_components') else 'Failed'}\n"
         f"BPJS settings: {'Success' if results.get('bpjs_setup') else 'Failed'}\n"
+        f"===================================\n"
+        f"PMK 168/2023 Implementation: DONE\n"
         f"===================================\n",
         "Installation Summary"
     )
