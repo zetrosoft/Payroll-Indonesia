@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-05 16:40:00 by dannyaudian
+# Last modified: 2025-05-08 11:46:04 by dannyaudian
 
 import frappe
 from frappe import _
@@ -92,6 +92,185 @@ def override_salary_slip_gl_entries(doc, method=None):
             f"Traceback: {frappe.get_traceback()}"
         )
         # Don't re-raise - let the document submission continue with default GL entries
+
+def override_payment_entry_gl_entries(doc, method=None):
+    """
+    Override GL entries for BPJS Payment Entry
+    
+    This function modifies GL entries for Payment Entries that reference BPJS Payment Summary
+    to use correct accounts from defaults.json configuration with standardized naming.
+    
+    Args:
+        doc (obj): Payment Entry document
+        method (str, optional): Method that called this function
+    """
+    try:
+        # Check if this is a BPJS payment
+        is_bpjs_payment = False
+        
+        # Check references for BPJS Payment Summary
+        if hasattr(doc, 'references') and doc.references:
+            for ref in doc.references:
+                if getattr(ref, 'reference_doctype', '') == 'BPJS Payment Summary':
+                    is_bpjs_payment = True
+                    break
+        
+        # Check party name for BPJS
+        if not is_bpjs_payment and hasattr(doc, 'party') and 'BPJS' in doc.party:
+            is_bpjs_payment = True
+        
+        # Check for BPJS in remarks
+        if not is_bpjs_payment and hasattr(doc, 'remarks') and doc.remarks and 'BPJS' in doc.remarks:
+            is_bpjs_payment = True
+            
+        if not is_bpjs_payment:
+            return
+            
+        company = getattr(doc, 'company', None)
+        if not company:
+            return
+            
+        # Get gl_entries that would be created
+        if not hasattr(doc, 'gl_entries') or not doc.gl_entries:
+            return
+            
+        # Load BPJS account config from defaults.json
+        mapping_config = frappe.get_file_json(frappe.get_app_path("payroll_indonesia", "config", "defaults.json"))
+        bpjs_accounts = mapping_config.get("gl_accounts", {}).get("bpjs_payable_accounts", {})
+        
+        # Get company abbreviation
+        company_abbr = frappe.get_cached_value('Company', company, 'abbr')
+        
+        # Check if we need to modify each account
+        for entry in doc.gl_entries:
+            if "BPJS" not in entry.account:
+                continue
+                
+            # Determine BPJS type from account name
+            bpjs_type = None
+            
+            if "Kesehatan" in entry.account:
+                bpjs_type = "kesehatan"
+            elif "JHT" in entry.account:
+                bpjs_type = "jht"
+            elif "JP" in entry.account:
+                bpjs_type = "jp"
+            elif "JKK" in entry.account:
+                bpjs_type = "jkk"
+            elif "JKM" in entry.account:
+                bpjs_type = "jkm"
+                
+            if bpjs_type and bpjs_accounts.get(f"{bpjs_type}_payable"):
+                # Get account name from defaults.json
+                account_name = bpjs_accounts[f"{bpjs_type}_payable"]["account_name"]
+                standardized_account = f"{account_name} - {company_abbr}"
+                
+                # If account exists, update the entry
+                if frappe.db.exists("Account", standardized_account):
+                    entry.account = standardized_account
+                    
+        frappe.logger().debug(f"Modified GL entries for BPJS Payment Entry {doc.name}")
+        
+    except Exception as e:
+        frappe.logger().error(
+            f"Error in override_payment_entry_gl_entries for {getattr(doc, 'name', 'Unknown')}: {str(e)}\n"
+            f"Traceback: {frappe.get_traceback()}"
+        )
+        # Don't raise error, continue with original GL entries
+
+def override_journal_entry_gl_entries(doc, method=None):
+    """
+    Override GL entries for Journal Entry linked to BPJS Payment Summary
+    
+    This function modifies GL entries for Journal Entries that reference BPJS Payment Summary
+    to use correct accounts from defaults.json configuration with standardized naming.
+    
+    Args:
+        doc (obj): Journal Entry document
+        method (str, optional): Method that called this function
+    """
+    try:
+        # Check if this is a BPJS journal entry
+        is_bpjs_journal = False
+        
+        # Check references in accounts for BPJS Payment Summary
+        if hasattr(doc, 'accounts') and doc.accounts:
+            for acc in doc.accounts:
+                if getattr(acc, 'reference_type', '') == 'BPJS Payment Summary':
+                    is_bpjs_journal = True
+                    break
+        
+        # Check for BPJS in user_remark
+        if not is_bpjs_journal and hasattr(doc, 'user_remark') and doc.user_remark and 'BPJS' in doc.user_remark:
+            is_bpjs_journal = True
+            
+        if not is_bpjs_journal:
+            return
+            
+        company = getattr(doc, 'company', None)
+        if not company:
+            return
+            
+        # Get accounts that would be used
+        if not hasattr(doc, 'accounts') or not doc.accounts:
+            return
+            
+        # Load BPJS account config from defaults.json
+        mapping_config = frappe.get_file_json(frappe.get_app_path("payroll_indonesia", "config", "defaults.json"))
+        bpjs_expense_accounts = mapping_config.get("gl_accounts", {}).get("bpjs_expense_accounts", {})
+        bpjs_payable_accounts = mapping_config.get("gl_accounts", {}).get("bpjs_payable_accounts", {})
+        
+        # Get company abbreviation
+        company_abbr = frappe.get_cached_value('Company', company, 'abbr')
+        
+        # Check if we need to modify each account
+        for acc in doc.accounts:
+            if "BPJS" not in acc.account:
+                continue
+                
+            # Check if this is expense or payable
+            is_expense = "Expense" in acc.account
+            
+            # Determine BPJS type from account name
+            bpjs_type = None
+            
+            if "Kesehatan" in acc.account:
+                bpjs_type = "kesehatan"
+            elif "JHT" in acc.account:
+                bpjs_type = "jht"
+            elif "JP" in acc.account:
+                bpjs_type = "jp"
+            elif "JKK" in acc.account:
+                bpjs_type = "jkk"
+            elif "JKM" in acc.account:
+                bpjs_type = "jkm"
+                
+            if bpjs_type:
+                account_config = None
+                
+                if is_expense and bpjs_expense_accounts.get(f"bpjs_{bpjs_type}_employer_expense"):
+                    # Get account name from defaults.json for expense
+                    account_config = bpjs_expense_accounts[f"bpjs_{bpjs_type}_employer_expense"]
+                elif not is_expense and bpjs_payable_accounts.get(f"bpjs_{bpjs_type}_payable"):
+                    # Get account name from defaults.json for payable
+                    account_config = bpjs_payable_accounts[f"bpjs_{bpjs_type}_payable"]
+                    
+                if account_config:
+                    account_name = account_config["account_name"]
+                    standardized_account = f"{account_name} - {company_abbr}"
+                    
+                    # If account exists, update the entry
+                    if frappe.db.exists("Account", standardized_account):
+                        acc.account = standardized_account
+                    
+        frappe.logger().debug(f"Modified accounts for BPJS Journal Entry {doc.name}")
+        
+    except Exception as e:
+        frappe.logger().error(
+            f"Error in override_journal_entry_gl_entries for {getattr(doc, 'name', 'Unknown')}: {str(e)}\n"
+            f"Traceback: {frappe.get_traceback()}"
+        )
+        # Don't raise error, continue with original accounts
 
 def process_bpjs_component_entry(entry, component, bpjs_mapping, company_abbr=None):
     """
@@ -550,53 +729,88 @@ def get_default_account(company, account_type=None):
         return None
 
 @frappe.whitelist()
-def diagnose_salary_slip(salary_slip_name):
+def diagnose_gl_entries(document_name, document_type="Salary Slip"):
     """
-    Diagnostic function to analyze a salary slip
+    Diagnostic function to analyze GL entries for a document
     
     Args:
-        salary_slip_name (str): Name of the salary slip
+        document_name (str): Name of the document
+        document_type (str): Type of document (Salary Slip, Payment Entry, Journal Entry)
         
     Returns:
-        dict: Diagnostic information
+        dict: Diagnostic information about GL entries
     """
     try:
-        doc = frappe.get_doc("Salary Slip", salary_slip_name)
+        # Get the document
+        doc = frappe.get_doc(document_type, document_name)
+        
         result = {
             "name": doc.name,
             "doctype": doc.doctype,
-            "docstatus": getattr(doc, 'docstatus', None),
-            "company": getattr(doc, 'company', None),
-            "has_cost_center": hasattr(doc, 'cost_center'),
-            "cost_center": getattr(doc, 'cost_center', None),
-            "has_project": hasattr(doc, 'project'),
-            "project": getattr(doc, 'project', None),
-            "has_payroll_entry": hasattr(doc, 'payroll_entry'),
-            "payroll_entry": getattr(doc, 'payroll_entry', None),
-            "has_payroll_payable_account": hasattr(doc, 'payroll_payable_account'),
-            "payroll_payable_account": getattr(doc, 'payroll_payable_account', None),
-            "has_gl_entries": hasattr(doc, 'gl_entries'),
-            "earnings_count": len(getattr(doc, 'earnings', [])),
-            "deductions_count": len(getattr(doc, 'deductions', [])),
-            "department": getattr(doc, 'department', None),
-            "employee": getattr(doc, 'employee', None),
-            "attribute_keys": sorted([key for key in dir(doc) if not key.startswith('_') and not callable(getattr(doc, key))])
+            "company": getattr(doc, "company", None),
+            "has_gl_entries": False,
+            "gl_entries_count": 0,
+            "bpjs_entries": [],
+            "bpjs_components": [],
+            "accounts_used": []
         }
         
-        # Get employee cost center
-        if result.get("employee"):
-            result["employee_cost_center"] = frappe.db.get_value(
-                "Employee", result["employee"], "cost_center"
-            )
+        # Check if document has GL entries
+        if hasattr(doc, "gl_entries") and doc.gl_entries:
+            result["has_gl_entries"] = True
+            result["gl_entries_count"] = len(doc.gl_entries)
             
-        # Check important methods
-        result["has_make_gl_entries_method"] = hasattr(doc, "make_gl_entries")
-        result["has_on_submit_method"] = hasattr(doc, "on_submit")
+            # Find BPJS-related entries
+            for entry in doc.gl_entries:
+                account = getattr(entry, "account", "")
+                against = getattr(entry, "against", "")
+                
+                if "BPJS" in account or "BPJS" in against:
+                    result["bpjs_entries"].append({
+                        "account": account,
+                        "against": against,
+                        "debit": getattr(entry, "debit", 0),
+                        "credit": getattr(entry, "credit", 0)
+                    })
+                    
+                    # Add unique accounts
+                    if account not in result["accounts_used"]:
+                        result["accounts_used"].append(account)
+                
+                # Check for BPJS components in against field
+                if "BPJS" in against and against not in result["bpjs_components"]:
+                    result["bpjs_components"].append(against)
+                    
+        # Additional checks for Payment Entry
+        if document_type == "Payment Entry":
+            # Check references
+            if hasattr(doc, "references") and doc.references:
+                result["references"] = []
+                for ref in doc.references:
+                    result["references"].append({
+                        "reference_doctype": getattr(ref, "reference_doctype", ""),
+                        "reference_name": getattr(ref, "reference_name", ""),
+                        "allocated_amount": getattr(ref, "allocated_amount", 0)
+                    })
+                    
+        # Additional checks for Journal Entry
+        if document_type == "Journal Entry":
+            # Check accounts
+            if hasattr(doc, "accounts") and doc.accounts:
+                result["journal_accounts"] = []
+                for acc in doc.accounts:
+                    result["journal_accounts"].append({
+                        "account": getattr(acc, "account", ""),
+                        "reference_type": getattr(acc, "reference_type", ""),
+                        "reference_name": getattr(acc, "reference_name", ""),
+                        "debit": getattr(acc, "debit", 0),
+                        "credit": getattr(acc, "credit", 0)
+                    })
         
         return result
     except Exception as e:
         return {
-            "error": str(e), 
+            "error": str(e),
             "traceback": frappe.get_traceback(),
-            "msg": "Error diagnosing salary slip"
+            "msg": f"Error diagnosing GL entries for {document_type} {document_name}"
         }

@@ -1,9 +1,15 @@
 // Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 // For license information, please see license.txt
-// Last modified: 2025-05-08 10:58:26 by dannyaudian
+// Last modified: 2025-05-08 11:29:47 by dannyaudian
 
-// Import required functions
-const flt = frappe.utils.flt;
+// Import required functions and ensure they're available
+const flt = function(value) {
+    return frappe.utils.flt(value);
+};
+
+const format_currency = function(value, currency) {
+    return frappe.format_currency(value, currency);
+};
 
 frappe.ui.form.on('BPJS Payment Summary', {
     refresh: function(frm) {
@@ -105,6 +111,37 @@ frappe.ui.form.on('BPJS Payment Summary', {
                     }
                 );
             }, __('Actions'));
+            
+            // Button to sync with defaults.json
+            frm.add_custom_button(__('Sync with Defaults.json'), function() {
+                frappe.confirm(
+                    __('This will update account details based on defaults.json configuration. Continue?'),
+                    function() {
+                        frm.call({
+                            method: "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_account_detail.bpjs_payment_account_detail.sync_with_defaults_json",
+                            args: {
+                                doc: frm.doc
+                            },
+                            freeze: true,
+                            freeze_message: __('Syncing account details...'),
+                            callback: function(r) {
+                                if (r.message && r.message.accounts_added) {
+                                    frappe.show_alert({
+                                        message: __('Added {0} accounts from defaults.json', [r.message.accounts_added]),
+                                        indicator: 'green'
+                                    });
+                                    frm.refresh();
+                                } else {
+                                    frappe.show_alert({
+                                        message: __('No accounts added. Check if defaults.json is properly configured.'),
+                                        indicator: 'orange'
+                                    });
+                                }
+                            }
+                        });
+                    }
+                );
+            }, __('Actions'));
         }
     },
     
@@ -143,9 +180,14 @@ frappe.ui.form.on('BPJS Payment Summary', {
                 }
             }
         }
+        
+        // Set default for salary_slip_filter if empty
+        if (frm.doc.docstatus === 0 && frm.meta.fields.find(field => field.fieldname === "salary_slip_filter") && !frm.doc.salary_slip_filter) {
+            frm.set_value('salary_slip_filter', 'Periode Saat Ini');
+        }
     },
     
-    // Handlers for the new buttons
+    // Handlers for the buttons
     fetch_data: function(frm) {
         fetchFromSalarySlip(frm);
     },
@@ -253,6 +295,12 @@ frappe.ui.form.on('BPJS Payment Component', {
             if (descriptions[row.component] && !row.description) {
                 frappe.model.set_value(cdt, cdn, 'description', descriptions[row.component]);
             }
+            
+            // Set component_type if empty
+            if (!row.component_type) {
+                const component_type = row.component.replace("BPJS ", "");
+                frappe.model.set_value(cdt, cdn, 'component_type', component_type);
+            }
         }
     },
     
@@ -277,52 +325,106 @@ frappe.ui.form.on('BPJS Payment Account Detail', {
     
     account_details_remove: function(frm) {
         calculate_account_details_total(frm);
+    },
+    
+    account_type: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        // Generate reference number based on account type and parent doc
+        if (row.account_type) {
+            if (!row.description) {
+                frappe.model.set_value(cdt, cdn, 'description', `BPJS ${row.account_type} Payment`);
+            }
+            
+            if (!row.reference_number && frm.doc.month && frm.doc.year) {
+                frappe.model.set_value(cdt, cdn, 'reference_number', `BPJS-${row.account_type}-${frm.doc.month}-${frm.doc.year}`);
+            }
+        }
     }
 });
 
 // Employee detail calculations if applicable
 frappe.ui.form.on('BPJS Payment Summary Detail', {
     employee_details_add: function(frm) {
-        calculate_employee_totals(frm);
-        update_components_from_employees(frm);
+        try {
+            const totals = calculate_employee_totals(frm);
+            update_components_from_employees(frm);
+        } catch (e) {
+            console.error("Error in employee_details_add:", e);
+        }
     },
     
     // Handle changes to all employee BPJS contribution fields
     jht_employee: function(frm) {
-        update_components_from_employees(frm);
+        try {
+            update_components_from_employees(frm);
+        } catch (e) {
+            console.error("Error in jht_employee handler:", e);
+        }
     },
     
     jp_employee: function(frm) {
-        update_components_from_employees(frm);
+        try {
+            update_components_from_employees(frm);
+        } catch (e) {
+            console.error("Error in jp_employee handler:", e);
+        }
     },
     
     kesehatan_employee: function(frm) {
-        update_components_from_employees(frm);
+        try {
+            update_components_from_employees(frm);
+        } catch (e) {
+            console.error("Error in kesehatan_employee handler:", e);
+        }
     },
     
     jht_employer: function(frm) {
-        update_components_from_employees(frm);
+        try {
+            update_components_from_employees(frm);
+        } catch (e) {
+            console.error("Error in jht_employer handler:", e);
+        }
     },
     
     jp_employer: function(frm) {
-        update_components_from_employees(frm);
+        try {
+            update_components_from_employees(frm);
+        } catch (e) {
+            console.error("Error in jp_employer handler:", e);
+        }
     },
     
     jkk: function(frm) {
-        update_components_from_employees(frm);
+        try {
+            update_components_from_employees(frm);
+        } catch (e) {
+            console.error("Error in jkk handler:", e);
+        }
     },
     
     jkm: function(frm) {
-        update_components_from_employees(frm);
+        try {
+            update_components_from_employees(frm);
+        } catch (e) {
+            console.error("Error in jkm handler:", e);
+        }
     },
     
     kesehatan_employer: function(frm) {
-        update_components_from_employees(frm);
+        try {
+            update_components_from_employees(frm);
+        } catch (e) {
+            console.error("Error in kesehatan_employer handler:", e);
+        }
     },
     
     employee_details_remove: function(frm) {
-        calculate_employee_totals(frm);
-        update_components_from_employees(frm);
+        try {
+            const totals = calculate_employee_totals(frm);
+            update_components_from_employees(frm);
+        } catch (e) {
+            console.error("Error in employee_details_remove:", e);
+        }
     },
     
     // New handler for salary slip link
@@ -350,6 +452,23 @@ frappe.ui.form.on('BPJS Payment Summary Detail', {
                         frappe.model.set_value(cdt, cdn, 'jkm', data.jkm || 0);
                         frappe.model.set_value(cdt, cdn, 'last_updated', frappe.datetime.now_datetime());
                         frappe.model.set_value(cdt, cdn, 'is_synced', 1);
+                        
+                        // Calculate the amount field
+                        const amount = frappe.utils.flt(data.jht_employee) + 
+                                      frappe.utils.flt(data.jp_employee) + 
+                                      frappe.utils.flt(data.kesehatan_employee) +
+                                      frappe.utils.flt(data.jht_employer) + 
+                                      frappe.utils.flt(data.jp_employer) + 
+                                      frappe.utils.flt(data.kesehatan_employer) +
+                                      frappe.utils.flt(data.jkk) + 
+                                      frappe.utils.flt(data.jkm);
+                                      
+                        frappe.model.set_value(cdt, cdn, 'amount', amount);
+                        
+                        frappe.show_alert({
+                            message: __('Data from salary slip loaded successfully'),
+                            indicator: 'green'
+                        });
                     }
                 }
             });
@@ -485,7 +604,7 @@ function calculate_total(frm) {
     // Calculate from components table
     if(frm.doc.komponen) {
         frm.doc.komponen.forEach(function(d) {
-            total += flt(d.amount);
+            total += frappe.utils.flt(d.amount);
         });
     }
     
@@ -505,17 +624,21 @@ function calculate_account_details_total(frm) {
     
     if(frm.doc.account_details) {
         frm.doc.account_details.forEach(function(d) {
-            account_total += flt(d.amount);
+            account_total += frappe.utils.flt(d.amount);
         });
     }
     
     if(frm.doc.total && account_total > 0 && Math.abs(frm.doc.total - account_total) > 0.1) {
-        frm.set_value('account_total', account_total);
-        frm.refresh_field('account_total');
+        // Set field if exists
+        if (frm.meta.fields.find(field => field.fieldname === "account_total")) {
+            frm.set_value('account_total', account_total);
+            frm.refresh_field('account_total');
+        }
         
         frappe.show_alert({
             message: __('Warning: Account details total ({0}) does not match components total ({1})', 
-                [format_currency(account_total, frm.doc.currency), format_currency(frm.doc.total, frm.doc.currency)]),
+                [frappe.format_currency(account_total, frm.doc.currency), 
+                 frappe.format_currency(frm.doc.total, frm.doc.currency)]),
             indicator: 'orange'
         });
     }
@@ -524,9 +647,18 @@ function calculate_account_details_total(frm) {
 /**
  * Calculate totals from employee details
  * @param {Object} frm - The form object
+ * @returns {Object} Totals for each BPJS type
  */
 function calculate_employee_totals(frm) {
-    if(!frm.doc.employee_details) return 0;
+    if(!frm.doc.employee_details) {
+        return {
+            jht_total: 0,
+            jp_total: 0,
+            kesehatan_total: 0,
+            jkk_total: 0,
+            jkm_total: 0
+        };
+    }
     
     let jht_total = 0;
     let jp_total = 0;
@@ -535,11 +667,11 @@ function calculate_employee_totals(frm) {
     let jkm_total = 0;
     
     frm.doc.employee_details.forEach(function(d) {
-        jht_total += flt(d.jht_employee) + flt(d.jht_employer);
-        jp_total += flt(d.jp_employee) + flt(d.jp_employer);
-        kesehatan_total += flt(d.kesehatan_employee) + flt(d.kesehatan_employer);
-        jkk_total += flt(d.jkk);
-        jkm_total += flt(d.jkm);
+        jht_total += frappe.utils.flt(d.jht_employee) + frappe.utils.flt(d.jht_employer);
+        jp_total += frappe.utils.flt(d.jp_employee) + frappe.utils.flt(d.jp_employer);
+        kesehatan_total += frappe.utils.flt(d.kesehatan_employee) + frappe.utils.flt(d.kesehatan_employer);
+        jkk_total += frappe.utils.flt(d.jkk);
+        jkm_total += frappe.utils.flt(d.jkm);
     });
     
     return {
@@ -558,52 +690,66 @@ function calculate_employee_totals(frm) {
 function update_components_from_employees(frm) {
     if(!frm.doc.employee_details || frm.doc.employee_details.length === 0) return;
     
-    // Get totals from employee details
-    const totals = calculate_employee_totals(frm);
-    
-    // Clear existing components
-    frm.clear_table('komponen');
-    
-    // Add JHT component
-    if(totals.jht_total > 0) {
-        const row = frm.add_child('komponen');
-        row.component = 'BPJS JHT';
-        row.description = 'JHT Contribution (Employee + Employer)';
-        row.amount = totals.jht_total;
+    try {
+        // Get totals from employee details
+        const totals = calculate_employee_totals(frm);
+        
+        // Clear existing components
+        frm.clear_table('komponen');
+        
+        // Add JHT component
+        if(totals.jht_total > 0) {
+            const row = frm.add_child('komponen');
+            row.component = 'BPJS JHT';
+            row.component_type = 'JHT';
+            row.description = 'JHT Contribution (Employee + Employer)';
+            row.amount = totals.jht_total;
+        }
+        
+        // Add JP component
+        if(totals.jp_total > 0) {
+            const row = frm.add_child('komponen');
+            row.component = 'BPJS JP';
+            row.component_type = 'JP';
+            row.description = 'JP Contribution (Employee + Employer)';
+            row.amount = totals.jp_total;
+        }
+        
+        // Add JKK component
+        if(totals.jkk_total > 0) {
+            const row = frm.add_child('komponen');
+            row.component = 'BPJS JKK';
+            row.component_type = 'JKK';
+            row.description = 'JKK Contribution (Employer)';
+            row.amount = totals.jkk_total;
+        }
+        
+        // Add JKM component
+        if(totals.jkm_total > 0) {
+            const row = frm.add_child('komponen');
+            row.component = 'BPJS JKM';
+            row.component_type = 'JKM';
+            row.description = 'JKM Contribution (Employer)';
+            row.amount = totals.jkm_total;
+        }
+        
+        // Add Kesehatan component
+        if(totals.kesehatan_total > 0) {
+            const row = frm.add_child('komponen');
+            row.component = 'BPJS Kesehatan';
+            row.component_type = 'Kesehatan';
+            row.description = 'Kesehatan Contribution (Employee + Employer)';
+            row.amount = totals.kesehatan_total;
+        }
+        
+        frm.refresh_field('komponen');
+        calculate_total(frm);
+    } catch (e) {
+        console.error("Error in update_components_from_employees:", e);
+        frappe.msgprint({
+            title: __('Error'),
+            indicator: 'red',
+            message: __('Error updating components: {0}', [e.message])
+        });
     }
-    
-    // Add JP component
-    if(totals.jp_total > 0) {
-        const row = frm.add_child('komponen');
-        row.component = 'BPJS JP';
-        row.description = 'JP Contribution (Employee + Employer)';
-        row.amount = totals.jp_total;
-    }
-    
-    // Add JKK component
-    if(totals.jkk_total > 0) {
-        const row = frm.add_child('komponen');
-        row.component = 'BPJS JKK';
-        row.description = 'JKK Contribution (Employer)';
-        row.amount = totals.jkk_total;
-    }
-    
-    // Add JKM component
-    if(totals.jkm_total > 0) {
-        const row = frm.add_child('komponen');
-        row.component = 'BPJS JKM';
-        row.description = 'JKM Contribution (Employer)';
-        row.amount = totals.jkm_total;
-    }
-    
-    // Add Kesehatan component
-    if(totals.kesehatan_total > 0) {
-        const row = frm.add_child('komponen');
-        row.component = 'BPJS Kesehatan';
-        row.description = 'Kesehatan Contribution (Employee + Employer)';
-        row.amount = totals.kesehatan_total;
-    }
-    
-    frm.refresh_field('komponen');
-    calculate_total(frm);
 }
