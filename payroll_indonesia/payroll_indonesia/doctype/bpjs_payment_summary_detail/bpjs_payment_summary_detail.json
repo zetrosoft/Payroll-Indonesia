@@ -8,6 +8,9 @@
         "employee",
         "employee_name",
         "salary_slip",
+        "data_status_section",
+        "is_synced",
+        "last_updated",
         "section_break_emplv",
         "kesehatan_employee",
         "jht_employee",
@@ -42,7 +45,26 @@
             "fieldname": "salary_slip",
             "fieldtype": "Link", 
             "label": "Salary Slip", 
-            "options": "Salary Slip"
+            "options": "Salary Slip",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "data_status_section",
+            "fieldtype": "Section Break",
+            "label": "Status Data"
+        },
+        {
+            "default": "0",
+            "fieldname": "is_synced",
+            "fieldtype": "Check",
+            "label": "Tersinkronisasi dengan Salary Slip",
+            "read_only": 1
+        },
+        {
+            "fieldname": "last_updated",
+            "fieldtype": "Datetime",
+            "label": "Terakhir Diupdate",
+            "read_only": 1
         },
         {
             "fieldname": "section_break_emplv",
@@ -106,11 +128,12 @@
             "fieldtype": "Currency",
             "in_list_view": 1,
             "label": "Total Amount",
-            "reqd": 1
+            "reqd": 1,
+            "description": "Total dari semua kontribusi BPJS untuk karyawan ini"
         }
     ],
     "istable": 1,
-    "modified": "2025-04-27 06:42:22",
+    "modified": "2025-05-08 11:07:51",
     "modified_by": "dannyaudian",
     "module": "Payroll Indonesia",
     "name": "BPJS Payment Summary Detail",

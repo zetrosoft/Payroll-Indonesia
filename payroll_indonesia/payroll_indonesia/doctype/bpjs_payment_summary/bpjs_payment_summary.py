@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-04 03:06:25 by dannyaudian
+# Last modified: 2025-05-08 11:02:01 by dannyaudian
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import today, flt, fmt_money, getdate, now_datetime
+from frappe.utils import today, flt, fmt_money, getdate, now_datetime, add_months, format_date
 from .bpjs_payment_utils import get_formatted_currency, debug_log
-from .bpjs_payment_integration import recalculate_bpjs_totals
+from .bpjs_payment_validation import create_bpjs_supplier
 
 class BPJSPaymentSummary(Document):
     def validate(self):
-        self.set_missing_values()  # Ensure required values are set
+        self.set_missing_values()
         self.validate_company()
         self.validate_month_year()
-        self.check_and_generate_components()  # More robust component validation
+        self.check_and_generate_components()
         self.calculate_total()
         self.validate_total()
         self.validate_supplier()
@@ -26,6 +26,23 @@ class BPJSPaymentSummary(Document):
         # Set posting_date if empty
         if not self.posting_date:
             self.posting_date = today()
+            
+        # Set month name and title if fields exist
+        if hasattr(self, 'month') and hasattr(self, 'year') and self.month and self.year:
+            month_names = [
+                'Januari', 'Februari', 'Maret', 'April', 
+                'Mei', 'Juni', 'Juli', 'Agustus', 
+                'September', 'Oktober', 'November', 'Desember'
+            ]
+            
+            if self.month >= 1 and self.month <= 12:
+                # Set month_name if field exists
+                if hasattr(self, 'month_name'):
+                    self.month_name = month_names[self.month - 1]
+                
+                # Set month_year_title if field exists
+                if hasattr(self, 'month_year_title'):
+                    self.month_year_title = f"{month_names[self.month - 1]} {self.year}"
             
         # Ensure amount is always populated
         if not hasattr(self, 'amount') or not self.amount or flt(self.amount) <= 0:
@@ -70,7 +87,7 @@ class BPJSPaymentSummary(Document):
         if not self.komponen or len(self.komponen) == 0:
             self.append("komponen", {
                 "component": "BPJS JHT",
-                "component_type": "JHT",  # Add component_type
+                "component_type": "JHT",
                 "amount": flt(self.amount) if hasattr(self, 'amount') and self.amount else 1.0
             })
             debug_log(f"Added default component for BPJS Payment Summary {self.name}")
@@ -125,7 +142,7 @@ class BPJSPaymentSummary(Document):
                 if component_name:
                     self.append("komponen", {
                         "component": component_name,
-                        "component_type": bpjs_type,  # Add component_type
+                        "component_type": bpjs_type,
                         "amount": amount
                     })
                     has_components = True
@@ -158,7 +175,6 @@ class BPJSPaymentSummary(Document):
     def validate_supplier(self):
         """Validate BPJS supplier exists"""
         if not frappe.db.exists("Supplier", "BPJS"):
-            from .bpjs_payment_validation import create_bpjs_supplier
             create_bpjs_supplier()
     
     def set_account_details(self):
@@ -166,7 +182,7 @@ class BPJSPaymentSummary(Document):
         if self.docstatus == 1:
             frappe.throw(_("Cannot modify account details after submission"))
             
-        # Store company abbreviation for use in this method
+        # Get company abbreviation
         company_abbr = getattr(self, '_company_abbr', None) or frappe.get_cached_value('Company', self.company, 'abbr')
             
         # Clear existing account_details
@@ -391,6 +407,10 @@ class BPJSPaymentSummary(Document):
         if not hasattr(self, 'amount') or not self.amount or flt(self.amount) <= 0:
             self.amount = self.total or 1.0
             debug_log(f"Before save: set amount to {self.amount} for {self.name}")
+            
+        # Update last_synced if it exists
+        if hasattr(self, 'last_synced') and not self.last_synced:
+            self.last_synced = now_datetime()
     
     def on_submit(self):
         """Set status to Submitted and create journal entry"""
@@ -626,6 +646,489 @@ class BPJSPaymentSummary(Document):
             frappe.msgprint(_("Error creating Payment Entry"))
             frappe.throw(str(e))
 
+    @frappe.whitelist()
+    def get_from_salary_slip(self):
+        """Get BPJS data from salary slips for the specified period"""
+        if self.docstatus > 0:
+            frappe.throw(_("Cannot fetch data after submission"))
+        
+        # Validate required fields
+        if not self.company:
+            frappe.throw(_("Company is required"))
+        
+        if not self.month or not self.year:
+            frappe.throw(_("Month and Year are required"))
+            
+        try:
+            # Clear existing employee details
+            self.employee_details = []
+            
+            # Get salary slips based on filter
+            salary_slips = self._get_filtered_salary_slips()
+            
+            if not salary_slips:
+                frappe.msgprint(_("No salary slips found for the selected period"))
+                return {"success": False, "count": 0}
+                
+            # Process each salary slip
+            employees_processed = []
+            
+            for slip in salary_slips:
+                # Skip if employee already processed (to avoid duplicates)
+                if slip.employee in employees_processed:
+                    continue
+                    
+                # Extract BPJS data from salary slip
+                bpjs_data = self._extract_bpjs_from_salary_slip(slip)
+                
+                if bpjs_data:
+                    # Add employee to processed list
+                    employees_processed.append(slip.employee)
+                    
+                    # Add to employee_details table
+                    self.append('employee_details', {
+                        'employee': slip.employee,
+                        'employee_name': slip.employee_name,
+                        'salary_slip': slip.name,
+                        'jht_employee': bpjs_data.get('jht_employee', 0),
+                        'jp_employee': bpjs_data.get('jp_employee', 0),
+                        'kesehatan_employee': bpjs_data.get('kesehatan_employee', 0),
+                        'jht_employer': bpjs_data.get('jht_employer', 0),
+                        'jp_employer': bpjs_data.get('jp_employer', 0),
+                        'kesehatan_employer': bpjs_data.get('kesehatan_employer', 0),
+                        'jkk': bpjs_data.get('jkk', 0),
+                        'jkm': bpjs_data.get('jkm', 0),
+                        'last_updated': now_datetime(),
+                        'is_synced': 1
+                    })
+            
+            # Regenerate components and account details from employee_details
+            self.populate_from_employee_details()
+            self.set_account_details()
+            self.calculate_total()
+            
+            # Set last_synced timestamp
+            self.last_synced = now_datetime()
+            self.save()
+            
+            return {"success": True, "count": len(employees_processed)}
+            
+        except Exception as e:
+            frappe.log_error(
+                f"Error fetching data from salary slips for {self.name}: {str(e)}\n\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "BPJS Salary Slip Fetch Error"
+            )
+            frappe.msgprint(_("Error fetching data from salary slips: {0}").format(str(e)), indicator="red")
+            return {"success": False, "error": str(e)}
+    
+    def _get_filtered_salary_slips(self):
+        """Get salary slips based on filter criteria"""
+        filters = {"docstatus": 1, "company": self.company}
+        
+        # Add date-based filters
+        if hasattr(self, 'salary_slip_filter') and self.salary_slip_filter:
+            if self.salary_slip_filter == "Periode Saat Ini":
+                # Get slips for current month and year
+                filters.update({
+                    "start_date": [
+                        "between", 
+                        [
+                            f"{self.year}-{self.month:02d}-01", 
+                            frappe.utils.get_last_day(f"{self.year}-{self.month:02d}-01")
+                        ]
+                    ]
+                })
+            elif self.salary_slip_filter == "Periode Kustom":
+                # Custom period - use custom fields if available or default to month range
+                if hasattr(self, 'from_date') and hasattr(self, 'to_date') and self.from_date and self.to_date:
+                    filters.update({
+                        "start_date": [">=", self.from_date],
+                        "end_date": ["<=", self.to_date]
+                    })
+                else:
+                    # Default to current month
+                    filters.update({
+                        "start_date": [
+                            "between", 
+                            [
+                                f"{self.year}-{self.month:02d}-01", 
+                                frappe.utils.get_last_day(f"{self.year}-{self.month:02d}-01")
+                            ]
+                        ]
+                    })
+            elif self.salary_slip_filter == "Semua Slip Belum Terbayar":
+                # Get all slips not linked to a BPJS payment
+                # This is more complex, so instead of filtering, we'll get all slips
+                # and filter later in code
+                pass
+        else:
+            # Default to current month
+            filters.update({
+                "start_date": [
+                    "between", 
+                    [
+                        f"{self.year}-{self.month:02d}-01", 
+                        frappe.utils.get_last_day(f"{self.year}-{self.month:02d}-01")
+                    ]
+                ]
+            })
+        
+        # Get salary slips
+        salary_slips = frappe.get_all(
+            "Salary Slip",
+            filters=filters,
+            fields=["name", "employee", "employee_name", "start_date", "end_date"]
+        )
+        
+        # For "Semua Slip Belum Terbayar" filter, filter out slips already linked to other BPJS payments
+        if hasattr(self, 'salary_slip_filter') and self.salary_slip_filter == "Semua Slip Belum Terbayar":
+            # Get list of salary slips already linked to BPJS payments
+            linked_slips = frappe.get_all(
+                "BPJS Payment Summary Detail",
+                filters={"docstatus": 1},
+                fields=["salary_slip"]
+            )
+            linked_slip_names = [slip.salary_slip for slip in linked_slips if slip.salary_slip]
+            
+            # Filter out already linked slips
+            salary_slips = [slip for slip in salary_slips if slip.name not in linked_slip_names]
+        
+        return salary_slips
+    
+    def _extract_bpjs_from_salary_slip(self, slip):
+        """Extract BPJS data from a salary slip"""
+        # Get the full salary slip document
+        doc = frappe.get_doc("Salary Slip", slip.name)
+        
+        bpjs_data = {
+            'jht_employee': 0,
+            'jp_employee': 0,
+            'kesehatan_employee': 0,
+            'jht_employer': 0,
+            'jp_employer': 0,
+            'kesehatan_employer': 0,
+            'jkk': 0,
+            'jkm': 0
+        }
+        
+        # Extract employee contributions from deductions
+        if hasattr(doc, 'deductions') and doc.deductions:
+            for d in doc.deductions:
+                if "BPJS Kesehatan" in d.salary_component and "Employee" not in d.salary_component:
+                    bpjs_data['kesehatan_employee'] += flt(d.amount)
+                elif "BPJS JHT" in d.salary_component and "Employee" not in d.salary_component:
+                    bpjs_data['jht_employee'] += flt(d.amount)
+                elif "BPJS JP" in d.salary_component and "Employee" not in d.salary_component:
+                    bpjs_data['jp_employee'] += flt(d.amount)
+                # Support alternative naming with "Employee" suffix
+                elif "BPJS Kesehatan Employee" in d.salary_component:
+                    bpjs_data['kesehatan_employee'] += flt(d.amount)
+                elif "BPJS JHT Employee" in d.salary_component:
+                    bpjs_data['jht_employee'] += flt(d.amount)
+                elif "BPJS JP Employee" in d.salary_component:
+                    bpjs_data['jp_employee'] += flt(d.amount)
+        
+        # Extract employer contributions from earnings
+        if hasattr(doc, 'earnings') and doc.earnings:
+            for e in doc.earnings:
+                if "BPJS Kesehatan Employer" in e.salary_component:
+                    bpjs_data['kesehatan_employer'] += flt(e.amount)
+                elif "BPJS JHT Employer" in e.salary_component:
+                    bpjs_data['jht_employer'] += flt(e.amount)
+                elif "BPJS JP Employer" in e.salary_component:
+                    bpjs_data['jp_employer'] += flt(e.amount)
+                elif "BPJS JKK" in e.salary_component:
+                    bpjs_data['jkk'] += flt(e.amount)
+                elif "BPJS JKM" in e.salary_component:
+                    bpjs_data['jkm'] += flt(e.amount)
+        
+        # Check if we found any BPJS data
+        has_data = any(flt(value) > 0 for value in bpjs_data.values())
+        return bpjs_data if has_data else None
+    
+    @frappe.whitelist()
+    def update_from_salary_slip(self):
+        """Update BPJS data from linked salary slips"""
+        if self.docstatus > 0:
+            frappe.throw(_("Cannot update data after submission"))
+        
+        if not hasattr(self, 'employee_details') or not self.employee_details:
+            frappe.throw(_("No employee details to update"))
+            
+        try:
+            count = 0
+            updated = 0
+            
+            for emp_detail in self.employee_details:
+                count += 1
+                
+                # Skip records without salary slip
+                if not emp_detail.salary_slip:
+                    continue
+                    
+                # Check if slip exists
+                if not frappe.db.exists("Salary Slip", emp_detail.salary_slip):
+                    continue
+                    
+                # Get BPJS data from salary slip
+                slip = frappe.get_doc("Salary Slip", emp_detail.salary_slip)
+                bpjs_data = self._extract_bpjs_from_salary_slip(slip)
+                
+                if bpjs_data:
+                    # Update employee details row
+                    emp_detail.jht_employee = bpjs_data.get('jht_employee', 0)
+                    emp_detail.jp_employee = bpjs_data.get('jp_employee', 0)
+                    emp_detail.kesehatan_employee = bpjs_data.get('kesehatan_employee', 0)
+                    emp_detail.jht_employer = bpjs_data.get('jht_employer', 0)
+                    emp_detail.jp_employer = bpjs_data.get('jp_employer', 0)
+                    emp_detail.kesehatan_employer = bpjs_data.get('kesehatan_employer', 0)
+                    emp_detail.jkk = bpjs_data.get('jkk', 0)
+                    emp_detail.jkm = bpjs_data.get('jkm', 0)
+                    emp_detail.last_updated = now_datetime()
+                    emp_detail.is_synced = 1
+                    
+                    updated += 1
+            
+            # Regenerate components and account details from employee_details
+            if updated > 0:
+                self.populate_from_employee_details()
+                self.set_account_details()
+                self.calculate_total()
+                self.last_synced = now_datetime()
+                self.save()
+            
+            return {"success": True, "count": count, "updated": updated}
+            
+        except Exception as e:
+            frappe.log_error(
+                f"Error updating data from salary slips for {self.name}: {str(e)}\n\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "BPJS Salary Slip Update Error"
+            )
+            frappe.msgprint(_("Error updating data from salary slips: {0}").format(str(e)), indicator="red")
+            return {"success": False, "error": str(e)}
+    
+    @frappe.whitelist()
+    def populate_employee_details(self):
+        """Populate employee details with active employees having BPJS participation"""
+        if self.docstatus > 0:
+            frappe.throw(_("Cannot modify employee details after submission"))
+        
+        # Check if we already have employee details
+        if hasattr(self, 'employee_details') and self.employee_details:
+            frappe.confirm(
+                _("This will replace existing employee details. Continue?"),
+                yes_callback=lambda: self._populate_employee_details_confirmed(),
+                no_callback=lambda: frappe.msgprint(_("Operation cancelled"))
+            )
+        else:
+            return self._populate_employee_details_confirmed()
+    
+    def _populate_employee_details_confirmed(self):
+        """Implementation of populate_employee_details after confirmation"""
+        try:
+            # Get active employees with BPJS participation
+            employees = frappe.get_all(
+                "Employee",
+                filters={
+                    "status": "Active",
+                    "company": self.company
+                },
+                fields=["name", "employee_name"]
+            )
+            
+            # Clear existing employee details
+            self.employee_details = []
+            
+            # Add employees to details
+            for emp in employees:
+                # Check if employee has BPJS settings
+                has_bpjs = False
+                
+                # Check custom fields for BPJS participation if they exist
+                participation_fields = [
+                    'bpjs_jht_participation',
+                    'bpjs_jp_participation',
+                    'bpjs_kesehatan_participation',
+                    'custom_bpjs_participation'
+                ]
+                
+                for field in participation_fields:
+                    if frappe.db.has_column('Employee', field):
+                        value = frappe.db.get_value('Employee', emp.name, field)
+                        if value:
+                            has_bpjs = True
+                            break
+                
+                # If no specific BPJS fields or all are false, assume participation
+                if not has_bpjs:
+                    has_bpjs = True  # Default to true if no specific fields
+                
+                if has_bpjs:
+                    # Get salary structure for this employee
+                    salary_structure = frappe.db.get_value(
+                        "Salary Structure Assignment",
+                        {"employee": emp.name, "docstatus": 1},
+                        "salary_structure"
+                    )
+                    
+                    # Calculate estimated BPJS amounts
+                    bpjs_amounts = self._calculate_employee_bpjs_amounts(emp.name, salary_structure)
+                    
+                    # Add to employee_details table
+                    self.append('employee_details', {
+                        'employee': emp.name,
+                        'employee_name': emp.employee_name,
+                        'jht_employee': bpjs_amounts.get('jht_employee', 0),
+                        'jp_employee': bpjs_amounts.get('jp_employee', 0),
+                        'kesehatan_employee': bpjs_amounts.get('kesehatan_employee', 0),
+                        'jht_employer': bpjs_amounts.get('jht_employer', 0),
+                        'jp_employer': bpjs_amounts.get('jp_employer', 0),
+                        'kesehatan_employer': bpjs_amounts.get('kesehatan_employer', 0),
+                        'jkk': bpjs_amounts.get('jkk', 0),
+                        'jkm': bpjs_amounts.get('jkm', 0),
+                        'last_updated': now_datetime()
+                    })
+            
+            # Regenerate components from employee_details
+            self.populate_from_employee_details()
+            self.calculate_total()
+            
+            self.save()
+            
+            return {"success": True, "count": len(self.employee_details)}
+            
+        except Exception as e:
+            frappe.log_error(
+                f"Error populating employee details for {self.name}: {str(e)}\n\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "BPJS Employee Details Error"
+            )
+            frappe.msgprint(_("Error populating employee details: {0}").format(str(e)), indicator="red")
+            return {"success": False, "error": str(e)}
+    
+    def _calculate_employee_bpjs_amounts(self, employee, salary_structure=None):
+        """Calculate estimated BPJS amounts for an employee"""
+        # Default empty result
+        result = {
+            'jht_employee': 0,
+            'jp_employee': 0,
+            'kesehatan_employee': 0,
+            'jht_employer': 0,
+            'jp_employer': 0,
+            'kesehatan_employer': 0,
+            'jkk': 0,
+            'jkm': 0
+        }
+        
+        try:
+            # Get BPJS settings
+            bpjs_settings = frappe.get_single("BPJS Settings")
+            
+            # Get base salary or total earnings from the most recent salary slip
+            base_salary = 0
+            
+            # Try to find recent salary slip first
+            recent_slip = frappe.get_all(
+                "Salary Slip",
+                filters={
+                    "employee": employee,
+                    "docstatus": 1
+                },
+                fields=["name", "base_salary", "gross_pay"],
+                order_by="start_date desc",
+                limit=1
+            )
+            
+            if recent_slip:
+                base_salary = recent_slip[0].base_salary or recent_slip[0].gross_pay
+            else:
+                # If no slip found, try to get from salary structure
+                if salary_structure:
+                    base_components = frappe.get_all(
+                        "Salary Detail",
+                        filters={
+                            "parent": salary_structure,
+                            "parentfield": "earnings",
+                            "is_base_component": 1
+                        },
+                        fields=["amount"]
+                    )
+                    
+                    if base_components:
+                        base_salary = sum(flt(comp.amount) for comp in base_components)
+                    else:
+                        # Try to get from assignment
+                        assignment = frappe.get_all(
+                            "Salary Structure Assignment",
+                            filters={
+                                "employee": employee,
+                                "docstatus": 1
+                            },
+                            fields=["base"],
+                            order_by="from_date desc",
+                            limit=1
+                        )
+                        
+                        if assignment:
+                            base_salary = assignment[0].base
+            
+            # If still no base salary, exit with zeroes
+            if not base_salary or base_salary <= 0:
+                return result
+            
+            # Calculate BPJS amounts based on settings
+            # These values will be defaults if no specific rates found in settings
+            jht_employee_rate = 0.02  # 2%
+            jht_employer_rate = 0.037  # 3.7%
+            jp_employee_rate = 0.01  # 1%
+            jp_employer_rate = 0.02  # 2%
+            kesehatan_employee_rate = 0.01  # 1%
+            kesehatan_employer_rate = 0.04  # 4%
+            jkk_rate = 0.0054  # 0.54%
+            jkm_rate = 0.003  # 0.3%
+            
+            # Apply rates from BPJS settings if available
+            if hasattr(bpjs_settings, 'jht_employee_rate'):
+                jht_employee_rate = flt(bpjs_settings.jht_employee_rate) / 100
+            if hasattr(bpjs_settings, 'jht_employer_rate'):
+                jht_employer_rate = flt(bpjs_settings.jht_employer_rate) / 100
+            if hasattr(bpjs_settings, 'jp_employee_rate'):
+                jp_employee_rate = flt(bpjs_settings.jp_employee_rate) / 100
+            if hasattr(bpjs_settings, 'jp_employer_rate'):
+                jp_employer_rate = flt(bpjs_settings.jp_employer_rate) / 100
+            if hasattr(bpjs_settings, 'kesehatan_employee_rate'):
+                kesehatan_employee_rate = flt(bpjs_settings.kesehatan_employee_rate) / 100
+            if hasattr(bpjs_settings, 'kesehatan_employer_rate'):
+                kesehatan_employer_rate = flt(bpjs_settings.kesehatan_employer_rate) / 100
+            if hasattr(bpjs_settings, 'jkk_rate'):
+                jkk_rate = flt(bpjs_settings.jkk_rate) / 100
+            if hasattr(bpjs_settings, 'jkm_rate'):
+                jkm_rate = flt(bpjs_settings.jkm_rate) / 100
+            
+            # Calculate BPJS amounts
+            result = {
+                'jht_employee': flt(base_salary * jht_employee_rate),
+                'jp_employee': flt(base_salary * jp_employee_rate),
+                'kesehatan_employee': flt(base_salary * kesehatan_employee_rate),
+                'jht_employer': flt(base_salary * jht_employer_rate),
+                'jp_employer': flt(base_salary * jp_employer_rate),
+                'kesehatan_employer': flt(base_salary * kesehatan_employer_rate),
+                'jkk': flt(base_salary * jkk_rate),
+                'jkm': flt(base_salary * jkm_rate)
+            }
+            
+            return result
+            
+        except Exception as e:
+            frappe.log_error(
+                f"Error calculating BPJS amounts for employee {employee}: {str(e)}\n\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "BPJS Amount Calculation Error"
+            )
+            return result
+
 def get_company_bpjs_account_mapping(company):
     """
     Get BPJS Account Mapping for a specific company with caching
@@ -671,7 +1174,6 @@ def get_bpjs_suppliers():
         # Check if BPJS supplier exists
         if not frappe.db.exists("Supplier", "BPJS"):
             # Create default BPJS supplier if not exists
-            from .bpjs_payment_validation import create_bpjs_supplier
             create_bpjs_supplier()
             
         # Query for suppliers with "BPJS" in their name

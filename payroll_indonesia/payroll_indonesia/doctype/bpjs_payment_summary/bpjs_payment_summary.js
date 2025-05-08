@@ -1,6 +1,6 @@
 // Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 // For license information, please see license.txt
-// Last modified: 2025-04-27 10:35:39 by dannyaudian
+// Last modified: 2025-05-08 10:58:26 by dannyaudian
 
 // Import required functions
 const flt = frappe.utils.flt;
@@ -52,6 +52,16 @@ frappe.ui.form.on('BPJS Payment Summary', {
         
         // Add buttons for draft state
         if(frm.doc.docstatus === 0) {
+            // Button to get data from Salary Slip
+            frm.add_custom_button(__('Ambil Data dari Salary Slip'), function() {
+                fetchFromSalarySlip(frm);
+            }, __('Data'));
+            
+            // Button to refresh data
+            frm.add_custom_button(__('Refresh Data'), function() {
+                refreshData(frm);
+            }, __('Data'));
+            
             // Button to populate employee details
             if(frm.meta.fields.find(field => field.fieldname === "employee_details")) {
                 if(!frm.doc.employee_details || frm.doc.employee_details.length === 0) {
@@ -132,6 +142,38 @@ frappe.ui.form.on('BPJS Payment Summary', {
                     frm.set_value('month_year_title', `${month_names[month_index]} ${current_date[0]}`);
                 }
             }
+        }
+    },
+    
+    // Handlers for the new buttons
+    fetch_data: function(frm) {
+        fetchFromSalarySlip(frm);
+    },
+    
+    refresh_data: function(frm) {
+        refreshData(frm);
+    },
+    
+    salary_slip_filter: function(frm) {
+        // Update description based on filter selection
+        const filter = frm.doc.salary_slip_filter;
+        let filter_description = "";
+        
+        switch(filter) {
+            case "Periode Saat Ini":
+                filter_description = `Hanya mengambil data salary slip dengan periode ${frm.doc.month_year_title}`;
+                break;
+            case "Periode Kustom":
+                filter_description = "Anda dapat menentukan rentang tanggal kustom untuk mengambil data";
+                break;
+            case "Semua Slip Belum Terbayar":
+                filter_description = "Mengambil semua salary slip yang belum tercakup dalam pembayaran BPJS";
+                break;
+        }
+        
+        if(filter_description) {
+            frm.set_df_property('salary_slip_filter', 'description', filter_description);
+            frm.refresh_field('salary_slip_filter');
         }
     },
     
@@ -245,6 +287,7 @@ frappe.ui.form.on('BPJS Payment Summary Detail', {
         update_components_from_employees(frm);
     },
     
+    // Handle changes to all employee BPJS contribution fields
     jht_employee: function(frm) {
         update_components_from_employees(frm);
     },
@@ -280,8 +323,131 @@ frappe.ui.form.on('BPJS Payment Summary Detail', {
     employee_details_remove: function(frm) {
         calculate_employee_totals(frm);
         update_components_from_employees(frm);
+    },
+    
+    // New handler for salary slip link
+    salary_slip: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (row.salary_slip) {
+            // Get BPJS data from this salary slip
+            frappe.call({
+                method: "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.get_salary_slip_bpjs_data",
+                args: {
+                    salary_slip: row.salary_slip
+                },
+                callback: function(r) {
+                    if (r.message) {
+                        const data = r.message;
+                        
+                        // Update the current row with data from salary slip
+                        frappe.model.set_value(cdt, cdn, 'jht_employee', data.jht_employee || 0);
+                        frappe.model.set_value(cdt, cdn, 'jp_employee', data.jp_employee || 0);
+                        frappe.model.set_value(cdt, cdn, 'kesehatan_employee', data.kesehatan_employee || 0);
+                        frappe.model.set_value(cdt, cdn, 'jht_employer', data.jht_employer || 0);
+                        frappe.model.set_value(cdt, cdn, 'jp_employer', data.jp_employer || 0);
+                        frappe.model.set_value(cdt, cdn, 'kesehatan_employer', data.kesehatan_employer || 0);
+                        frappe.model.set_value(cdt, cdn, 'jkk', data.jkk || 0);
+                        frappe.model.set_value(cdt, cdn, 'jkm', data.jkm || 0);
+                        frappe.model.set_value(cdt, cdn, 'last_updated', frappe.datetime.now_datetime());
+                        frappe.model.set_value(cdt, cdn, 'is_synced', 1);
+                    }
+                }
+            });
+        }
     }
 });
+
+/**
+ * Fetch data from salary slips based on filter
+ * @param {Object} frm - The form object
+ */
+function fetchFromSalarySlip(frm) {
+    // Validate required fields
+    if(!frm.doc.company) {
+        frappe.msgprint(__('Please select Company before fetching data'));
+        return;
+    }
+    
+    if(!frm.doc.month || !frm.doc.year) {
+        frappe.msgprint(__('Please set Month and Year before fetching data'));
+        return;
+    }
+    
+    // Confirm action with user
+    frappe.confirm(
+        __('This will fetch BPJS data from Salary Slips and may overwrite existing data. Continue?'),
+        function() {
+            // On confirm
+            frappe.show_progress(__('Processing'), 0, 100);
+            
+            frm.call({
+                doc: frm.doc,
+                method: "get_from_salary_slip",
+                freeze: true,
+                freeze_message: __('Fetching data from salary slips...'),
+                callback: function(r) {
+                    frappe.hide_progress();
+                    
+                    if(r.message) {
+                        const result = r.message;
+                        
+                        frappe.show_alert({
+                            message: __('Successfully fetched data from {0} salary slips', [result.count]),
+                            indicator: 'green'
+                        });
+                        
+                        frm.reload_doc();
+                    }
+                }
+            });
+        }
+    );
+}
+
+/**
+ * Refresh data from linked salary slips
+ * @param {Object} frm - The form object
+ */
+function refreshData(frm) {
+    // Check if there are employee details with salary slip links
+    if(!frm.doc.employee_details || !frm.doc.employee_details.some(d => d.salary_slip)) {
+        frappe.msgprint(__('No linked salary slips found. Use "Ambil Data dari Salary Slip" first.'));
+        return;
+    }
+    
+    // Confirm action with user
+    frappe.confirm(
+        __('This will refresh data from linked Salary Slips. Continue?'),
+        function() {
+            frappe.show_progress(__('Processing'), 0, 100);
+            
+            frm.call({
+                doc: frm.doc,
+                method: "update_from_salary_slip",
+                freeze: true,
+                freeze_message: __('Refreshing data from salary slips...'),
+                callback: function(r) {
+                    frappe.hide_progress();
+                    
+                    if(r.message) {
+                        const result = r.message;
+                        
+                        frappe.show_alert({
+                            message: __('Successfully updated {0} records', [result.updated]),
+                            indicator: 'green'
+                        });
+                        
+                        // Set last_synced timestamp
+                        frm.set_value('last_synced', frappe.datetime.now_datetime());
+                        frm.refresh_field('last_synced');
+                        
+                        frm.reload_doc();
+                    }
+                }
+            });
+        }
+    );
+}
 
 /**
  * Update month name and month_year_title fields if they exist

@@ -2,7 +2,7 @@
     "actions": [],
     "allow_rename": 0,
     "autoname": "format:BPJS-PAY-{#####}",
-    "creation": "2025-04-27 10:39:24",
+    "creation": "2025-05-08 10:56:56",
     "doctype": "DocType",
     "engine": "InnoDB",
     "field_order": [
@@ -17,6 +17,12 @@
         "year",
         "month_name",
         "month_year_title",
+        "data_section",
+        "fetch_data",
+        "salary_slip_filter",
+        "column_break_data",
+        "last_synced",
+        "refresh_data",
         "component_section",
         "komponen",
         "employee_section",
@@ -81,10 +87,11 @@
         },
         {
             "fieldname": "month",
-            "fieldtype": "Int",
+            "fieldtype": "Select",
             "label": "Month",
             "in_list_view": 1,
             "in_standard_filter": 1,
+            "options": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12",
             "reqd": 1
         },
         {
@@ -106,6 +113,39 @@
             "fieldtype": "Data",
             "label": "Title",
             "read_only": 1
+        },
+        {
+            "fieldname": "data_section",
+            "fieldtype": "Section Break",
+            "label": "Data dari Salary Slip",
+            "collapsible": 0
+        },
+        {
+            "fieldname": "fetch_data",
+            "fieldtype": "Button",
+            "label": "Ambil Data dari Salary Slip"
+        },
+        {
+            "fieldname": "salary_slip_filter",
+            "fieldtype": "Select",
+            "label": "Filter Salary Slip",
+            "options": "Periode Saat Ini\nPeriode Kustom\nSemua Slip Belum Terbayar",
+            "default": "Periode Saat Ini"
+        },
+        {
+            "fieldname": "column_break_data",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "last_synced",
+            "fieldtype": "Datetime",
+            "label": "Terakhir Diupdate",
+            "read_only": 1
+        },
+        {
+            "fieldname": "refresh_data",
+            "fieldtype": "Button",
+            "label": "Refresh Data"
         },
         {
             "fieldname": "component_section",
@@ -175,7 +215,7 @@
     ],
     "is_submittable": 1,
     "links": [],
-    "modified": "2025-04-27 10:39:24",
+    "modified": "2025-05-08 10:56:56",
     "modified_by": "dannyaudian",
     "module": "Payroll Indonesia",
     "name": "BPJS Payment Summary",
