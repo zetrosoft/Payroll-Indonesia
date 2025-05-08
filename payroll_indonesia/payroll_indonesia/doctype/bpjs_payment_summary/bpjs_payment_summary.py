@@ -725,7 +725,11 @@ class BPJSPaymentSummary(Document):
     def _get_filtered_salary_slips(self):
         """Get salary slips based on filter criteria"""
         filters = {"docstatus": 1, "company": self.company}
-        
+    
+        # Convert month and year to integers
+        month = int(self.month) if isinstance(self.month, str) else self.month
+        year = int(self.year) if isinstance(self.year, str) else self.year
+    
         # Add date-based filters
         if hasattr(self, 'salary_slip_filter') and self.salary_slip_filter:
             if self.salary_slip_filter == "Periode Saat Ini":
@@ -734,8 +738,8 @@ class BPJSPaymentSummary(Document):
                     "start_date": [
                         "between", 
                         [
-                            f"{self.year}-{self.month:02d}-01", 
-                            frappe.utils.get_last_day(f"{self.year}-{self.month:02d}-01")
+                            f"{year}-{month:02d}-01", 
+                            frappe.utils.get_last_day(f"{year}-{month:02d}-01")
                         ]
                     ]
                 })
@@ -752,8 +756,8 @@ class BPJSPaymentSummary(Document):
                         "start_date": [
                             "between", 
                             [
-                                f"{self.year}-{self.month:02d}-01", 
-                                frappe.utils.get_last_day(f"{self.year}-{self.month:02d}-01")
+                                f"{year}-{month:02d}-01", 
+                                frappe.utils.get_last_day(f"{year}-{month:02d}-01")
                             ]
                         ]
                     })
@@ -763,38 +767,16 @@ class BPJSPaymentSummary(Document):
                 # and filter later in code
                 pass
         else:
-            # Default to current month
+            # Default to current month - convert month and year to integers
             filters.update({
                 "start_date": [
                     "between", 
                     [
-                        f"{self.year}-{self.month:02d}-01", 
-                        frappe.utils.get_last_day(f"{self.year}-{self.month:02d}-01")
+                        f"{year}-{month:02d}-01", 
+                        frappe.utils.get_last_day(f"{year}-{month:02d}-01")
                     ]
                 ]
             })
-        
-        # Get salary slips
-        salary_slips = frappe.get_all(
-            "Salary Slip",
-            filters=filters,
-            fields=["name", "employee", "employee_name", "start_date", "end_date"]
-        )
-        
-        # For "Semua Slip Belum Terbayar" filter, filter out slips already linked to other BPJS payments
-        if hasattr(self, 'salary_slip_filter') and self.salary_slip_filter == "Semua Slip Belum Terbayar":
-            # Get list of salary slips already linked to BPJS payments
-            linked_slips = frappe.get_all(
-                "BPJS Payment Summary Detail",
-                filters={"docstatus": 1},
-                fields=["salary_slip"]
-            )
-            linked_slip_names = [slip.salary_slip for slip in linked_slips if slip.salary_slip]
-            
-            # Filter out already linked slips
-            salary_slips = [slip for slip in salary_slips if slip.name not in linked_slip_names]
-        
-        return salary_slips
     
     def _extract_bpjs_from_salary_slip(self, slip):
         """Extract BPJS data from a salary slip"""
