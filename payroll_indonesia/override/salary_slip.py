@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 02:42:20 by dannyaudian
+# Last modified: 2025-05-08 09:25:41 by dannyaudian
 
 import frappe
 from frappe import _
@@ -32,13 +32,14 @@ from payroll_indonesia.override.salary_slip.bpjs_calculator import (
 # Import functions from support modules with better error handling and cache TER rates
 _ter_rate_cache = {}
 _ytd_tax_cache = {}
+_ptkp_mapping_cache = None  # Added for PMK 168/2023 TER mapping
 
 try:
     debug_log("Starting imports from payroll_indonesia modules")
     
     from payroll_indonesia.override.salary_slip.base import get_formatted_currency, get_component_amount, update_component_amount
     from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
-    from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter, should_use_ter_method, get_ter_rate
+    from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter, should_use_ter_method, get_ter_rate, map_ptkp_to_ter_category
     
     # Direct import for BPJS calculation to ensure it's always available
     from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
@@ -60,6 +61,14 @@ except ImportError as e:
     def calculate_tax_components(doc, employee):
         debug_log(f"Using placeholder calculate_tax_components for employee {employee.name if hasattr(employee, 'name') else 'unknown'}")
         pass
+    
+    def map_ptkp_to_ter_category(status_pajak):
+        """
+        Fallback placeholder for mapping PTKP status to TER category
+        Returns TER C as the safest default
+        """
+        debug_log(f"Using placeholder map_ptkp_to_ter_category for {status_pajak}")
+        return "TER C"
 
 
 class IndonesiaPayrollSalarySlip(SalarySlip):
@@ -70,7 +79,8 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     Key features for Indonesian payroll:
     - BPJS calculations (Kesehatan, JHT, JP, JKK, JKM)
     - PPh 21 tax calculations with gross or gross-up methods
-    - TER (Tax Equal Rate) method support per PMK-168/PMK.010/2023
+    - TER (Tarif Efektif Rata-rata) method support per PMK 168/PMK.010/2023
+      - Implemented with 3 TER categories (TER A, TER B, TER C) based on PTKP
     - Integration with Employee Tax Summary
     """
     def validate(self):
@@ -184,11 +194,21 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             
             if not pph_settings.get('use_ter'):
                 return "PROGRESSIVE"
+            
+            # Special check for December - Always use Progressive for December per PMK 168/2023
+            if self.end_date and getdate(self.end_date).month == 12:
+                debug_log(f"December month detected for {self.name} - Using Progressive method as required by PMK 168/2023")
+                return "PROGRESSIVE"
         
             # Check if TER method is enabled globally
             if pph_settings.get('calculation_method') == "TER" and pph_settings.get('use_ter'):
                 # Check if employee is eligible for TER - using an optimized check
                 if self._is_eligible_for_ter(employee):
+                    # Map PTKP status to TER category for reference
+                    if hasattr(employee, 'status_pajak'):
+                        ter_category = map_ptkp_to_ter_category(employee.status_pajak)
+                        self.ter_category = ter_category
+                        debug_log(f"Using TER method ({ter_category}) for {self.name} based on status_pajak {employee.status_pajak}")
                     return "TER"
         
             # Default to progressive method
@@ -212,6 +232,10 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         if hasattr(employee, 'override_tax_method') and employee.override_tax_method == "Progressive":
             return False
             
+        # Per PMK 168/2023, check if December (always use Progressive in December)
+        if self.end_date and getdate(self.end_date).month == 12:
+            return False
+            
         return True
 
     def calculate_tax_with_strategy(self, strategy, employee):
@@ -224,6 +248,8 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         if strategy == "TER":
             from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter
             debug_log(f"Calculating tax with TER for {self.name}")
+            
+            # Pass TER category if already mapped
             calculate_monthly_pph_with_ter(self, employee)
         else:
             from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
@@ -335,9 +361,14 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 queued_docs_text = ", ".join(queued_docs)
                 memory_estimate = self._estimate_memory_usage()
                 
+                # Include TER category information if using TER
+                ter_info = ""
+                if hasattr(self, 'is_using_ter') and self.is_using_ter and hasattr(self, 'ter_category'):
+                    ter_info = f" Menggunakan {self.ter_category} sesuai PMK 168/2023."
+                
                 note = (
                     f"\n[{timestamp}] Submit berhasil: Dokumen dijadwalkan: {queued_docs_text}. "
-                    f"Periode: {month:02d}/{year}. "
+                    f"Periode: {month:02d}/{year}.{ter_info} "
                 )
                 
                 if memory_estimate:
@@ -501,6 +532,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             'total_bpjs': 0,
             'is_using_ter': 0,
             'ter_rate': 0,
+            'ter_category': "", # Added for PMK 168/2023
             'koreksi_pph21': 0,
             'payroll_note': "",
             'npwp': "",
@@ -776,9 +808,10 @@ except Exception as e:
 # Clear caches periodically
 def clear_caches():
     """Clear TER rate and YTD tax caches to prevent memory bloat"""
-    global _ter_rate_cache, _ytd_tax_cache
+    global _ter_rate_cache, _ytd_tax_cache, _ptkp_mapping_cache
     _ter_rate_cache = {}
     _ytd_tax_cache = {}
+    _ptkp_mapping_cache = None
     
     # Schedule next cleanup in 30 minutes
     frappe.enqueue(clear_caches, queue='long', job_name='clear_payroll_caches', is_async=True, now=False, 
