@@ -12,6 +12,19 @@ from .bpjs_payment_validation import create_bpjs_supplier
 
 class BPJSPaymentSummary(Document):
     def validate(self):
+        # Ensure month and year are integers
+        if self.month and isinstance(self.month, str):
+            try:
+                self.month = int(self.month)
+            except (ValueError, TypeError):
+                frappe.throw(_("Month must be a valid number"))
+    
+        if self.year and isinstance(self.year, str):
+            try:
+                self.year = int(self.year)
+            except (ValueError, TypeError):
+                frappe.throw(_("Year must be a valid number"))
+                
         self.set_missing_values()
         self.validate_company()
         self.validate_month_year()
