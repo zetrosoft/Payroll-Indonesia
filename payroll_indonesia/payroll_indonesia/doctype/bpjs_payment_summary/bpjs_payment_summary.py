@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-08 11:02:01 by dannyaudian
+# Last modified: 2025-05-08 12:30:15 by dannyaudian
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import today, flt, fmt_money, getdate, now_datetime, add_months, format_date
+from frappe.utils import today, flt, fmt_money, getdate, now_datetime, add_months, format_date, get_last_day
 from .bpjs_payment_utils import get_formatted_currency, debug_log
 from .bpjs_payment_validation import create_bpjs_supplier
 
@@ -48,14 +48,16 @@ class BPJSPaymentSummary(Document):
                 'September', 'Oktober', 'November', 'Desember'
             ]
             
-            if self.month >= 1 and self.month <= 12:
+            # Ensure month is an integer and within range
+            month = int(self.month) if isinstance(self.month, str) else self.month
+            if month >= 1 and month <= 12:
                 # Set month_name if field exists
                 if hasattr(self, 'month_name'):
-                    self.month_name = month_names[self.month - 1]
+                    self.month_name = month_names[month - 1]
                 
                 # Set month_year_title if field exists
                 if hasattr(self, 'month_year_title'):
-                    self.month_year_title = f"{month_names[self.month - 1]} {self.year}"
+                    self.month_year_title = f"{month_names[month - 1]} {self.year}"
             
         # Ensure amount is always populated
         if not hasattr(self, 'amount') or not self.amount or flt(self.amount) <= 0:
@@ -85,9 +87,14 @@ class BPJSPaymentSummary(Document):
         """Ensure month and year are valid"""
         if not self.month or not self.year:
             frappe.throw(_("Both Month and Year are mandatory"))
-        if self.month < 1 or self.month > 12:
+        
+        # Make sure we're comparing integers
+        month = int(self.month) if isinstance(self.month, str) else self.month
+        year = int(self.year) if isinstance(self.year, str) else self.year
+        
+        if month < 1 or month > 12:
             frappe.throw(_("Month must be between 1 and 12"))
-        if self.year < 2000:
+        if year < 2000:
             frappe.throw(_("Year must be greater than or equal to 2000"))
     
     def check_and_generate_components(self):
@@ -404,13 +411,16 @@ class BPJSPaymentSummary(Document):
         # Format reference naming according to standard
         month_names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
                       'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-        month_name = month_names[self.month - 1] if self.month >= 1 and self.month <= 12 else str(self.month)
+        
+        # Make sure month is an integer and within range
+        month = int(self.month) if isinstance(self.month, str) else self.month
+        month_name = month_names[month - 1] if month >= 1 and month <= 12 else str(month)
         
         self.append("account_details", {
             "account_type": account_type,
             "account": account,
             "amount": amount,
-            "reference_number": f"BPJS-{account_type}-{self.month}-{self.year}",
+            "reference_number": f"BPJS-{account_type}-{month}-{self.year}",
             "description": f"BPJS {account_type} {month_name} {self.year}"
         })
         
@@ -468,7 +478,10 @@ class BPJSPaymentSummary(Document):
             # Format month name for description
             month_names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
                           'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-            month_name = month_names[self.month - 1] if self.month >= 1 and self.month <= 12 else str(self.month)
+                          
+            # Make sure month is an integer
+            month = int(self.month) if isinstance(self.month, str) else self.month
+            month_name = month_names[month - 1] if month >= 1 and month <= 12 else str(month)
             
             je.user_remark = f"BPJS Contributions for {month_name} {self.year}"
             
@@ -620,10 +633,13 @@ class BPJSPaymentSummary(Document):
             # Format for custom reference number
             month_names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
                           'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-            month_name = month_names[self.month - 1] if self.month >= 1 and self.month <= 12 else str(self.month)
+            
+            # Make sure month is an integer
+            month = int(self.month) if isinstance(self.month, str) else self.month
+            month_name = month_names[month - 1] if month >= 1 and month <= 12 else str(month)
             
             # Set reference details
-            pe.reference_no = f"BPJS-{self.month}-{self.year}"
+            pe.reference_no = f"BPJS-{month}-{self.year}"
             pe.reference_date = today()
             
             # Add custom remarks with components
@@ -752,7 +768,7 @@ class BPJSPaymentSummary(Document):
                         "between", 
                         [
                             f"{year}-{month:02d}-01", 
-                            frappe.utils.get_last_day(f"{year}-{month:02d}-01")
+                            get_last_day(f"{year}-{month:02d}-01")
                         ]
                     ]
                 })
@@ -770,7 +786,7 @@ class BPJSPaymentSummary(Document):
                             "between", 
                             [
                                 f"{year}-{month:02d}-01", 
-                                frappe.utils.get_last_day(f"{year}-{month:02d}-01")
+                                get_last_day(f"{year}-{month:02d}-01")
                             ]
                         ]
                     })
@@ -786,10 +802,32 @@ class BPJSPaymentSummary(Document):
                     "between", 
                     [
                         f"{year}-{month:02d}-01", 
-                        frappe.utils.get_last_day(f"{year}-{month:02d}-01")
+                        get_last_day(f"{year}-{month:02d}-01")
                     ]
                 ]
             })
+        
+        # Get salary slips based on filters
+        salary_slips = frappe.get_all(
+            "Salary Slip",
+            filters=filters,
+            fields=["name", "employee", "employee_name", "start_date", "end_date"]
+        )
+        
+        # For "Semua Slip Belum Terbayar" filter, filter out slips already linked to other BPJS payments
+        if hasattr(self, 'salary_slip_filter') and self.salary_slip_filter == "Semua Slip Belum Terbayar":
+            # Get list of salary slips already linked to BPJS payments
+            linked_slips = frappe.get_all(
+                "BPJS Payment Summary Detail",
+                filters={"docstatus": 1, "salary_slip": ["is", "set"]},
+                fields=["salary_slip"]
+            )
+            linked_slip_names = [slip.salary_slip for slip in linked_slips if slip.salary_slip]
+            
+            # Filter out already linked slips
+            salary_slips = [slip for slip in salary_slips if slip.name not in linked_slip_names]
+            
+        return salary_slips
     
     def _extract_bpjs_from_salary_slip(self, slip):
         """Extract BPJS data from a salary slip"""
@@ -946,6 +984,8 @@ class BPJSPaymentSummary(Document):
                     'bpjs_jht_participation',
                     'bpjs_jp_participation',
                     'bpjs_kesehatan_participation',
+                    'ikut_bpjs_kesehatan',
+                    'ikut_bpjs_ketenagakerjaan',
                     'custom_bpjs_participation'
                 ]
                 
@@ -1085,22 +1125,22 @@ class BPJSPaymentSummary(Document):
             jkm_rate = 0.003  # 0.3%
             
             # Apply rates from BPJS settings if available
-            if hasattr(bpjs_settings, 'jht_employee_rate'):
-                jht_employee_rate = flt(bpjs_settings.jht_employee_rate) / 100
-            if hasattr(bpjs_settings, 'jht_employer_rate'):
-                jht_employer_rate = flt(bpjs_settings.jht_employer_rate) / 100
-            if hasattr(bpjs_settings, 'jp_employee_rate'):
-                jp_employee_rate = flt(bpjs_settings.jp_employee_rate) / 100
-            if hasattr(bpjs_settings, 'jp_employer_rate'):
-                jp_employer_rate = flt(bpjs_settings.jp_employer_rate) / 100
-            if hasattr(bpjs_settings, 'kesehatan_employee_rate'):
-                kesehatan_employee_rate = flt(bpjs_settings.kesehatan_employee_rate) / 100
-            if hasattr(bpjs_settings, 'kesehatan_employer_rate'):
-                kesehatan_employer_rate = flt(bpjs_settings.kesehatan_employer_rate) / 100
-            if hasattr(bpjs_settings, 'jkk_rate'):
-                jkk_rate = flt(bpjs_settings.jkk_rate) / 100
-            if hasattr(bpjs_settings, 'jkm_rate'):
-                jkm_rate = flt(bpjs_settings.jkm_rate) / 100
+            if hasattr(bpjs_settings, 'jht_employee_percent'):
+                jht_employee_rate = flt(bpjs_settings.jht_employee_percent) / 100
+            if hasattr(bpjs_settings, 'jht_employer_percent'):
+                jht_employer_rate = flt(bpjs_settings.jht_employer_percent) / 100
+            if hasattr(bpjs_settings, 'jp_employee_percent'):
+                jp_employee_rate = flt(bpjs_settings.jp_employee_percent) / 100
+            if hasattr(bpjs_settings, 'jp_employer_percent'):
+                jp_employer_rate = flt(bpjs_settings.jp_employer_percent) / 100
+            if hasattr(bpjs_settings, 'kesehatan_employee_percent'):
+                kesehatan_employee_rate = flt(bpjs_settings.kesehatan_employee_percent) / 100
+            if hasattr(bpjs_settings, 'kesehatan_employer_percent'):
+                kesehatan_employer_rate = flt(bpjs_settings.kesehatan_employer_percent) / 100
+            if hasattr(bpjs_settings, 'jkk_percent'):
+                jkk_rate = flt(bpjs_settings.jkk_percent) / 100
+            if hasattr(bpjs_settings, 'jkm_percent'):
+                jkm_rate = flt(bpjs_settings.jkm_percent) / 100
             
             # Calculate BPJS amounts
             result = {
@@ -1139,10 +1179,15 @@ def get_company_bpjs_account_mapping(company):
         cache_key = f"bpjs_mapping_{company}"
         mapping_dict = frappe.cache().get_value(cache_key)
         
-        if mapping_dict and mapping_dict.get("name"):
-            mapping = frappe.get_doc("BPJS Account Mapping", mapping_dict.get("name"))
-            if mapping:
-                return mapping
+        if mapping_dict and isinstance(mapping_dict, dict) and mapping_dict.get("name"):
+            # Convert back to document
+            try:
+                mapping = frappe.get_doc("BPJS Account Mapping", mapping_dict.get("name"))
+                if mapping:
+                    return mapping
+            except:
+                # Cache might be invalid, clear it
+                frappe.cache().delete_value(cache_key)
         
         # If no cache hit, query directly
         mapping = frappe.get_all(
@@ -1152,7 +1197,16 @@ def get_company_bpjs_account_mapping(company):
         )
         
         if mapping:
-            return frappe.get_doc("BPJS Account Mapping", mapping[0].name)
+            result = frappe.get_doc("BPJS Account Mapping", mapping[0].name)
+            
+            # Update cache
+            frappe.cache().set_value(cache_key, {
+                "name": result.name,
+                "creation": result.creation,
+                "modified": result.modified
+            })
+            
+            return result
             
         return None
     except Exception as e:
@@ -1189,7 +1243,7 @@ def get_bpjs_suppliers():
         )
         return []
 
-# Add module-level validate function to fix the error
+# Add module-level validate function for compatibility 
 @frappe.whitelist()
 def validate(doc, method=None):
     """
