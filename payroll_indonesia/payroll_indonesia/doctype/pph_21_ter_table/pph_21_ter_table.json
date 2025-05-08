@@ -19,46 +19,47 @@
             "fieldtype": "Select",
             "in_list_view": 1,
             "in_standard_filter": 1,
-            "label": "Status Pajak",
-            "options": "TK0\nTK1\nTK2\nTK3\nK0\nK1\nK2\nK3\nHB0\nHB1\nHB2\nHB3",
+            "label": "Kategori TER",
+            "options": "TER A\nTER B\nTER C",
             "reqd": 1
         },
         {
             "fieldname": "income_from",
             "fieldtype": "Currency",
             "in_list_view": 1,
-            "label": "Income From",
+            "label": "Pendapatan Dari",
             "reqd": 1
         },
         {
             "fieldname": "income_to",
             "fieldtype": "Currency",
             "in_list_view": 1,
-            "label": "Income To",
+            "label": "Pendapatan Hingga",
             "reqd": 1
         },
         {
             "fieldname": "rate",
             "fieldtype": "Percent",
             "in_list_view": 1,
-            "label": "TER Rate (%)",
+            "label": "Tarif TER (%)",
             "reqd": 1
         },
         {
             "default": "0",
             "fieldname": "is_highest_bracket",
             "fieldtype": "Check",
-            "label": "Is Highest Bracket"
+            "label": "Apakah Bracket Tertinggi"
         },
         {
             "fieldname": "description",
             "fieldtype": "Small Text",
-            "label": "Description",
+            "label": "Deskripsi",
+            "default": "Kategori TER berdasarkan PMK 168/2023 untuk perhitungan PPh 21.",
             "read_only": 1
         }
     ],
     "links": [],
-    "modified": "2025-04-23 12:17:47",
+    "modified": "2025-05-08 08:32:45",
     "modified_by": "Administrator",
     "module": "Payroll Indonesia",
     "name": "PPh 21 TER Table",

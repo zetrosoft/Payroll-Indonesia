@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 18:55:10 by dannyaudian
+# Last modified: 2025-05-08 08:34:19 by dannyaudian
 
 from __future__ import unicode_literals
 import frappe
@@ -23,7 +23,12 @@ class PPh21TERTable(Document):
         
         # Validate required fields
         if not self.status_pajak:
-            frappe.throw(_("Tax Status (status_pajak) is required"))
+            frappe.throw(_("Kategori TER is required"))
+            
+        # Validate status_pajak value is among allowed options
+        allowed_ter_categories = ["TER A", "TER B", "TER C"]
+        if self.status_pajak not in allowed_ter_categories:
+            frappe.throw(_("Kategori TER must be one of: {0}").format(", ".join(allowed_ter_categories)))
             
         # Validate rate is within acceptable range
         if self.rate < 0 or self.rate > 100:
@@ -50,10 +55,10 @@ class PPh21TERTable(Document):
     def validate_range(self):
         """Validate income range"""
         if self.income_from < 0:
-            frappe.throw(_("Income From cannot be negative"))
+            frappe.throw(_("Pendapatan Dari cannot be negative"))
         
         if self.income_to > 0 and self.income_from >= self.income_to:
-            frappe.throw(_("Income From must be less than Income To"))
+            frappe.throw(_("Pendapatan Dari must be less than Pendapatan Hingga"))
         
         # For highest bracket, income_to should be 0
         if self.income_to == 0 and not self.is_highest_bracket:
@@ -80,7 +85,7 @@ class PPh21TERTable(Document):
         
         if exists:
             frappe.throw(_(
-                "Duplicate TER rate exists for status {0} with range {1} to {2}"
+                "Duplicate TER rate exists for category {0} with range {1} to {2}"
             ).format(
                 self.status_pajak,
                 format_currency(self.income_from),
@@ -98,7 +103,7 @@ class PPh21TERTable(Document):
             
             # Check if status_pajak exists in configuration
             if self.status_pajak not in ter_rates:
-                debug_log(f"Status {self.status_pajak} not found in TER configuration", "PPh 21 TER Table")
+                debug_log(f"Category {self.status_pajak} not found in TER configuration", "PPh 21 TER Table")
                 return
             
             # Check if this range exists in configuration
@@ -128,6 +133,9 @@ class PPh21TERTable(Document):
     
     def generate_description(self):
         """Set the description automatically with proper formatting"""
+        # Get TER category explanation
+        ter_explanation = self.get_ter_category_explanation()
+        
         # Generate the income range part of the description
         if self.income_from == 0:
             # Starting from 0
@@ -144,7 +152,16 @@ class PPh21TERTable(Document):
             income_range = f"Rp{format_currency(self.income_from)}-Rp{format_currency(self.income_to)}"
         
         # Set the description
-        self.description = f"{self.status_pajak} {income_range}"
+        self.description = f"{self.status_pajak}: {ter_explanation}, {income_range}, Tarif: {self.rate}%"
+    
+    def get_ter_category_explanation(self):
+        """Get explanation for TER category"""
+        explanations = {
+            "TER A": "PTKP TK/0 (Rp 54 juta/tahun)",
+            "TER B": "PTKP K/0, TK/1 (Rp 58,5 juta/tahun)",
+            "TER C": "PTKP K/1, TK/2, K/2, TK/3, K/3, dst (Rp 63 juta+/tahun)"
+        }
+        return explanations.get(self.status_pajak, "")
     
     def before_save(self):
         """
