@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 18:35:15 by dannyaudian
+# Last modified: 2025-05-08 10:03:33 by dannyaudian
 
 import frappe
 from frappe import _
 import json
 import os
-from frappe.utils import flt
+from frappe.utils import flt, getdate
 
 # Import from centralized utils module
 from payroll_indonesia.payroll_indonesia.utils import (
@@ -32,8 +32,16 @@ def after_sync():
             debug_log("BPJS setup completed successfully", "BPJS Setup")
         else:
             debug_log("BPJS setup completed with warnings", "BPJS Setup")
+            
+        # Setup PPh 21 with PMK 168/2023 TER categories
+        debug_log("Starting PPh 21 TER setup for PMK 168/2023", "PPh 21 Setup")
+        pph21_success = setup_pph21_ter_categories()
+        if pph21_success:
+            debug_log("PPh 21 TER setup completed successfully", "PPh 21 Setup")
+        else:
+            debug_log("PPh 21 TER setup completed with warnings", "PPh 21 Setup")
     except Exception as e:
-        frappe.log_error(f"BPJS Setup Error: {str(e)}", "BPJS Setup")
+        frappe.log_error(f"Setup Error: {str(e)}", "Module Setup")
         raise
 
 def create_bpjs_accounts():
@@ -285,130 +293,320 @@ def setup_company_bpjs(company, bpjs_settings):
         debug_log(f"Error in setup_company_bpjs for {company}: {str(e)}", "BPJS Setup Error", trace=True)
         return False
 
-# Additional setup functions can be added here
-def setup_pph21_defaults():
-    """Setup PPh 21 default settings and configurations"""
+def setup_pph21_ter_categories():
+    """
+    Setup or update PPh 21 TER categories based on PMK 168/2023
+    
+    Updates TER settings with new TER A, B, C categories
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
-        debug_log("Setting up PPh 21 defaults", "PPh21 Setup")
+        debug_log("Setting up PMK 168/2023 TER categories", "PPh 21 Setup")
         
-        # Check if PPh 21 Settings already exist
-        if frappe.db.exists("DocType", "PPh 21 Settings") and frappe.db.get_all("PPh 21 Settings"):
-            debug_log("PPh 21 Settings already exist, skipping setup", "PPh21 Setup")
+        # Check if PMK 168 implementation is needed
+        has_ter_a = frappe.db.exists("PPh 21 TER Table", {"status_pajak": "TER A"})
+        has_ter_b = frappe.db.exists("PPh 21 TER Table", {"status_pajak": "TER B"})
+        has_ter_c = frappe.db.exists("PPh 21 TER Table", {"status_pajak": "TER C"})
+        
+        if has_ter_a and has_ter_b and has_ter_c:
+            debug_log("PMK 168/2023 TER categories (A, B, C) are already set up", "PPh 21 Setup")
             return True
         
-        # Get PPh 21 configuration from centralized config
-        tax_config = get_default_config("tax")
-        if not tax_config:
-            debug_log("Missing PPh 21 configuration in defaults.json, skipping setup", "PPh21 Setup Error")
+        # Get configuration from defaults.json
+        config = get_default_config()
+        if not config:
+            debug_log("No defaults.json configuration found", "PPh 21 Setup Error")
             return False
         
-        # Create PPh 21 Settings
-        settings = frappe.new_doc("PPh 21 Settings")
+        # Check if ter_rates are defined
+        ter_rates = config.get("ter_rates", {})
+        if not ter_rates:
+            debug_log("No TER rates found in configuration", "PPh 21 Setup Error")
+            return False
+            
+        # Setup TER rate categories
+        setup_ter_categories_for_pmk168(ter_rates)
         
-        # Set basic properties
-        settings.calculation_method = tax_config.get("tax_calculation_method", "Progressive")
-        settings.use_ter = tax_config.get("use_ter", 0)
+        # Setup PTKP to TER mapping
+        ptkp_to_ter_mapping = config.get("ptkp_to_ter_mapping", {})
+        if ptkp_to_ter_mapping:
+            setup_ptkp_ter_mapping(ptkp_to_ter_mapping)
+            
+        # Update PPh 21 Settings notes to reference PMK 168/2023
+        update_pph21_settings_notes()
         
-        # Additional config based on config data
-        # (This would depend on the specific fields in the PPh 21 Settings DocType)
+        debug_log("PMK 168/2023 TER categories setup completed successfully", "PPh 21 Setup")
+        return True
+        
+    except Exception as e:
+        frappe.log_error(f"Error setting up PMK 168/2023 TER categories: {str(e)}", "PPh 21 Setup Error")
+        debug_log(f"Error setting up PMK 168/2023 TER categories: {str(e)}", "PPh 21 Setup Error", trace=True)
+        return False
+
+def setup_ter_categories_for_pmk168(ter_rates):
+    """
+    Setup TER categories for PMK 168/2023 (TER A, B, C)
+    
+    Args:
+        ter_rates (dict): Configuration for TER rates by category
+        
+    Returns:
+        int: Number of TER entries created
+    """
+    try:
+        debug_log("Setting up TER rate categories", "PPh 21 Setup")
+        
+        # Check if PPh 21 TER Table DocType exists
+        if not frappe.db.exists("DocType", "PPh 21 TER Table"):
+            debug_log("PPh 21 TER Table DocType not found", "PPh 21 Setup Error")
+            return 0
+            
+        # Delete existing entries for TER A, B, C if any exist
+        for category in ["TER A", "TER B", "TER C"]:
+            if frappe.db.exists("PPh 21 TER Table", {"status_pajak": category}):
+                debug_log(f"Clearing existing {category} rates", "PPh 21 Setup")
+                frappe.db.sql(f"DELETE FROM `tabPPh 21 TER Table` WHERE status_pajak = '{category}'")
+        
+        # Create category description mapping
+        category_descriptions = {
+            "TER A": "PTKP TK/0 (Rp 54 juta/tahun)",
+            "TER B": "PTKP K/0, TK/1, TK/2, K/1 (Rp 58,5-63 juta/tahun)",
+            "TER C": "PTKP nilai tinggi (> Rp 63 juta/tahun)"
+        }
+        
+        # Track total entries created
+        count = 0
+        
+        # Create TER entries for each category
+        for category, rates in ter_rates.items():
+            if category not in ["TER A", "TER B", "TER C"]:
+                debug_log(f"Skipping unsupported category: {category}", "PPh 21 Setup")
+                continue
+                
+            # Get category description
+            category_desc = category_descriptions.get(category, "")
+            
+            # Create entries for this category
+            for rate_data in rates:
+                try:
+                    # Determine if this is the highest bracket
+                    is_highest = "is_highest_bracket" in rate_data and rate_data["is_highest_bracket"]
+                    if rate_data.get("income_to", 0) == 0:
+                        is_highest = True
+                    
+                    # Create description
+                    if rate_data["income_to"] == 0:
+                        description = f"{category_desc} - Penghasilan > Rp{rate_data['income_from']:,.0f}"
+                    elif rate_data["income_from"] == 0:
+                        description = f"{category_desc} - Penghasilan ≤ Rp{rate_data['income_to']:,.0f}"
+                    else:
+                        description = f"{category_desc} - Penghasilan Rp{rate_data['income_from']:,.0f}-Rp{rate_data['income_to']:,.0f}"
+                    
+                    # Create TER entry
+                    ter = frappe.get_doc({
+                        "doctype": "PPh 21 TER Table",
+                        "status_pajak": category,
+                        "income_from": flt(rate_data["income_from"]),
+                        "income_to": flt(rate_data["income_to"]),
+                        "rate": flt(rate_data["rate"]),
+                        "description": description,
+                        "is_highest_bracket": 1 if is_highest else 0,
+                        "pmk_168": 1  # Flag for PMK 168/2023
+                    })
+                    
+                    # Skip validation for bulk import
+                    ter.flags.ignore_validate = True
+                    ter.flags.ignore_mandatory = True
+                    ter.flags.ignore_permissions = True
+                    ter.insert(ignore_permissions=True)
+                    
+                    count += 1
+                except Exception as e:
+                    frappe.log_error(f"Error creating TER rate {category}: {str(e)}", "PPh 21 Setup Error")
+                    debug_log(f"Error creating TER rate {category}: {str(e)}", "PPh 21 Setup Error", trace=True)
+        
+        # Commit changes
+        frappe.db.commit()
+        debug_log(f"Created {count} TER entries for PMK 168/2023", "PPh 21 Setup")
+        return count
+        
+    except Exception as e:
+        frappe.db.rollback()
+        frappe.log_error(f"Error setting up TER categories: {str(e)}", "PPh 21 Setup Error")
+        debug_log(f"Error setting up TER categories: {str(e)}", "PPh 21 Setup Error", trace=True)
+        return 0
+
+def setup_ptkp_ter_mapping(mapping_data):
+    """
+    Setup PTKP to TER category mapping for PMK 168/2023
+    
+    Args:
+        mapping_data (dict): PTKP to TER mapping configuration
+        
+    Returns:
+        int: Number of mapping entries created
+    """
+    try:
+        debug_log("Setting up PTKP to TER mapping", "PPh 21 Setup")
+        
+        # Check if mapping DocType exists
+        mapping_doctype = "PTKP TER Mapping"
+        if not frappe.db.exists("DocType", mapping_doctype):
+            debug_log(f"{mapping_doctype} DocType not found, creating custom mapping", "PPh 21 Setup")
+            # Store in PPh 21 Settings as a field value instead
+            return setup_ptkp_ter_mapping_in_settings(mapping_data)
+        
+        # Clear existing mapping entries
+        frappe.db.sql(f"DELETE FROM `tab{mapping_doctype}`")
+        
+        # Create mapping for each PTKP status
+        count = 0
+        for ptkp_status, ter_category in mapping_data.items():
+            try:
+                # Create new mapping entry
+                mapping = frappe.get_doc({
+                    "doctype": mapping_doctype,
+                    "ptkp_status": ptkp_status,
+                    "ter_category": ter_category,
+                    "description": get_ptkp_description(ptkp_status, ter_category)
+                })
+                
+                # Insert with permission bypass
+                mapping.flags.ignore_permissions = True
+                mapping.flags.ignore_validate = True
+                mapping.insert(ignore_permissions=True)
+                
+                count += 1
+            except Exception as e:
+                frappe.log_error(f"Error creating mapping for {ptkp_status}: {str(e)}", "PPh 21 Setup Error")
+                debug_log(f"Error creating mapping for {ptkp_status}: {str(e)}", "PPh 21 Setup Error", trace=True)
+        
+        # Commit changes
+        frappe.db.commit()
+        debug_log(f"Created {count} PTKP to TER mappings for PMK 168/2023", "PPh 21 Setup")
+        return count
+        
+    except Exception as e:
+        frappe.db.rollback()
+        frappe.log_error(f"Error setting up PTKP to TER mapping: {str(e)}", "PPh 21 Setup Error")
+        debug_log(f"Error setting up PTKP to TER mapping: {str(e)}", "PPh 21 Setup Error", trace=True)
+        return 0
+
+def setup_ptkp_ter_mapping_in_settings(mapping_data):
+    """
+    Store PTKP to TER mapping as a JSON field in PPh 21 Settings
+    
+    Args:
+        mapping_data (dict): PTKP to TER mapping configuration
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        if not frappe.db.exists("PPh 21 Settings", "PPh 21 Settings"):
+            debug_log("PPh 21 Settings not found", "PPh 21 Setup")
+            return False
+            
+        # Get settings
+        settings = frappe.get_doc("PPh 21 Settings", "PPh 21 Settings")
+        
+        # Store mapping as a JSON field
+        if hasattr(settings, 'ptkp_ter_mapping_json'):
+            settings.ptkp_ter_mapping_json = json.dumps(mapping_data)
+        else:
+            # Try setting as custom field
+            settings.set('ptkp_ter_mapping_json', json.dumps(mapping_data))
         
         # Save settings
         settings.flags.ignore_validate = True
-        settings.flags.ignore_mandatory = True
-        settings.insert(ignore_permissions=True)
+        settings.flags.ignore_permissions = True
+        settings.save(ignore_permissions=True)
+        
+        debug_log(f"Stored PTKP to TER mapping in PPh 21 Settings", "PPh 21 Setup")
         frappe.db.commit()
-        
-        # Setup additional components
-        setup_pph21_brackets(settings)
-        setup_pph21_ter_rates(settings)
-        
-        debug_log("PPh 21 setup completed", "PPh21 Setup")
         return True
         
     except Exception as e:
         frappe.db.rollback()
-        frappe.log_error(f"Error in setup_pph21_defaults: {str(e)}", "PPh21 Setup")
-        debug_log(f"Error in setup_pph21_defaults: {str(e)}", "PPh21 Setup Error", trace=True)
+        frappe.log_error(f"Error setting up PTKP to TER mapping in settings: {str(e)}", "PPh 21 Setup Error")
+        debug_log(f"Error setting up PTKP to TER mapping in settings: {str(e)}", "PPh 21 Setup Error", trace=True)
         return False
 
-def setup_pph21_brackets(settings):
-    """Setup PPh 21 tax brackets"""
+def get_ptkp_description(ptkp_status, ter_category):
+    """
+    Get description for PTKP to TER mapping based on status and category
+    
+    Args:
+        ptkp_status (str): PTKP status (e.g. 'TK0', 'K1')
+        ter_category (str): TER category (e.g. 'TER A', 'TER B')
+        
+    Returns:
+        str: Description for the mapping
+    """
+    # Generate description based on PTKP status
+    status_prefix = ptkp_status[:2] if len(ptkp_status) >= 2 else ptkp_status
+    tanggungan = ptkp_status[2:] if len(ptkp_status) > 2 else "0"
+    
+    # Get PTKP description
+    if status_prefix == "TK":
+        ptkp_desc = f"Tidak Kawin, {tanggungan} tanggungan"
+    elif status_prefix == "K":
+        ptkp_desc = f"Kawin, {tanggungan} tanggungan"
+    elif status_prefix == "HB":
+        ptkp_desc = f"Penghasilan istri digabung, {tanggungan} tanggungan"
+    else:
+        ptkp_desc = ptkp_status
+    
+    # Get TER category description
+    if ter_category == "TER A":
+        ter_desc = "TER A (PTKP TK/0 - Rp 54 juta/tahun)"
+    elif ter_category == "TER B":
+        ter_desc = "TER B (PTKP K/0, TK/1, TK/2, K/1 - Rp 58,5-63 juta/tahun)"
+    elif ter_category == "TER C":
+        ter_desc = "TER C (PTKP nilai tinggi > Rp 63 juta/tahun)"
+    else:
+        ter_desc = ter_category
+    
+    return f"{ptkp_desc} → {ter_desc} (PMK 168/2023)"
+
+def update_pph21_settings_notes():
+    """
+    Update PPh 21 Settings notes to reference PMK 168/2023
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
-        # Get tax brackets from centralized config
-        brackets = get_default_config("tax_brackets")
-        if not brackets:
-            debug_log("No tax brackets found in config, using defaults", "PPh21 Setup")
-            # Use default brackets if not in config
-            brackets = [
-                {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
-                {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
-                {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
-                {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
-                {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
-            ]
+        if not frappe.db.exists("PPh 21 Settings", "PPh 21 Settings"):
+            debug_log("PPh 21 Settings not found", "PPh 21 Setup")
+            return False
             
-        # Add brackets to settings
-        for bracket in brackets:
-            row = settings.append('tax_brackets', {})
-            row.income_from = flt(bracket.get("income_from", 0))
-            row.income_to = flt(bracket.get("income_to", 0))
-            row.tax_rate = flt(bracket.get("tax_rate", 0))
+        # Get settings
+        settings = frappe.get_doc("PPh 21 Settings", "PPh 21 Settings")
+        
+        # Update TER notes
+        if hasattr(settings, 'ter_notes'):
+            settings.ter_notes = "Tarif Efektif Rata-rata (TER) sesuai PMK-168/PMK.010/2023 dengan 3 kategori (TER A, B, C)"
+        
+        # Update description if available
+        if hasattr(settings, 'description'):
+            settings.description = "Pengaturan PPh 21 dengan implementasi PMK 168/2023 untuk Tarif Efektif Rata-rata (TER)"
         
         # Save settings
         settings.flags.ignore_validate = True
+        settings.flags.ignore_permissions = True
         settings.save(ignore_permissions=True)
+        
+        debug_log(f"Updated PPh 21 Settings notes with PMK 168/2023 reference", "PPh 21 Setup")
         frappe.db.commit()
-        
-        debug_log(f"Added {len(brackets)} tax brackets to PPh 21 Settings", "PPh21 Setup")
         return True
         
     except Exception as e:
-        frappe.log_error(f"Error in setup_pph21_brackets: {str(e)}", "PPh21 Setup")
-        debug_log(f"Error in setup_pph21_brackets: {str(e)}", "PPh21 Setup Error", trace=True)
-        return False
-
-def setup_pph21_ter_rates(settings):
-    """Setup PPh 21 TER rates"""
-    try:
-        # Get TER rates from centralized config
-        ter_rates = get_default_config("ter_rates")
-        if not ter_rates:
-            debug_log("No TER rates found in config, skipping TER setup", "PPh21 Setup")
-            return True
-            
-        # Check if PPh 21 TER Table DocType exists
-        if not frappe.db.exists("DocType", "PPh 21 TER Table"):
-            debug_log("PPh 21 TER Table DocType not found, skipping TER setup", "PPh21 Setup")
-            return False
-            
-        # Process each tax status and its rates
-        added_count = 0
-        for status, rates in ter_rates.items():
-            for rate_data in rates:
-                # Create new TER rate
-                ter_doc = frappe.new_doc("PPh 21 TER Table")
-                ter_doc.parent = "PPh 21 Settings"
-                ter_doc.parentfield = "ter_rates"
-                ter_doc.parenttype = "PPh 21 Settings"
-                
-                # Set fields
-                ter_doc.status_pajak = status
-                ter_doc.income_from = flt(rate_data.get("income_from", 0))
-                ter_doc.income_to = flt(rate_data.get("income_to", 0))
-                ter_doc.rate = flt(rate_data.get("rate", 0))
-                
-                # Insert document
-                ter_doc.insert(ignore_permissions=True)
-                added_count += 1
-        
-        if added_count > 0:
-            debug_log(f"Added {added_count} TER rates to PPh 21 Settings", "PPh21 Setup")
-        
-        return True
-        
-    except Exception as e:
-        frappe.log_error(f"Error in setup_pph21_ter_rates: {str(e)}", "PPh21 Setup")
-        debug_log(f"Error in setup_pph21_ter_rates: {str(e)}", "PPh21 Setup Error", trace=True)
+        frappe.db.rollback()
+        frappe.log_error(f"Error updating PPh 21 Settings notes: {str(e)}", "PPh 21 Setup Error")
+        debug_log(f"Error updating PPh 21 Settings notes: {str(e)}", "PPh 21 Setup Error", trace=True)
         return False
 
 def setup_salary_components():
@@ -425,12 +623,16 @@ def setup_salary_components():
         # Process earnings components
         earnings = components_config.get("earnings", [])
         for component in earnings:
-            create_salary_component(component, "earning")
+            create_salary_component(component, "Earning")
             
         # Process deduction components
         deductions = components_config.get("deductions", [])
         for component in deductions:
-            create_salary_component(component, "deduction")
+            # Add PMK 168/2023 reference for PPh 21
+            if component.get("name") == "PPh 21" and "supports_ter" in component and component["supports_ter"]:
+                component["description"] = "PPh 21 (PMK 168/2023) dengan kategori TER A, B, C"
+                
+            create_salary_component(component, "Deduction")
             
         debug_log("Salary components setup completed", "Payroll Setup")
         return True
@@ -447,22 +649,26 @@ def create_salary_component(component_config, component_type):
         if not name:
             return None
             
-        # Skip if component already exists
+        # Get existing component or create new
         if frappe.db.exists("Salary Component", name):
-            return None
-            
-        # Create new component
-        component = frappe.new_doc("Salary Component")
-        component.name = name
-        component.salary_component = name
+            component = frappe.get_doc("Salary Component", name)
+        else:
+            component = frappe.new_doc("Salary Component")
+            component.salary_component = name
+        
+        # Set component type
         component.type = component_type
+        
+        # Set abbreviation
+        if "abbr" in component_config:
+            component.salary_component_abbr = component_config.get("abbr")
+        else:
+            # Generate abbreviation if not provided
+            component.salary_component_abbr = name[:3].upper()
         
         # Set optional fields if provided
         if "description" in component_config:
             component.description = component_config.get("description")
-            
-        if "abbr" in component_config:
-            component.salary_component_abbr = component_config.get("abbr")
             
         if "round_to_nearest" in component_config:
             component.round_to_the_nearest_integer = component_config.get("round_to_nearest")
@@ -476,27 +682,30 @@ def create_salary_component(component_config, component_type):
         if "is_tax_applicable" in component_config:
             component.is_tax_applicable = component_config.get("is_tax_applicable")
             
-        if "is_income_tax_component" in component_config:
-            component.is_income_tax_component = component_config.get("is_income_tax_component")
+        if "variable_based_on_taxable_salary" in component_config:
+            component.variable_based_on_taxable_salary = component_config.get("variable_based_on_taxable_salary")
         
-        # Process accounts
-        accounts = component_config.get("accounts", [])
-        for account_config in accounts:
-            row = component.append('accounts', {})
+        # Special handling for PPh 21 with PMK 168/2023 TER categories
+        if name == "PPh 21" and "supports_ter" in component_config and component_config["supports_ter"]:
+            # Check if custom field exists
+            if frappe.db.exists("Custom Field", {"dt": "Salary Component", "fieldname": "supports_ter"}):
+                component.supports_ter = 1
             
-            # Set required fields
-            if "company" in account_config:
-                row.company = account_config.get("company")
-                
-            if "default_account" in account_config:
-                row.default_account = account_config.get("default_account")
+            # Set description if not already set
+            if not component.description:
+                component.description = "PPh 21 (PMK 168/2023) dengan kategori TER A, B, C"
         
-        # Insert with permission bypass
+        # Save component
         component.flags.ignore_validate = True
-        component.flags.ignore_mandatory = True
-        component.insert(ignore_permissions=True)
+        component.flags.ignore_permissions = True
         
-        debug_log(f"Created salary component: {name} ({component_type})", "Payroll Setup")
+        if component.is_new():
+            component.insert(ignore_permissions=True)
+            debug_log(f"Created salary component: {name}", "Payroll Setup")
+        else:
+            component.save(ignore_permissions=True)
+            debug_log(f"Updated salary component: {name}", "Payroll Setup")
+        
         return component
         
     except Exception as e:
