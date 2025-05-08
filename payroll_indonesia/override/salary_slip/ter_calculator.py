@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-08 08:50:03 by dannyaudian
+# Last modified: 2025-05-08 08:54:46 by dannyaudian
 
 import frappe
 from frappe import _
@@ -79,45 +79,30 @@ def map_ptkp_to_ter_category(status_pajak):
         # Try to get the mapping from cache first
         if _ptkp_mapping_cache is None:
             # Get mapping from defaults.json config
-            mapping = frappe.get_cached_value(
-                "Payroll Settings", 
-                "Payroll Settings", 
-                "ptkp_to_ter_mapping"
-            )
+            try:
+                from payroll_indonesia.payroll_indonesia.utils import get_default_config
+                config = get_default_config()
+                if config and "ptkp_to_ter_mapping" in config:
+                    mapping = config["ptkp_to_ter_mapping"]
+                else:
+                    mapping = None
+            except ImportError:
+                mapping = None
             
             if not mapping:
-                # Use frappe.get_single to get the config
-                try:
-                    config = frappe.get_single("Payroll Settings")
-                    if hasattr(config, 'ptkp_to_ter_mapping'):
-                        mapping = config.ptkp_to_ter_mapping
-                except Exception:
-                    pass
-                    
-            # If still no mapping, try to get from defaults.json via utility function
-            if not mapping:
-                try:
-                    from payroll_indonesia.payroll_indonesia.utils import get_default_config
-                    config = get_default_config()
-                    if config and "ptkp_to_ter_mapping" in config:
-                        mapping = config["ptkp_to_ter_mapping"]
-                except ImportError:
-                    pass
-                
-            # If all else fails, use hardcoded mapping based on PMK 168/2023
-            if not mapping:
+                # Use hardcoded mapping based on PMK 168/2023
                 mapping = {
                     # TER A: PTKP TK/0 (Rp 54 juta/tahun)
                     "TK0": "TER A",
                     
-                    # TER B: PTKP K/0, TK/1 (Rp 58,5 juta/tahun)
+                    # TER B: PTKP K/0, TK/1, TK/2, K/1 (Rp 58,5-63 juta/tahun)
                     "TK1": "TER B",
+                    "TK2": "TER B",
                     "K0": "TER B",
+                    "K1": "TER B",
                     
-                    # TER C: All other PTKP statuses
-                    "TK2": "TER B",  # Overlap with TER B for TK2
+                    # TER C: All other PTKP statuses with higher values
                     "TK3": "TER C",
-                    "K1": "TER B",   # Overlap with TER B for K1
                     "K2": "TER C", 
                     "K3": "TER C",
                     "HB0": "TER C",
@@ -214,24 +199,25 @@ def get_ter_rate(ter_category, income):
             else:
                 # As a last resort, use default rate from settings or hardcoded value
                 try:
-                    pph_settings = frappe.get_cached_value(
-                        "PPh 21 Settings", 
-                        "PPh 21 Settings", 
-                        "default_ter_rate",
-                        as_dict=False
-                    )
-                    
-                    if pph_settings:
-                        default_rate = flt(pph_settings)
+                    # Fall back to defaults.json values
+                    from payroll_indonesia.payroll_indonesia.utils import get_default_config
+                    config = get_default_config()
+                    if config and "ter_rates" in config and ter_category in config["ter_rates"]:
+                        # Get the highest rate from the category
+                        highest_rate = 0
+                        for rate_data in config["ter_rates"][ter_category]:
+                            if "is_highest_bracket" in rate_data and rate_data["is_highest_bracket"]:
+                                highest_rate = flt(rate_data["rate"])
+                                break
                         
-                        # Cache the result
-                        rate_value = default_rate / 100.0
-                        _ter_rate_cache[cache_key] = rate_value
-                        return rate_value
-                    else:
-                        # PMK 168/2023 highest rate is 34% for all categories
-                        _ter_rate_cache[cache_key] = 0.34
-                        return 0.34
+                        if highest_rate > 0:
+                            rate_value = highest_rate / 100.0
+                            _ter_rate_cache[cache_key] = rate_value
+                            return rate_value
+                    
+                    # PMK 168/2023 highest rate is 34% for all categories
+                    _ter_rate_cache[cache_key] = 0.34
+                    return 0.34
                         
                 except Exception:
                     # Last resort - use PMK 168/2023 highest rate
@@ -251,10 +237,12 @@ def get_ter_rate(ter_category, income):
 
 def should_use_ter_method(employee, pph_settings=None):
     """
-    Determine if TER method should be used for this employee - optimized version
+    Determine if TER method should be used for this employee according to PMK 168/2023
+    
     Args:
         employee: Employee document
         pph_settings: PPh 21 Settings document (optional)
+        
     Returns:
         bool: True if TER should be used, False otherwise
     """

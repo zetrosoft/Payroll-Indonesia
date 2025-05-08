@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 02:25:18 by dannyaudian
+# Last modified: 2025-05-08 08:54:46 by dannyaudian
 
 import frappe
 from frappe import _
@@ -10,7 +10,7 @@ from datetime import datetime
 
 def prepare_tax_report(year=None, company=None):
     """
-    Prepare annual tax reports for employees with improved implementation
+    Prepare annual tax reports for employees with PMK 168/2023 compliance
     
     This function should be called at the end of the tax year
     to prepare tax reports (form 1721-A1) for each employee
@@ -175,7 +175,7 @@ def prepare_tax_report(year=None, company=None):
         
         # Log summary
         log_message = (
-            f"Tax report preparation completed for {year}. "
+            f"Tax report preparation completed for {year} (PMK 168/2023). "
             f"Processed: {summary['processed']}/{summary['total_employees']}, "
             f"Errors: {summary['errors']}"
         )
@@ -240,7 +240,21 @@ def create_annual_tax_report(employee, year, tax_data):
             # Set tax status if field exists
             if hasattr(report_doc, 'tax_status'):
                 report_doc.tax_status = emp_doc.get("status_pajak", "TK0")
-        
+            
+            # Add TER information if field exists and TER is used
+            if hasattr(report_doc, 'ter_category') and tax_data.get('ter_used'):
+                try:
+                    # Map PTKP status to TER category
+                    from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
+                    ter_category = map_ptkp_to_ter_category(emp_doc.get("status_pajak", "TK0"))
+                    report_doc.ter_category = ter_category
+                except ImportError:
+                    # Fallback to simpler mapping if function not available
+                    if emp_doc.get("status_pajak") == "TK0":
+                        report_doc.ter_category = "TER A"
+                    else:
+                        report_doc.ter_category = "TER B"
+            
         # Insert document
         report_doc.insert(ignore_permissions=True)
         
@@ -286,6 +300,20 @@ def update_existing_tax_report(report_name, year):
             report_doc.tax_paid = flt(tax_data.get('already_paid', 0))
             report_doc.annual_tax = flt(tax_data.get('annual_tax', 0))
             
+            # Update TER information if field exists and TER is used
+            if hasattr(report_doc, 'ter_category') and tax_data.get('ter_used'):
+                try:
+                    # Get employee document
+                    emp_doc = frappe.get_doc("Employee", report_doc.employee)
+                    
+                    # Map PTKP status to TER category
+                    from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
+                    ter_category = map_ptkp_to_ter_category(emp_doc.get("status_pajak", "TK0"))
+                    report_doc.ter_category = ter_category
+                except Exception:
+                    # Silently ignore TER category update if it fails
+                    pass
+            
             # Update modification timestamps
             report_doc.modified = nowdate()
             
@@ -307,6 +335,7 @@ def update_existing_tax_report(report_name, year):
 def generate_form_1721_a1(employee=None, year=None):
     """
     Generate Form 1721-A1 (Annual Tax Form) for an employee or all employees
+    according to PMK 168/2023 requirements
     
     Args:
         employee (str, optional): Specific employee to generate form for
@@ -333,7 +362,7 @@ def generate_form_1721_a1(employee=None, year=None):
         employees = frappe.get_all(
             "Employee",
             filters={"status": "Active"},
-            fields=["name", "employee_name"]
+            fields=["name", "employee_name", "status_pajak"]
         )
         
         summary = {
@@ -346,11 +375,21 @@ def generate_form_1721_a1(employee=None, year=None):
         
         for emp in employees:
             try:
+                # Map PTKP status to TER category for reference
+                ter_category = ""
+                try:
+                    from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
+                    ter_category = map_ptkp_to_ter_category(emp.get("status_pajak", "TK0"))
+                except ImportError:
+                    pass
+                    
                 result = create_1721_a1_form(emp.name, year)
                 summary["success"] += 1
                 summary["details"].append({
                     "employee": emp.name,
                     "employee_name": emp.employee_name,
+                    "status_pajak": emp.get("status_pajak", "TK0"),
+                    "ter_category": ter_category,
                     "status": "Success",
                     "message": "Form generated successfully"
                 })
@@ -359,6 +398,8 @@ def generate_form_1721_a1(employee=None, year=None):
                 summary["details"].append({
                     "employee": emp.name,
                     "employee_name": emp.employee_name,
+                    "status_pajak": emp.get("status_pajak", "TK0"),
+                    "ter_category": ter_category,
                     "status": "Failed",
                     "message": str(e)[:100]
                 })
@@ -366,7 +407,7 @@ def generate_form_1721_a1(employee=None, year=None):
                 
         # Log summary
         log_message = (
-            f"Form 1721-A1 generation completed for {year}. "
+            f"Form 1721-A1 generation completed for {year} (PMK 168/2023). "
             f"Success: {summary['success']}/{summary['total']}, "
             f"Failed: {summary['failed']}"
         )
@@ -398,7 +439,7 @@ def create_1721_a1_form(employee, year):
         str: Generated form document name or None if not implemented yet
     """
     # This is a stub for future implementation
-    frappe.msgprint(_("Form 1721-A1 generation not fully implemented yet"))
+    frappe.msgprint(_("Form 1721-A1 generation not fully implemented yet - PMK 168/2023 compliance pending"))
     
     # Log the action for audit purposes
     frappe.logger().info(f"Form 1721-A1 generation requested for employee {employee}, year {year}")

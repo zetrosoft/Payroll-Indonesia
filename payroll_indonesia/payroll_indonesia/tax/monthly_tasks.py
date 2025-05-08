@@ -334,7 +334,7 @@ def create_new_summary(employee, employee_name, year, month, slip_names):
 
 def calculate_monthly_totals(slip_names):
     """
-    Calculate monthly totals from a list of salary slips
+    Calculate monthly totals from a list of salary slips with PMK 168/2023 support
     
     Args:
         slip_names (list): List of salary slip names
@@ -352,6 +352,7 @@ def calculate_monthly_totals(slip_names):
             "tax_amount": 0,
             "is_using_ter": False,
             "ter_rate": 0,
+            "ter_category": "",
             "latest_slip": slip_names[0]  # Default to first slip
         }
         
@@ -369,6 +370,20 @@ def calculate_monthly_totals(slip_names):
                     
                     if hasattr(slip, 'ter_rate') and slip.ter_rate > result["ter_rate"]:
                         result["ter_rate"] = slip.ter_rate
+                        
+                    # Get TER category if available - PMK 168/2023
+                    if hasattr(slip, 'ter_category') and slip.ter_category:
+                        result["ter_category"] = slip.ter_category
+                    else:
+                        # Try to determine TER category from employee status
+                        try:
+                            if hasattr(slip, 'employee') and slip.employee:
+                                emp_doc = frappe.get_doc("Employee", slip.employee)
+                                if hasattr(emp_doc, 'status_pajak') and emp_doc.status_pajak:
+                                    from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
+                                    result["ter_category"] = map_ptkp_to_ter_category(emp_doc.status_pajak)
+                        except Exception:
+                            pass
                         
                 # Get BPJS components
                 if hasattr(slip, 'deductions'):
