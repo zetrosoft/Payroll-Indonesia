@@ -10,7 +10,12 @@
         "account_name",
         "reference_number",
         "description",
-        "amount"
+        "amount",
+        "payment_date",
+        "section_break_mapping",
+        "mapped_from",
+        "auto_generated",
+        "last_synced"
     ],
     "fields": [
         {
@@ -61,11 +66,38 @@
             "label": "Payment Date",
             "description": "The date when the payment was made",
             "reqd": 0
+        },
+        {
+            "fieldname": "section_break_mapping",
+            "fieldtype": "Section Break",
+            "label": "Mapping Information",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "mapped_from",
+            "fieldtype": "Data",
+            "label": "Mapped From",
+            "description": "Source of the account mapping (defaults.json or BPJS Account Mapping)",
+            "read_only": 1
+        },
+        {
+            "default": "0",
+            "fieldname": "auto_generated",
+            "fieldtype": "Check",
+            "label": "Auto Generated",
+            "description": "This account detail was automatically generated from settings",
+            "read_only": 1
+        },
+        {
+            "fieldname": "last_synced",
+            "fieldtype": "Datetime",
+            "label": "Last Synced",
+            "read_only": 1
         }
     ],
     "istable": 1,
-    "modified": "2025-04-27 06:48:00",
-    "modified_by": "Administrator",
+    "modified": "2025-05-08 11:23:42",
+    "modified_by": "dannyaudian",
     "module": "Payroll Indonesia",
     "name": "BPJS Payment Account Detail",
     "owner": "Administrator",
