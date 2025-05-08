@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 03:54:51 by dannyaudian
+# Last modified: 2025-05-08 08:50:03 by dannyaudian
 
 import frappe
 from frappe import _
@@ -16,21 +16,25 @@ from .tax_calculator import add_tax_info_to_note
 # Cache for TER rates to avoid repeated queries - cleared every 30 minutes
 _ter_rate_cache = {}
 _ter_rate_last_clear = now_datetime()
+_ptkp_mapping_cache = None
 
 def calculate_monthly_pph_with_ter(doc, employee):
-    """Calculate PPh 21 using TER method"""
+    """Calculate PPh 21 using TER method based on PMK 168/2023"""
     try:
         # Validate employee status_pajak
         if not hasattr(employee, 'status_pajak') or not employee.status_pajak:
             employee.status_pajak = "TK0"  # Default to TK0 if not set
             frappe.msgprint(_("Warning: Employee tax status not set, using TK0 as default"))
 
-        # Get TER rate based on status and gross income - with caching
+        # Get original status_pajak (for display purposes)
         status_pajak = employee.status_pajak
         gross_pay = doc.gross_pay
         
-        # Get TER rate with caching
-        ter_rate = get_ter_rate(status_pajak, gross_pay)
+        # Map PTKP status to TER category
+        ter_category = map_ptkp_to_ter_category(status_pajak)
+        
+        # Get TER rate using TER category
+        ter_rate = get_ter_rate(ter_category, gross_pay)
         
         # Calculate tax using TER
         monthly_tax = gross_pay * ter_rate
@@ -45,6 +49,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
         # Use the centralized function to add tax info to payroll note
         add_tax_info_to_note(doc, "TER", {
             "status_pajak": status_pajak,
+            "ter_category": ter_category,  # Include TER category in note
             "gross_pay": gross_pay,
             "ter_rate": ter_rate * 100,  # Convert to percentage for display
             "monthly_tax": monthly_tax
@@ -58,12 +63,96 @@ def calculate_monthly_pph_with_ter(doc, employee):
         )
         frappe.throw(_("Error calculating PPh 21 with TER: {0}").format(str(e)))
 
-def get_ter_rate(status_pajak, income):
+def map_ptkp_to_ter_category(status_pajak):
     """
-    Get TER rate based on status and income - with caching for efficiency
+    Map PTKP status to TER category based on PMK 168/2023
+    
     Args:
-        status_pajak: Employee tax status (e.g., "TK0", "K1", etc.)
+        status_pajak (str): PTKP status (e.g., 'TK0', 'K1', etc.)
+    
+    Returns:
+        str: TER category ('TER A', 'TER B', or 'TER C')
+    """
+    global _ptkp_mapping_cache
+    
+    try:
+        # Try to get the mapping from cache first
+        if _ptkp_mapping_cache is None:
+            # Get mapping from defaults.json config
+            mapping = frappe.get_cached_value(
+                "Payroll Settings", 
+                "Payroll Settings", 
+                "ptkp_to_ter_mapping"
+            )
+            
+            if not mapping:
+                # Use frappe.get_single to get the config
+                try:
+                    config = frappe.get_single("Payroll Settings")
+                    if hasattr(config, 'ptkp_to_ter_mapping'):
+                        mapping = config.ptkp_to_ter_mapping
+                except Exception:
+                    pass
+                    
+            # If still no mapping, try to get from defaults.json via utility function
+            if not mapping:
+                try:
+                    from payroll_indonesia.payroll_indonesia.utils import get_default_config
+                    config = get_default_config()
+                    if config and "ptkp_to_ter_mapping" in config:
+                        mapping = config["ptkp_to_ter_mapping"]
+                except ImportError:
+                    pass
+                
+            # If all else fails, use hardcoded mapping based on PMK 168/2023
+            if not mapping:
+                mapping = {
+                    # TER A: PTKP TK/0 (Rp 54 juta/tahun)
+                    "TK0": "TER A",
+                    
+                    # TER B: PTKP K/0, TK/1 (Rp 58,5 juta/tahun)
+                    "TK1": "TER B",
+                    "K0": "TER B",
+                    
+                    # TER C: All other PTKP statuses
+                    "TK2": "TER B",  # Overlap with TER B for TK2
+                    "TK3": "TER C",
+                    "K1": "TER B",   # Overlap with TER B for K1
+                    "K2": "TER C", 
+                    "K3": "TER C",
+                    "HB0": "TER C",
+                    "HB1": "TER C",
+                    "HB2": "TER C",
+                    "HB3": "TER C"
+                }
+                
+            # Cache the mapping
+            _ptkp_mapping_cache = mapping
+        
+        # Return mapped category or default to TER C if status not found
+        if status_pajak in _ptkp_mapping_cache:
+            return _ptkp_mapping_cache[status_pajak]
+        else:
+            # Default to TER C for any unknown status
+            return "TER C"
+            
+    except Exception as e:
+        frappe.log_error(
+            f"Error mapping PTKP status to TER category: {str(e)}\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "TER Mapping Error"
+        )
+        # Default to TER C as safest option
+        return "TER C"
+
+def get_ter_rate(ter_category, income):
+    """
+    Get TER rate based on TER category and income - with caching for efficiency
+    
+    Args:
+        ter_category: TER category ('TER A', 'TER B', 'TER C')
         income: Monthly income amount
+        
     Returns:
         float: TER rate as decimal (e.g., 0.05 for 5%)
     """
@@ -77,15 +166,15 @@ def get_ter_rate(status_pajak, income):
             _ter_rate_last_clear = now
         
         # Validate inputs
-        if not status_pajak:
-            status_pajak = "TK0"
+        if not ter_category:
+            ter_category = "TER C"  # Default to highest category if not specified
             
         if not income or income <= 0:
             return 0
             
         # Create a unique cache key
         income_bracket = round(income, -3)  # Round to nearest thousand for better cache hits
-        cache_key = f"{status_pajak}:{income_bracket}"
+        cache_key = f"{ter_category}:{income_bracket}"
         
         # Check cache first
         if cache_key in _ter_rate_cache:
@@ -98,33 +187,32 @@ def get_ter_rate(status_pajak, income):
             WHERE status_pajak = %s
               AND %s >= income_from
               AND (%s <= income_to OR income_to = 0)
+            ORDER BY income_from DESC
             LIMIT 1
-        """, (status_pajak, income, income), as_dict=1)
+        """, (ter_category, income, income), as_dict=1)
 
-        if not ter:
-            # Try fallback to simpler status (e.g., TK3 -> TK0)
-            status_fallback = status_pajak[0:2] + "0"  # Fallback to TK0/K0/HB0
-            
-            # Check fallback cache
-            fallback_cache_key = f"{status_fallback}:{income_bracket}"
-            if fallback_cache_key in _ter_rate_cache:
-                # Cache the result for original key too
-                _ter_rate_cache[cache_key] = _ter_rate_cache[fallback_cache_key]
-                return _ter_rate_cache[fallback_cache_key]
-            
-            # Query with fallback status
+        if ter:
+            # Cache the result before returning
+            rate_value = float(ter[0].rate) / 100.0
+            _ter_rate_cache[cache_key] = rate_value
+            return rate_value
+        else:
+            # Try to find using highest available bracket
             ter = frappe.db.sql("""
                 SELECT rate
                 FROM `tabPPh 21 TER Table`
                 WHERE status_pajak = %s
-                  AND %s >= income_from
-                  AND (%s <= income_to OR income_to = 0)
+                  AND is_highest_bracket = 1
                 LIMIT 1
-            """, (status_fallback, income, income), as_dict=1)
-
-            if not ter:
-                # As a last resort, use default rate from settings
-                # Get this using cached value for better performance
+            """, (ter_category,), as_dict=1)
+            
+            if ter:
+                # Cache the highest bracket result
+                rate_value = float(ter[0].rate) / 100.0
+                _ter_rate_cache[cache_key] = rate_value
+                return rate_value
+            else:
+                # As a last resort, use default rate from settings or hardcoded value
                 try:
                     pph_settings = frappe.get_cached_value(
                         "PPh 21 Settings", 
@@ -141,32 +229,25 @@ def get_ter_rate(status_pajak, income):
                         _ter_rate_cache[cache_key] = rate_value
                         return rate_value
                     else:
-                        # Last resort - use hardcoded default
-                        _ter_rate_cache[cache_key] = 0.05  # Default 5%
-                        return 0.05
+                        # PMK 168/2023 highest rate is 34% for all categories
+                        _ter_rate_cache[cache_key] = 0.34
+                        return 0.34
                         
                 except Exception:
-                    # Last resort - use hardcoded default
-                    _ter_rate_cache[cache_key] = 0.05  # Default 5%
-                    return 0.05
-        
-        # Cache the result before returning
-        rate_value = float(ter[0].rate) / 100.0
-        _ter_rate_cache[cache_key] = rate_value
-        
-        # Return the decimal rate (e.g., 0.05 for 5%)
-        return rate_value
+                    # Last resort - use PMK 168/2023 highest rate
+                    _ter_rate_cache[cache_key] = 0.34
+                    return 0.34
         
     except Exception as e:
         if isinstance(e, frappe.exceptions.ValidationError):
             raise
         frappe.log_error(
-            f"Error getting TER rate for status {status_pajak} and income {income}: {str(e)}\n"
+            f"Error getting TER rate for category {ter_category} and income {income}: {str(e)}\n"
             f"Traceback: {frappe.get_traceback()}",
             "TER Rate Error"
         )
-        # Return default rate on error (5%)
-        return 0.05
+        # Return PMK 168/2023 highest rate on error (34%)
+        return 0.34
 
 def should_use_ter_method(employee, pph_settings=None):
     """
@@ -190,6 +271,14 @@ def should_use_ter_method(employee, pph_settings=None):
         # Fast path for global TER setting disabled
         if (pph_settings.get('calculation_method') != "TER" or 
             not pph_settings.get('use_ter')):
+            return False
+            
+        # Special cases
+        
+        # December always uses Progressive method as per PMK 168/2023
+        # Check if current month is December
+        current_month = getdate().month
+        if current_month == 12:
             return False
             
         # Fast path for employee exclusions
@@ -351,6 +440,7 @@ def schedule_cache_cleanup():
 
 def clean_ytd_tax_cache():
     """Clean YTD tax cache to prevent memory bloat"""
-    global _ytd_tax_cache, _cleanup_scheduled
+    global _ytd_tax_cache, _cleanup_scheduled, _ptkp_mapping_cache
     _ytd_tax_cache = {}
+    _ptkp_mapping_cache = None  # Also clear the PTKP mapping cache
     _cleanup_scheduled = False

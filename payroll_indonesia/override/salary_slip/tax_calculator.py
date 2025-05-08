@@ -201,9 +201,13 @@ def add_tax_info_to_note(doc, tax_method, values):
         
         if tax_method == "TER":
             # TER method
+            status_pajak = values.get('status_pajak', 'TK0')
+            ter_category = values.get('ter_category', '')
+            mapping_info = f" → {ter_category}" if ter_category else ""
+            
             note_content.extend([
                 "=== Perhitungan PPh 21 dengan TER ===",
-                f"Status Pajak: {values.get('status_pajak', 'TK0')}",
+                f"Status Pajak: {status_pajak}{mapping_info}",
                 f"Penghasilan Bruto: Rp {values.get('gross_pay', 0):,.0f}",
                 f"Tarif Efektif Rata-rata: {values.get('ter_rate', 0):.2f}%",
                 f"PPh 21 Sebulan: Rp {values.get('monthly_tax', 0):,.0f}",
@@ -320,7 +324,7 @@ def add_tax_info_to_note(doc, tax_method, values):
         # Add a simple note to indicate there was an error
         if hasattr(doc, 'payroll_note'):
             doc.payroll_note += f"\n\nError adding tax calculation details: {str(e)}"
-
+            
 def calculate_progressive_tax(pkp, pph_settings=None):
     """Calculate tax using progressive rates"""
     try:
