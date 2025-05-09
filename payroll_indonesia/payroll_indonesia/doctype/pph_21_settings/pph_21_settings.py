@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 18:45:21 by dannyaudian
+# Last modified: 2025-05-09 03:55:15 by dannyaudian
 
 import frappe
 from frappe import _
@@ -17,6 +17,11 @@ from payroll_indonesia.payroll_indonesia.utils import (
 )
 
 class PPh21Settings(Document):
+    def __init__(self, *args, **kwargs):
+        super(PPh21Settings, self).__init__(*args, **kwargs)
+        # Flag untuk mencegah rekursi
+        self._updating_from_config = False
+    
     def validate(self):
         """Validate PPh 21 Settings"""
         debug_log("Validating PPh 21 Settings", "PPh 21 Settings")
@@ -36,10 +41,24 @@ class PPh21Settings(Document):
     
     def on_update(self):
         """Update settings when document is updated"""
-        debug_log("Updating PPh 21 Settings", "PPh 21 Settings")
+        debug_log("on_update method called for PPh 21 Settings", "PPh 21 Settings")
         
-        # Ensure configuration is up to date
-        self.update_settings_from_config()
+        # Hindari rekursi jika flag diset
+        if getattr(self, "_updating_from_config", False):
+            debug_log("Skipping on_update due to _updating_from_config flag", "PPh 21 Settings")
+            return
+            
+        # Hindari rekursi jika ignore_on_update diset
+        if getattr(self.flags, "ignore_on_update", False):
+            debug_log("Skipping on_update due to ignore_on_update flag", "PPh 21 Settings")
+            return
+        
+        # Update settings from config dengan flag untuk hindari rekursi
+        try:
+            self._updating_from_config = True
+            self.update_settings_from_config()
+        finally:
+            self._updating_from_config = False
     
     def validate_bracket_table(self):
         """Ensure tax brackets are continuous and non-overlapping"""
@@ -232,51 +251,104 @@ class PPh21Settings(Document):
 
     def update_settings_from_config(self):
         """Update settings from configuration"""
+        # Cek apakah sudah dalam proses update untuk hindari rekursi
+        if getattr(self, "_updating_from_config", False):
+            debug_log("update_settings_from_config: Avoiding recursion", "PPh 21 Settings")
+            return
+            
+        debug_log("Starting update_settings_from_config", "PPh 21 Settings")
+        
+        # Dapatkan konfigurasi
         config = get_default_config()
         tax_config = config.get("tax", {})
+        
+        # Cek perubahan field
+        modified = False
         
         # Update calculation method if not set
         if not self.calculation_method and tax_config.get("tax_calculation_method"):
             self.calculation_method = tax_config.get("tax_calculation_method")
+            modified = True
             debug_log(f"Setting calculation_method to {self.calculation_method} from config", "PPh 21 Settings")
         
         # Update TER settings
         if tax_config.get("use_ter") is not None and self.use_ter != tax_config.get("use_ter"):
             self.use_ter = cint(tax_config.get("use_ter"))
+            modified = True
             debug_log(f"Setting use_ter to {self.use_ter} from config", "PPh 21 Settings")
         
         # Update gross up settings
         if tax_config.get("use_gross_up") is not None and self.use_gross_up != tax_config.get("use_gross_up"):
             self.use_gross_up = cint(tax_config.get("use_gross_up"))
+            modified = True
             debug_log(f"Setting use_gross_up to {self.use_gross_up} from config", "PPh 21 Settings")
             
         # Update NPWP mandatory settings
         if tax_config.get("npwp_mandatory") is not None and self.npwp_mandatory != tax_config.get("npwp_mandatory"):
             self.npwp_mandatory = cint(tax_config.get("npwp_mandatory"))
+            modified = True
             debug_log(f"Setting npwp_mandatory to {self.npwp_mandatory} from config", "PPh 21 Settings")
             
         # Update biaya jabatan settings
         if tax_config.get("biaya_jabatan_percent") is not None:
             self.biaya_jabatan_percent = flt(tax_config.get("biaya_jabatan_percent"))
+            modified = True
             debug_log(f"Setting biaya_jabatan_percent to {self.biaya_jabatan_percent} from config", "PPh 21 Settings")
             
         if tax_config.get("biaya_jabatan_max") is not None:
             self.biaya_jabatan_max = flt(tax_config.get("biaya_jabatan_max"))
+            modified = True
             debug_log(f"Setting biaya_jabatan_max to {self.biaya_jabatan_max} from config", "PPh 21 Settings")
             
-        # Save changes if needed
-        if self.has_value_changed("calculation_method") or \
-           self.has_value_changed("use_ter") or \
-           self.has_value_changed("use_gross_up") or \
-           self.has_value_changed("npwp_mandatory") or \
-           self.has_value_changed("biaya_jabatan_percent") or \
-           self.has_value_changed("biaya_jabatan_max"):
-            debug_log("Saving settings changes from config", "PPh 21 Settings")
-            self.save()
+        # Simpan perubahan jika diperlukan, dengan cara yang aman
+        if modified:
+            debug_log("Saving modified settings with direct db_set to avoid recursion", "PPh 21 Settings")
+            try:
+                # Gunakan db_set untuk update field tanpa memanggil save()
+                fields_to_update = {}
+                if not self.calculation_method and tax_config.get("tax_calculation_method"):
+                    fields_to_update["calculation_method"] = tax_config.get("tax_calculation_method")
+                    
+                if tax_config.get("use_ter") is not None and self.use_ter != tax_config.get("use_ter"):
+                    fields_to_update["use_ter"] = cint(tax_config.get("use_ter"))
+                    
+                if tax_config.get("use_gross_up") is not None and self.use_gross_up != tax_config.get("use_gross_up"):
+                    fields_to_update["use_gross_up"] = cint(tax_config.get("use_gross_up"))
+                    
+                if tax_config.get("npwp_mandatory") is not None and self.npwp_mandatory != tax_config.get("npwp_mandatory"):
+                    fields_to_update["npwp_mandatory"] = cint(tax_config.get("npwp_mandatory"))
+                    
+                if tax_config.get("biaya_jabatan_percent") is not None:
+                    fields_to_update["biaya_jabatan_percent"] = flt(tax_config.get("biaya_jabatan_percent"))
+                    
+                if tax_config.get("biaya_jabatan_max") is not None:
+                    fields_to_update["biaya_jabatan_max"] = flt(tax_config.get("biaya_jabatan_max"))
+                
+                # Update fields directly in DB
+                for field, value in fields_to_update.items():
+                    self.db_set(field, value, update_modified=False)
+                
+                # Update modified timestamp
+                self.db_set("modified", now_datetime(), update_modified=False)
+                
+                frappe.db.commit()
+                debug_log("Settings updated successfully with db_set", "PPh 21 Settings")
+            except Exception as e:
+                frappe.log_error(f"Error updating settings with db_set: {str(e)}", "PPh 21 Settings Error")
+                debug_log(f"Error in direct db update: {str(e)}", "PPh 21 Settings", trace=True)
 
 def on_update(doc, method):
     """Handler for on_update event"""
-    debug_log("PPh 21 Settings on_update called", "PPh 21 Settings")
+    debug_log("PPh 21 Settings on_update event handler called", "PPh 21 Settings")
+    
+    # Hindari jika flag diset
+    if getattr(doc, "_updating_from_config", False):
+        debug_log("Skipping on_update handler due to _updating_from_config flag", "PPh 21 Settings")
+        return
+        
+    if getattr(doc.flags, "ignore_on_update", False):
+        debug_log("Skipping on_update handler due to ignore_on_update flag", "PPh 21 Settings")
+        return
     
     # Validate tax brackets
     validate_brackets(doc)
@@ -359,54 +431,68 @@ def update_from_config(doc=None):
         debug_log("PPh 21 Settings document not found and could not be created", "PPh 21 Settings")
         return
     
-    # Update settings from config
-    config = get_default_config()
-    tax_config = config.get("tax", {})
+    # Set flag untuk hindari rekursi
+    doc._updating_from_config = True
+    debug_log("Setting _updating_from_config flag to avoid recursion", "PPh 21 Settings")
     
-    # Set calculation method
-    if tax_config.get("tax_calculation_method"):
-        doc.calculation_method = tax_config.get("tax_calculation_method")
-    else:
-        doc.calculation_method = "Progressive"  # Default
-    
-    # Set TER usage
-    doc.use_ter = cint(tax_config.get("use_ter", 0))
-    
-    # Set gross up
-    doc.use_gross_up = cint(tax_config.get("use_gross_up", 0))
-    
-    # Set NPWP mandatory
-    doc.npwp_mandatory = cint(tax_config.get("npwp_mandatory", 0))
-    
-    # Set biaya jabatan settings
-    doc.biaya_jabatan_percent = flt(tax_config.get("biaya_jabatan_percent", 5.0))
-    doc.biaya_jabatan_max = flt(tax_config.get("biaya_jabatan_max", 500000.0))
-    
-    # Save settings
-    doc.flags.ignore_validate = True
-    doc.flags.ignore_mandatory = True
-    doc.save(ignore_permissions=True)
-    
-    # Reload document to ensure it's updated
-    doc.reload()
-    
-    # Load PTKP values if needed
-    if not doc.ptkp_table or len(doc.ptkp_table) == 0:
-        doc.load_ptkp_from_config()
+    try:
+        # Update settings from config
+        config = get_default_config()
+        tax_config = config.get("tax", {})
+        
+        # Set calculation method
+        if tax_config.get("tax_calculation_method"):
+            doc.calculation_method = tax_config.get("tax_calculation_method")
+        else:
+            doc.calculation_method = "Progressive"  # Default
+        
+        # Set TER usage
+        doc.use_ter = cint(tax_config.get("use_ter", 0))
+        
+        # Set gross up
+        doc.use_gross_up = cint(tax_config.get("use_gross_up", 0))
+        
+        # Set NPWP mandatory
+        doc.npwp_mandatory = cint(tax_config.get("npwp_mandatory", 0))
+        
+        # Set biaya jabatan settings
+        doc.biaya_jabatan_percent = flt(tax_config.get("biaya_jabatan_percent", 5.0))
+        doc.biaya_jabatan_max = flt(tax_config.get("biaya_jabatan_max", 500000.0))
+        
+        # Save settings dengan flag untuk hindari rekursi
+        doc.flags.ignore_validate = True
+        doc.flags.ignore_mandatory = True
+        doc.flags.ignore_on_update = True
         doc.save(ignore_permissions=True)
-    
-    # Load tax brackets if needed
-    if not doc.bracket_table or len(doc.bracket_table) == 0:
-        doc.load_brackets_from_config()
-        doc.save(ignore_permissions=True)
-    
-    debug_log("PPh 21 Settings updated from configuration", "PPh 21 Settings")
-    
-    # Check if TER rates need to be loaded
-    if doc.calculation_method == "TER" and frappe.db.count("PPh 21 TER Table") == 0:
-        ter_rates = get_default_config("ter_rates")
-        if ter_rates:
-            doc.load_ter_rates_from_config(ter_rates)
-            
-    frappe.db.commit()
+        
+        # Reload document to ensure it's updated
+        doc.reload()
+        
+        # Load PTKP values if needed
+        if not doc.ptkp_table or len(doc.ptkp_table) == 0:
+            doc.load_ptkp_from_config()
+            doc.flags.ignore_on_update = True
+            doc.save(ignore_permissions=True)
+        
+        # Load tax brackets if needed
+        if not doc.bracket_table or len(doc.bracket_table) == 0:
+            doc.load_brackets_from_config()
+            doc.flags.ignore_on_update = True
+            doc.save(ignore_permissions=True)
+        
+        debug_log("PPh 21 Settings updated from configuration", "PPh 21 Settings")
+        
+        # Check if TER rates need to be loaded
+        if doc.calculation_method == "TER" and frappe.db.count("PPh 21 TER Table") == 0:
+            ter_rates = get_default_config("ter_rates")
+            if ter_rates:
+                doc.load_ter_rates_from_config(ter_rates)
+                frappe.db.commit()
+    finally:
+        # Always reset the flag, even in case of error
+        doc._updating_from_config = False
+        if hasattr(doc, 'flags'):
+            doc.flags.ignore_on_update = False
+        debug_log("Reset _updating_from_config flag", "PPh 21 Settings")
+        
     return doc
