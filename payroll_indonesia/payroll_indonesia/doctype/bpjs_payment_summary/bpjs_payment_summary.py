@@ -846,6 +846,28 @@ class BPJSPaymentSummary(Document):
                     ]
                 ]
             })
+        
+        # Get salary slips based on filters
+        salary_slips = frappe.get_all(
+            "Salary Slip",
+            filters=filters,
+            fields=["name", "employee", "employee_name", "start_date", "end_date"]
+        )
+    
+        # For "Semua Slip Belum Terbayar" filter, filter out slips already linked to other BPJS payments
+        if hasattr(self, 'salary_slip_filter') and self.salary_slip_filter == "Semua Slip Belum Terbayar":
+            # Get list of salary slips already linked to BPJS payments
+            linked_slips = frappe.get_all(
+                "BPJS Payment Summary Detail",
+                filters={"docstatus": 1, "salary_slip": ["is", "set"]},
+                fields=["salary_slip"]
+            )
+            linked_slip_names = [slip.salary_slip for slip in linked_slips if slip.salary_slip]
+        
+            # Filter out already linked slips
+            salary_slips = [slip for slip in salary_slips if slip.name not in linked_slip_names]
+        
+        return salary_slips
     
     def _extract_bpjs_from_salary_slip(self, slip):
         """Extract BPJS data from a salary slip"""
@@ -1141,22 +1163,22 @@ class BPJSPaymentSummary(Document):
             jkm_rate = 0.003  # 0.3%
             
             # Apply rates from BPJS settings if available
-            if hasattr(bpjs_settings, 'jht_employee_rate'):
-                jht_employee_rate = flt(bpjs_settings.jht_employee_rate) / 100
-            if hasattr(bpjs_settings, 'jht_employer_rate'):
-                jht_employer_rate = flt(bpjs_settings.jht_employer_rate) / 100
-            if hasattr(bpjs_settings, 'jp_employee_rate'):
-                jp_employee_rate = flt(bpjs_settings.jp_employee_rate) / 100
-            if hasattr(bpjs_settings, 'jp_employer_rate'):
-                jp_employer_rate = flt(bpjs_settings.jp_employer_rate) / 100
-            if hasattr(bpjs_settings, 'kesehatan_employee_rate'):
-                kesehatan_employee_rate = flt(bpjs_settings.kesehatan_employee_rate) / 100
-            if hasattr(bpjs_settings, 'kesehatan_employer_rate'):
-                kesehatan_employer_rate = flt(bpjs_settings.kesehatan_employer_rate) / 100
-            if hasattr(bpjs_settings, 'jkk_rate'):
-                jkk_rate = flt(bpjs_settings.jkk_rate) / 100
-            if hasattr(bpjs_settings, 'jkm_rate'):
-                jkm_rate = flt(bpjs_settings.jkm_rate) / 100
+            if hasattr(bpjs_settings, 'jht_employee_percent'):  # Perbaikan nama field
+                jht_employee_rate = flt(bpjs_settings.jht_employee_percent) / 100
+            if hasattr(bpjs_settings, 'jht_employer_percent'):  # Perbaikan nama field
+                jht_employer_rate = flt(bpjs_settings.jht_employer_percent) / 100
+            if hasattr(bpjs_settings, 'jp_employee_percent'):  # Perbaikan nama field
+                jp_employee_rate = flt(bpjs_settings.jp_employee_percent) / 100
+            if hasattr(bpjs_settings, 'jp_employer_percent'):  # Perbaikan nama field
+                jp_employer_rate = flt(bpjs_settings.jp_employer_percent) / 100
+            if hasattr(bpjs_settings, 'kesehatan_employee_percent'):  # Perbaikan nama field
+                kesehatan_employee_rate = flt(bpjs_settings.kesehatan_employee_percent) / 100
+            if hasattr(bpjs_settings, 'kesehatan_employer_percent'):  # Perbaikan nama field
+                kesehatan_employer_rate = flt(bpjs_settings.kesehatan_employer_percent) / 100
+            if hasattr(bpjs_settings, 'jkk_percent'):  # Perbaikan nama field
+                jkk_rate = flt(bpjs_settings.jkk_percent) / 100
+            if hasattr(bpjs_settings, 'jkm_percent'):  # Perbaikan nama field
+                jkm_rate = flt(bpjs_settings.jkm_percent) / 100
             
             # Calculate BPJS amounts
             result = {
