@@ -7,8 +7,10 @@ import frappe
 from frappe import _
 from frappe.utils import getdate, nowdate, flt, add_days
 from datetime import datetime
+from typing import Dict, Optional, Union, List, Any
 
-def prepare_tax_report(year=None, company=None):
+
+def prepare_tax_report(year: Optional[int] = None, company: Optional[str] = None) -> Dict[str, Any]:
     """
     Prepare annual tax reports for employees with PMK 168/2023 compliance
     
@@ -16,11 +18,11 @@ def prepare_tax_report(year=None, company=None):
     to prepare tax reports (form 1721-A1) for each employee
     
     Args:
-        year (int, optional): Tax year to process. Defaults to current year.
-        company (str, optional): Company to process. If not provided, all companies are processed.
+        year: Tax year to process. Defaults to current year.
+        company: Company to process. If not provided, all companies are processed.
         
     Returns:
-        dict: Summary of processed reports
+        Summary of processed reports
     """
     try:
         # Validate parameters
@@ -195,17 +197,18 @@ def prepare_tax_report(year=None, company=None):
         )
         frappe.throw(_("Error preparing tax reports: {0}").format(str(e)))
 
-def create_annual_tax_report(employee, year, tax_data):
+
+def create_annual_tax_report(employee: str, year: int, tax_data: Dict[str, Any]) -> Optional[str]:
     """
     Create annual tax report document for an employee
     
     Args:
-        employee (str): Employee ID
-        year (int): Tax year
-        tax_data (dict): Tax calculation data
+        employee: Employee ID
+        year: Tax year
+        tax_data: Tax calculation data
         
     Returns:
-        str: Generated report document name
+        Generated report document name
     """
     try:
         # Check if Annual Tax Report DocType exists
@@ -270,16 +273,17 @@ def create_annual_tax_report(employee, year, tax_data):
         )
         raise
 
-def update_existing_tax_report(report_name, year):
+
+def update_existing_tax_report(report_name: str, year: int) -> bool:
     """
     Update an existing tax report with latest data
     
     Args:
-        report_name (str): The name of the tax report document
-        year (int): Tax year
+        report_name: The name of the tax report document
+        year: Tax year
         
     Returns:
-        bool: True if updated successfully
+        True if updated successfully
     """
     try:
         # Get the report document
@@ -332,17 +336,18 @@ def update_existing_tax_report(report_name, year):
         )
         raise
 
-def generate_form_1721_a1(employee=None, year=None):
+
+def generate_form_1721_a1(employee: Optional[str] = None, year: Optional[int] = None) -> Dict[str, Any]:
     """
     Generate Form 1721-A1 (Annual Tax Form) for an employee or all employees
     according to PMK 168/2023 requirements
     
     Args:
-        employee (str, optional): Specific employee to generate form for
-        year (int, optional): Tax year to generate form for
+        employee: Specific employee to generate form for
+        year: Tax year to generate form for
         
     Returns:
-        dict: Summary of generated forms
+        Summary of generated forms
     """
     try:
         # Validate parameters
@@ -427,16 +432,17 @@ def generate_form_1721_a1(employee=None, year=None):
         )
         frappe.throw(_("Error generating Form 1721-A1: {0}").format(str(e)))
         
-def create_1721_a1_form(employee, year):
+
+def create_1721_a1_form(employee: str, year: int) -> Optional[str]:
     """
     Create Form 1721-A1 for a specific employee
     
     Args:
-        employee (str): Employee ID
-        year (int): Tax year
+        employee: Employee ID
+        year: Tax year
         
     Returns:
-        str: Generated form document name or None if not implemented yet
+        Generated form document name or None if not implemented yet
     """
     # This is a stub for future implementation
     frappe.msgprint(_("Form 1721-A1 generation not fully implemented yet - PMK 168/2023 compliance pending"))

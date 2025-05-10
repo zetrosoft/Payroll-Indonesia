@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 02:25:18 by dannyaudian
+# Last modified: 2025-05-10 14:30:00 by dannyaudian
 
 import frappe
 from frappe import _
 from frappe.utils import getdate, get_first_day, get_last_day, add_months, add_days, flt, today
 from datetime import datetime
+
+# Import TER functions for consistency
+from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
 
 def update_tax_summaries(month=None, year=None, company=None):
     """
@@ -222,21 +225,34 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
         
         # Add new monthly detail
         if monthly_data:
-            summary.append("monthly_details", {
+            monthly_detail = {
                 "month": month,
                 "gross_pay": monthly_data["gross_pay"],
                 "bpjs_deductions": monthly_data["bpjs_deductions"],
                 "tax_amount": monthly_data["tax_amount"],
-                "salary_slip": monthly_data["latest_slip"]
-            })
+                "salary_slip": monthly_data["latest_slip"],
+                "is_using_ter": 1 if monthly_data["is_using_ter"] else 0,
+                "ter_rate": monthly_data["ter_rate"]
+            }
+            
+            # Add TER category if available
+            if monthly_data["ter_category"] and hasattr(summary, 'ter_category'):
+                monthly_detail["ter_category"] = monthly_data["ter_category"]
+                
+            summary.append("monthly_details", monthly_detail)
             
             # Add TER information if applicable
-            if monthly_data["is_using_ter"] and hasattr(summary, 'is_using_ter'):
-                summary.is_using_ter = 1
-                
+            if monthly_data["is_using_ter"]:
+                if hasattr(summary, 'is_using_ter'):
+                    summary.is_using_ter = 1
+                    
                 # Only set ter_rate if it exists and we have a valid rate
                 if hasattr(summary, 'ter_rate') and monthly_data["ter_rate"] > 0:
                     summary.ter_rate = monthly_data["ter_rate"]
+                    
+                # Set TER category if available
+                if hasattr(summary, 'ter_category') and monthly_data["ter_category"]:
+                    summary.ter_category = monthly_data["ter_category"]
             
         # Recalculate YTD tax
         total_tax = 0
@@ -306,9 +322,13 @@ def create_new_summary(employee, employee_name, year, month, slip_names):
             if hasattr(summary, 'ter_rate') and monthly_data["ter_rate"] > 0:
                 summary.ter_rate = monthly_data["ter_rate"]
                 
+            # Set TER category if available
+            if hasattr(summary, 'ter_category') and monthly_data["ter_category"]:
+                summary.ter_category = monthly_data["ter_category"]
+                
         # Add first monthly detail
         if hasattr(summary, 'monthly_details'):
-            summary.append("monthly_details", {
+            monthly_detail = {
                 "month": month,
                 "salary_slip": monthly_data["latest_slip"],
                 "gross_pay": monthly_data["gross_pay"],
@@ -316,7 +336,13 @@ def create_new_summary(employee, employee_name, year, month, slip_names):
                 "tax_amount": monthly_data["tax_amount"],
                 "is_using_ter": 1 if monthly_data["is_using_ter"] else 0,
                 "ter_rate": monthly_data["ter_rate"]
-            })
+            }
+            
+            # Add TER category if available
+            if monthly_data["ter_category"]:
+                monthly_detail["ter_category"] = monthly_data["ter_category"]
+                
+            summary.append("monthly_details", monthly_detail)
         else:
             frappe.throw(_("Employee Tax Summary structure is invalid: missing monthly_details child table"))
             
@@ -356,6 +382,9 @@ def calculate_monthly_totals(slip_names):
             "latest_slip": slip_names[0]  # Default to first slip
         }
         
+        # Track which TER category to use (preferring explicit ones)
+        ter_categories_found = []
+        
         for slip_name in slip_names:
             try:
                 slip = frappe.get_doc("Salary Slip", slip_name)
@@ -373,18 +402,8 @@ def calculate_monthly_totals(slip_names):
                         
                     # Get TER category if available - PMK 168/2023
                     if hasattr(slip, 'ter_category') and slip.ter_category:
-                        result["ter_category"] = slip.ter_category
-                    else:
-                        # Try to determine TER category from employee status
-                        try:
-                            if hasattr(slip, 'employee') and slip.employee:
-                                emp_doc = frappe.get_doc("Employee", slip.employee)
-                                if hasattr(emp_doc, 'status_pajak') and emp_doc.status_pajak:
-                                    from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
-                                    result["ter_category"] = map_ptkp_to_ter_category(emp_doc.status_pajak)
-                        except Exception:
-                            pass
-                        
+                        ter_categories_found.append(slip.ter_category)
+                    
                 # Get BPJS components
                 if hasattr(slip, 'deductions'):
                     for deduction in slip.deductions:
@@ -411,7 +430,24 @@ def calculate_monthly_totals(slip_names):
                     "Slip Processing Error"
                 )
                 continue
-                
+        
+        # If TER is being used but no category was found, try to determine it from employee status
+        if result["is_using_ter"] and not ter_categories_found:
+            try:
+                # Get latest slip doc
+                latest_slip = frappe.get_doc("Salary Slip", result["latest_slip"])
+                if hasattr(latest_slip, 'employee') and latest_slip.employee:
+                    emp_doc = frappe.get_doc("Employee", latest_slip.employee)
+                    if hasattr(emp_doc, 'status_pajak') and emp_doc.status_pajak:
+                        result["ter_category"] = map_ptkp_to_ter_category(emp_doc.status_pajak)
+            except Exception:
+                pass
+        elif ter_categories_found:
+            # Use the most common category (or first if tied)
+            from collections import Counter
+            category_counts = Counter(ter_categories_found)
+            result["ter_category"] = category_counts.most_common(1)[0][0]
+        
         return result
         
     except Exception as e:
