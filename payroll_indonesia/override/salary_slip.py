@@ -83,7 +83,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     - Integration with Employee Tax Summary
     """
 class IndonesiaPayrollSalarySlip(SalarySlip):
-    # ... rest of code here ...
     
     def validate(self):
         """Validate salary slip and calculate Indonesian components with enhanced BPJS handling"""
@@ -216,15 +215,22 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         debug_log(f"TER settings verified: is_using_ter={getattr(self, 'is_using_ter', 0)}, ter_rate={getattr(self, 'ter_rate', 0)}")
     
     def calculate_tax_with_strategy(self, strategy, employee):
+        """
+        Calculate tax based on selected strategy (TER or Progressive)
+        Handles proper setup of is_using_ter and ter_rate fields
+        """
         # Store original values to restore after calculation
         original_gross = self.gross_pay
         original_netto = getattr(self, 'netto', 0)
     
+        debug_log(f"Starting tax calculation with strategy: {strategy} for {self.name}")
+    
         try:
             if strategy == "TER":
                 # TER calculation
+                debug_log(f"Using TER calculation method for {self.name}")
                 calculate_monthly_pph_with_ter(self, employee)
-                
+            
                 # PENTING: Pastikan is_using_ter disetel setelah kalkulasi TER
                 if hasattr(self, 'ter_rate') and flt(self.ter_rate) > 0:
                     debug_log(f"Setting is_using_ter=1 after TER calculation with ter_rate={self.ter_rate}")
@@ -233,8 +239,9 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                     self.db_set('is_using_ter', 1, update_modified=False)
             else:
                 # Progressive calculation
+                debug_log(f"Using Progressive calculation method for {self.name}")
                 calculate_tax_components(self, employee)
-                
+            
                 # Reset TER values jika menggunakan metode Progressive
                 debug_log("Resetting TER values for Progressive calculation")
                 self.is_using_ter = 0
@@ -249,6 +256,9 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 # Restore original gross_pay for TER calculation
                 if original_gross != self.gross_pay:
                     self.gross_pay = original_gross
+                    debug_log(f"Restored original gross_pay: {original_gross}")
+        
+            debug_log(f"Tax calculation completed with strategy: {strategy}")
 
     def _is_eligible_for_ter(self, employee):
         """

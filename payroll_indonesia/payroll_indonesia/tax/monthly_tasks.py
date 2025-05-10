@@ -225,6 +225,7 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
         
         # Add new monthly detail
         if monthly_data:
+            # Create dictionary of field-value pairs to add
             monthly_detail = {
                 "month": month,
                 "gross_pay": monthly_data["gross_pay"],
@@ -239,7 +240,10 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
             if monthly_data["ter_category"] and hasattr(summary, 'ter_category'):
                 monthly_detail["ter_category"] = monthly_data["ter_category"]
                 
-            summary.append("monthly_details", monthly_detail)
+            # Append the new row properly - using frappe.get_doc pattern
+            new_row = summary.append("monthly_details", {})
+            for field, value in monthly_detail.items():
+                new_row.set(field, value)
             
             # Add TER information if applicable
             if monthly_data["is_using_ter"]:
@@ -275,7 +279,7 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
             "Summary Update Error"
         )
         raise
-        
+
 def create_new_summary(employee, employee_name, year, month, slip_names):
     """
     Create a new tax summary for an employee
@@ -328,21 +332,19 @@ def create_new_summary(employee, employee_name, year, month, slip_names):
                 
         # Add first monthly detail
         if hasattr(summary, 'monthly_details'):
-            monthly_detail = {
-                "month": month,
-                "salary_slip": monthly_data["latest_slip"],
-                "gross_pay": monthly_data["gross_pay"],
-                "bpjs_deductions": monthly_data["bpjs_deductions"],
-                "tax_amount": monthly_data["tax_amount"],
-                "is_using_ter": 1 if monthly_data["is_using_ter"] else 0,
-                "ter_rate": monthly_data["ter_rate"]
-            }
+            # Create a proper row using append method
+            monthly_detail = summary.append("monthly_details", {})
+            monthly_detail.month = month
+            monthly_detail.salary_slip = monthly_data["latest_slip"]
+            monthly_detail.gross_pay = monthly_data["gross_pay"]
+            monthly_detail.bpjs_deductions = monthly_data["bpjs_deductions"]
+            monthly_detail.tax_amount = monthly_data["tax_amount"]
+            monthly_detail.is_using_ter = 1 if monthly_data["is_using_ter"] else 0
+            monthly_detail.ter_rate = monthly_data["ter_rate"]
             
             # Add TER category if available
-            if monthly_data["ter_category"]:
-                monthly_detail["ter_category"] = monthly_data["ter_category"]
-                
-            summary.append("monthly_details", monthly_detail)
+            if monthly_data["ter_category"] and hasattr(monthly_detail, 'ter_category'):
+                monthly_detail.ter_category = monthly_data["ter_category"]
         else:
             frappe.throw(_("Employee Tax Summary structure is invalid: missing monthly_details child table"))
             
