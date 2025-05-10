@@ -424,7 +424,16 @@ class BPJSPaymentSummary(Document):
         # Format reference naming according to standard
         month_names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
                       'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-        month_name = month_names[self.month - 1] if self.month >= 1 and self.month <= 12 else str(self.month)
+        
+        # Convert month to integer if it's a string
+        month_num = self.month
+        if isinstance(month_num, str):
+            try:
+                month_num = int(month_num)
+            except ValueError:
+                month_num = 0
+                
+        month_name = month_names[month_num - 1] if month_num >= 1 and month_num <= 12 else str(self.month)
         
         self.append("account_details", {
             "account_type": account_type,
@@ -494,7 +503,16 @@ class BPJSPaymentSummary(Document):
             # Format month name for description
             month_names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
                           'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-            month_name = month_names[self.month - 1] if self.month >= 1 and self.month <= 12 else str(self.month)
+            
+            # Convert month to integer if it's a string
+            month_num = self.month
+            if isinstance(month_num, str):
+                try:
+                    month_num = int(month_num)
+                except ValueError:
+                    month_num = 0
+                    
+            month_name = month_names[month_num - 1] if month_num >= 1 and month_num <= 12 else str(self.month)
             
             je.user_remark = f"BPJS Contributions for {month_name} {self.year}"
             
@@ -646,7 +664,16 @@ class BPJSPaymentSummary(Document):
             # Format for custom reference number
             month_names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
                           'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-            month_name = month_names[self.month - 1] if self.month >= 1 and self.month <= 12 else str(self.month)
+            
+            # Convert month to integer if it's a string
+            month_num = self.month
+            if isinstance(month_num, str):
+                try:
+                    month_num = int(month_num)
+                except ValueError:
+                    month_num = 0
+                    
+            month_name = month_names[month_num - 1] if month_num >= 1 and month_num <= 12 else str(self.month)
             
             # Set reference details
             pe.reference_no = f"BPJS-{self.month}-{self.year}"
@@ -764,8 +791,8 @@ class BPJSPaymentSummary(Document):
                 return {"success": False, "count": 0, "message": "No valid BPJS data found"}
             
         except frappe.MandatoryError as e:
-            # Handle mandatory field error
-            debug_log(f"Missing mandatory field: {str(e)}", "BPJS Salary Slip Fetch Error", trace=True)
+            # Handle mandatory field error - REMOVED trace parameter
+            debug_log(f"Missing mandatory field: {str(e)}", "BPJS Salary Slip Fetch Error")
         
             # Coba set nilai default untuk field yang required
             self.amount = 1.0
