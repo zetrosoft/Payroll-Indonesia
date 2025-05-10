@@ -385,9 +385,7 @@ def get_bpjs_account_mapping(company):
     
     return None
 
-# ... rest of code here ...
-
-def get_existing_gl_entries(self, slip_name):
+def get_existing_gl_entries(slip_name):
     """Get existing GL entries for this Salary Slip to avoid duplicates"""
     try:
         gl_entries = frappe.db.get_all(
@@ -410,22 +408,24 @@ def get_existing_gl_entries(self, slip_name):
         # Add cost center if not already in GL entries
         if department:
             try:
-                # Check if cost_center column exists in Department table
+                # First check if cost_center column exists in Department table
                 if frappe.db.has_column('Department', 'cost_center'):
                     cost_center = frappe.db.get_value('Department', department, 'cost_center')
                     if cost_center:
                         for entry in gl_entries:
-                            if not entry.cost_center:
-                                entry.cost_center = cost_center
+                            if not entry.get('cost_center'):
+                                entry['cost_center'] = cost_center
                 else:
+                    frappe.logger().debug(f"Department table does not have cost_center column")
+                    
                     # Try to get cost center from Company
                     company = frappe.db.get_value('Salary Slip', slip_name, 'company')
                     if company:
                         cost_center = frappe.db.get_value('Company', company, 'cost_center')
                         if cost_center:
                             for entry in gl_entries:
-                                if not entry.cost_center:
-                                    entry.cost_center = cost_center
+                                if not entry.get('cost_center'):
+                                    entry['cost_center'] = cost_center
             except Exception as e:
                 frappe.log_error(
                     f"Error getting cost center for {slip_name}, department {department}: {str(e)}\n\n"
