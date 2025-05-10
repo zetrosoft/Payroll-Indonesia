@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 03:01:01 by dannyaudian
+# Last modified: 2025-05-10 13:15:00 by dannyaudian
 
 import frappe
 from frappe import _
@@ -16,6 +16,9 @@ from payroll_indonesia.override.salary_slip import setup_fiscal_year_if_missing
 
 # Import BPJS functions
 from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs, check_bpjs_enrollment
+
+# Import TER functions
+from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category, should_use_ter_method
 
 __all__ = [
     'validate_salary_slip',
@@ -189,7 +192,7 @@ def validate_required_components(doc):
                         # Get component details
                         component_doc = frappe.get_cached_doc("Salary Component", component)
                         if not component_doc:
-                            debug_log(f"Component {component} exists but couldn't be fetched", trace=True)
+                            debug_log(f"Component {component} exists but couldn't be fetched")
                             component_doc = frappe.get_doc("Salary Component", component)
                         
                         # Get abbr, default to first 3 chars if not found
@@ -238,7 +241,7 @@ def ensure_bpjs_components(doc):
         try:
             employee = frappe.get_doc("Employee", doc.employee)
         except Exception as e:
-            debug_log(f"Error getting employee doc for {doc.employee}: {str(e)}", trace=True)
+            debug_log(f"Error getting employee doc for {doc.employee}: {str(e)}")
             return
             
         # Get base salary for BPJS from earnings
@@ -297,11 +300,11 @@ def ensure_bpjs_components(doc):
                 
             
         except Exception as e:
-            debug_log(f"Error calculating BPJS for {doc.employee}: {str(e)}", trace=True, employee=doc.employee)
+            debug_log(f"Error calculating BPJS for {doc.employee}: {str(e)}", employee=doc.employee)
             frappe.msgprint(_("Warning: Error calculating BPJS values. Check log for details."))
             
     except Exception as e:
-        debug_log(f"Error in ensure_bpjs_components: {str(e)}", trace=True)
+        debug_log(f"Error in ensure_bpjs_components: {str(e)}")
         log_error(
             f"Error ensuring BPJS components: {str(e)}\nTraceback: {frappe.get_traceback()}",
             "BPJS Component Error"
@@ -414,7 +417,7 @@ def set_component_values(doc, component_values, component_type):
                 debug_log(f"Added new component {component_name} with value {value}")
                 
             except Exception as e:
-                debug_log(f"Error adding component {component_name}: {str(e)}", trace=True)
+                debug_log(f"Error adding component {component_name}: {str(e)}")
 
 def add_bpjs_note(doc, bpjs_values):
     """
@@ -449,7 +452,7 @@ def add_bpjs_note(doc, bpjs_values):
         
     except Exception as e:
         # Log error but continue
-        debug_log(f"Error adding BPJS info to note: {str(e)}", trace=True)
+        debug_log(f"Error adding BPJS info to note: {str(e)}")
 
 def on_submit_salary_slip(doc, method=None):
     """
@@ -702,8 +705,7 @@ def add_to_payroll_notifications(doc):
         if not frappe.db.exists('DocType', 'Payroll Notification'):
             # No need to log or notify, just return
             return
-            
-        # Validate required fields
+                # Validate required fields
         if not doc.employee or not doc.name:
             frappe.msgprint(_("Employee or salary slip name is missing. Skipping notification."))
             return
@@ -723,6 +725,11 @@ def add_to_payroll_notifications(doc):
         if hasattr(doc, 'is_using_ter') and doc.is_using_ter:
             notification.is_using_ter = 1
             notification.ter_rate = getattr(doc, 'ter_rate', 0)
+            
+            # Add TER category if available
+            if hasattr(doc, 'ter_category') and doc.ter_category:
+                notification.ter_category = doc.ter_category
+                notification.description = f"Using {doc.ter_category} per PMK 168/2023"
         
         # Insert notification
         notification.insert(ignore_permissions=True)
@@ -740,3 +747,4 @@ def add_to_payroll_notifications(doc):
         )
         # Don't throw here to prevent blocking salary slip creation
         frappe.msgprint(_("Warning: Could not create payroll notification: {0}").format(str(e)))
+        

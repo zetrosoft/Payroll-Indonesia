@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 19:15:25 by dannyaudian
+# Last modified: 2025-05-10 12:10:00 by dannyaudian
 
 import frappe
 from frappe import _
@@ -10,8 +10,7 @@ from frappe.utils import flt, getdate, now_datetime, cint
 # Import central utility functions
 from payroll_indonesia.payroll_indonesia.utils import (
     get_default_config, 
-    debug_log, 
-    get_ter_rate
+    debug_log
 )
 
 def setup_ter_rates():
@@ -111,10 +110,10 @@ def setup_ter_rates():
                         f"Traceback: {frappe.get_traceback()}", 
                         "PPh 21 TER Error"
                     )
+                    # Remove trace parameter - it doesn't exist
                     debug_log(
                         f"Error processing TER rate for {status_pajak} {income_from}-{income_to}: {str(e)}", 
-                        "PPh 21 TER Error", 
-                        trace=True
+                        "PPh 21 TER Error"
                     )
         
         # Commit changes
@@ -134,8 +133,149 @@ def setup_ter_rates():
             f"Error setting up TER rates: {str(e)}\n\nTraceback: {frappe.get_traceback()}",
             "PPh 21 TER Error"
         )
-        debug_log(f"Error setting up TER rates: {str(e)}", "PPh 21 TER Error", trace=True)
+        # Remove trace parameter - it doesn't exist
+        debug_log(f"Error setting up TER rates: {str(e)}", "PPh 21 TER Error")
         return False
+
+def get_ter_rate(status_pajak, income):
+    """
+    Get TER rate based on tax status and income amount
+    
+    Args:
+        status_pajak (str): Tax status (e.g., 'TER A', 'TER B', 'TER C' or PTKP status)
+        income (float): Monthly income amount
+        
+    Returns:
+        float: TER rate as decimal (e.g., 0.05 for 5%)
+    """
+    try:
+        # Validate inputs
+        if not status_pajak:
+            status_pajak = "TER C"  # Default to highest category if not specified
+            
+        if not income or income <= 0:
+            return 0
+            
+        # Map PTKP status to TER category if needed
+        if status_pajak.startswith("TK") or status_pajak.startswith("K") or status_pajak.startswith("HB"):
+            status_pajak = map_ptkp_to_ter_category(status_pajak)
+            
+        # Get TER rate from database
+        ter = frappe.db.sql("""
+            SELECT rate
+            FROM `tabPPh 21 TER Table`
+            WHERE status_pajak = %s
+              AND %s >= income_from
+              AND (%s <= income_to OR income_to = 0)
+            ORDER BY income_from DESC
+            LIMIT 1
+        """, (status_pajak, income, income), as_dict=1)
+
+        if ter and len(ter) > 0:
+            return float(ter[0].rate) / 100.0
+        else:
+            # Try to find using highest available bracket
+            ter = frappe.db.sql("""
+                SELECT rate
+                FROM `tabPPh 21 TER Table`
+                WHERE status_pajak = %s
+                  AND is_highest_bracket = 1
+                LIMIT 1
+            """, (status_pajak,), as_dict=1)
+            
+            if ter and len(ter) > 0:
+                return float(ter[0].rate) / 100.0
+            else:
+                # As a last resort, use default rate from settings or hardcoded value
+                try:
+                    # Fall back to defaults.json values
+                    config = get_default_config()
+                    if config and "ter_rates" in config and status_pajak in config["ter_rates"]:
+                        # Get the highest rate from the category
+                        highest_rate = 0
+                        for rate_data in config["ter_rates"][status_pajak]:
+                            if "is_highest_bracket" in rate_data and rate_data["is_highest_bracket"]:
+                                highest_rate = flt(rate_data["rate"])
+                                break
+                        
+                        if highest_rate > 0:
+                            return highest_rate / 100.0
+                    
+                    # PMK 168/2023 highest rate is 34% for all categories
+                    return 0.34
+                        
+                except Exception:
+                    # Last resort - use PMK 168/2023 highest rate
+                    return 0.34
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error getting TER rate for category {status_pajak} and income {income}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "TER Rate Error"
+        )
+        # Return PMK 168/2023 highest rate on error (34%)
+        return 0.34
+
+def map_ptkp_to_ter_category(status_pajak):
+    """
+    Map PTKP status to TER category based on PMK 168/2023
+    
+    Args:
+        status_pajak (str): PTKP status (e.g., 'TK0', 'K1', etc.)
+    
+    Returns:
+        str: TER category ('TER A', 'TER B', or 'TER C')
+    """
+    try:
+        # Get mapping from defaults.json config
+        try:
+            from payroll_indonesia.payroll_indonesia.utils import get_default_config
+            config = get_default_config()
+            if config and "ptkp_to_ter_mapping" in config:
+                mapping = config["ptkp_to_ter_mapping"]
+            else:
+                mapping = None
+        except ImportError:
+            mapping = None
+        
+        if not mapping:
+            # Use hardcoded mapping based on PMK 168/2023
+            mapping = {
+                # TER A: PTKP TK/0 (Rp 54 juta/tahun)
+                "TK0": "TER A",
+                
+                # TER B: PTKP K/0, TK/1, TK/2, K/1 (Rp 58,5-63 juta/tahun)
+                "TK1": "TER B",
+                "TK2": "TER B",
+                "K0": "TER B",
+                "K1": "TER B",
+                
+                # TER C: All other PTKP statuses with higher values
+                "TK3": "TER C",
+                "K2": "TER C", 
+                "K3": "TER C",
+                "HB0": "TER C",
+                "HB1": "TER C",
+                "HB2": "TER C",
+                "HB3": "TER C"
+            }
+            
+        # Return mapped category or default to TER C if status not found
+        if status_pajak in mapping:
+            return mapping[status_pajak]
+        else:
+            # Default to TER C for any unknown status
+            return "TER C"
+            
+    except Exception as e:
+        frappe.log_error(
+            f"Error mapping PTKP status to TER category: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "TER Mapping Error"
+        )
+        # Default to TER C as safest option
+        return "TER C"
 
 def hitung_biaya_jabatan(penghasilan_bruto, is_annual=False):
     """
@@ -182,7 +322,7 @@ def hitung_pph_ter(penghasilan_bruto, status_pajak):
         }
     
     try:
-        # Get TER rate using the central utility function
+        # Get TER rate using the local function
         ter_rate = get_ter_rate(status_pajak, penghasilan_bruto)
         
         # Calculate tax
@@ -200,10 +340,10 @@ def hitung_pph_ter(penghasilan_bruto, status_pajak):
             f"Traceback: {frappe.get_traceback()}",
             "PPh 21 TER Calculation Error"
         )
+        # Remove trace parameter
         debug_log(
             f"Error calculating TER for status {status_pajak} with income {penghasilan_bruto}: {str(e)}",
-            "PPh 21 TER Calculation Error",
-            trace=True
+            "PPh 21 TER Calculation Error"
         )
         return {
             "tax_amount": 0,
@@ -233,8 +373,6 @@ def generate_ter_calculation_note(penghasilan_bruto, status_pajak, ter_result):
     ]
     
     # Add reference to calculation method
-    config = get_default_config()
-    tax_config = config.get("tax", {})
     note.append("")
     note.append(f"Perhitungan sesuai PMK 168/2023 tentang Tarif Efektif Rata-rata")
     
@@ -278,7 +416,8 @@ def should_use_ter():
             f"Error checking TER method settings: {str(e)}\n\nTraceback: {frappe.get_traceback()}",
             "PPh 21 TER Error"
         )
-        debug_log(f"Error checking TER method settings: {str(e)}", "PPh 21 TER Error", trace=True)
+        # Remove trace parameter
+        debug_log(f"Error checking TER method settings: {str(e)}", "PPh 21 TER Error")
         return False
 
 def check_ter_setup():
@@ -308,5 +447,6 @@ def check_ter_setup():
             f"Error checking TER setup: {str(e)}\n\nTraceback: {frappe.get_traceback()}",
             "PPh 21 TER Error"
         )
-        debug_log(f"Error checking TER setup: {str(e)}", "PPh 21 TER Error", trace=True)
+        # Remove trace parameter
+        debug_log(f"Error checking TER setup: {str(e)}", "PPh 21 TER Error")
         return False

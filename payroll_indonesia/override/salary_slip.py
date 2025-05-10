@@ -21,7 +21,6 @@ __all__ = [
     'clear_caches'
 ]
 
-# Import BPJS calculation functions from bpjs_calculator.py
 from payroll_indonesia.override.salary_slip.bpjs_calculator import (
     calculate_bpjs_components,
     verify_bpjs_components,
@@ -39,14 +38,14 @@ try:
     
     from payroll_indonesia.override.salary_slip.base import get_formatted_currency, get_component_amount, update_component_amount
     from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
-    from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter, should_use_ter_method, get_ter_rate, map_ptkp_to_ter_category
+    from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter, should_use_ter_method
     
     # Direct import for BPJS calculation to ensure it's always available
     from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
     
     debug_log("Successfully imported all payroll_indonesia modules")
 except ImportError as e:
-    debug_log(f"Error importing Payroll Indonesia modules: {str(e)}", trace=True)
+    debug_log(f"Error importing Payroll Indonesia modules: {str(e)}")
     frappe.log_error("Error importing Payroll Indonesia modules", "Salary Slip Import Error")
     
     # Define placeholders to avoid errors when modules not found
@@ -202,10 +201,11 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         
             # Check if TER method is enabled globally
             if pph_settings.get('calculation_method') == "TER" and pph_settings.get('use_ter'):
-                # Check if employee is eligible for TER - using an optimized check
-                if self._is_eligible_for_ter(employee):
-                    # Map PTKP status to TER category for reference
-                    if hasattr(employee, 'status_pajak'):
+                # Use should_use_ter_method from ter_calculator.py for consistency
+                if should_use_ter_method(employee, pph_settings):
+                    # Set TER category for reference
+                    if hasattr(employee, 'status_pajak') and employee.status_pajak:
+                        from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
                         ter_category = map_ptkp_to_ter_category(employee.status_pajak)
                         self.ter_category = ter_category
                         debug_log(f"Using TER method ({ter_category}) for {self.name} based on status_pajak {employee.status_pajak}")
@@ -214,29 +214,40 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             # Default to progressive method
             return "PROGRESSIVE"
         except Exception as e:
-            debug_log(f"Error determining tax strategy for {employee.name}: {str(e)}", trace=True)
+            debug_log(f"Error determining tax strategy for {employee.name}: {str(e)}")
             return "PROGRESSIVE"
 
     def _is_eligible_for_ter(self, employee):
         """
-        Optimized check if employee is eligible for TER method
-        Args:
-            employee: Employee document
-        Returns:
-            bool: True if eligible, False otherwise
+        Deprecated - use should_use_ter_method from ter_calculator.py instead
+        This remains for backward compatibility
         """
-        # Quick check for exclusion fields
-        if hasattr(employee, 'tipe_karyawan') and employee.tipe_karyawan == "Freelance":
-            return False
+        # Delegate to the centralized should_use_ter_method function
+        try:
+            from payroll_indonesia.override.salary_slip.ter_calculator import should_use_ter_method
+            # Get PPh 21 Settings - only if we have it cached already
+            pph_settings = frappe.get_cached_value(
+                "PPh 21 Settings", 
+                "PPh 21 Settings",
+                ["calculation_method", "use_ter", "default_ter_rate"],
+                as_dict=True
+            ) if frappe.cache().exists("PPh 21 Settings") else None
             
-        if hasattr(employee, 'override_tax_method') and employee.override_tax_method == "Progressive":
-            return False
-            
-        # Per PMK 168/2023, check if December (always use Progressive in December)
-        if self.end_date and getdate(self.end_date).month == 12:
-            return False
-            
-        return True
+            return should_use_ter_method(employee, pph_settings)
+        except Exception:
+            # Fall back to simple checks if the import fails
+            # Quick check for exclusion fields
+            if hasattr(employee, 'tipe_karyawan') and employee.tipe_karyawan == "Freelance":
+                return False
+                
+            if hasattr(employee, 'override_tax_method') and employee.override_tax_method == "Progressive":
+                return False
+                
+            # Per PMK 168/2023, check if December (always use Progressive in December)
+            if self.end_date and getdate(self.end_date).month == 12:
+                return False
+                
+            return True
 
     def calculate_tax_with_strategy(self, strategy, employee):
         """
@@ -246,14 +257,20 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             employee: Employee document
         """
         if strategy == "TER":
-            from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter
             debug_log(f"Calculating tax with TER for {self.name}")
             
-            # Pass TER category if already mapped
+            # Set is_using_ter flag explicitly
+            self.is_using_ter = 1
+            
+            # Use calculate_monthly_pph_with_ter from ter_calculator.py
             calculate_monthly_pph_with_ter(self, employee)
         else:
-            from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
             debug_log(f"Calculating tax with Progressive method for {self.name}")
+            
+            # Ensure is_using_ter is set to 0 for consistency
+            self.is_using_ter = 0
+            
+            # Use calculate_tax_components from tax_calculator.py
             calculate_tax_components(self, employee)
 
     def on_submit(self):
@@ -363,8 +380,12 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 
                 # Include TER category information if using TER
                 ter_info = ""
-                if hasattr(self, 'is_using_ter') and self.is_using_ter and hasattr(self, 'ter_category'):
-                    ter_info = f" Menggunakan {self.ter_category} sesuai PMK 168/2023."
+                if hasattr(self, 'is_using_ter') and self.is_using_ter:
+                    # Use TER category if available, otherwise just indicate TER is used
+                    if hasattr(self, 'ter_category') and self.ter_category:
+                        ter_info = f" Menggunakan {self.ter_category} sesuai PMK 168/2023."
+                    else:
+                        ter_info = f" Menggunakan metode TER sesuai PMK 168/2023."
                 
                 note = (
                     f"\n[{timestamp}] Submit berhasil: Dokumen dijadwalkan: {queued_docs_text}. "
@@ -392,7 +413,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             )
             
         except Exception as e:
-            debug_log(f"Error queueing document creation for {self.name}: {str(e)}", trace=True)
+            debug_log(f"Error queueing document creation for {self.name}: {str(e)}")
             frappe.log_error(
                 f"Error queueing document creation for {self.name}: {str(e)}\n\n"
                 f"Traceback: {frappe.get_traceback()}",
