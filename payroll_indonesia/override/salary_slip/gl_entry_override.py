@@ -385,124 +385,63 @@ def get_bpjs_account_mapping(company):
     
     return None
 
-def get_existing_gl_entries(doc):
-    """
-    Get GL entries that would be created for this Salary Slip
-    This simulates the standard ERPNext GL entry creation process
-    
-    Args:
-        doc (obj): Salary Slip document
-        
-    Returns:
-        list: List of GL entries
-    """
+# ... rest of code here ...
+
+def get_existing_gl_entries(self, slip_name):
+    """Get existing GL entries for this Salary Slip to avoid duplicates"""
     try:
-        gl_entries = []
+        gl_entries = frappe.db.get_all(
+            "GL Entry",
+            filters={
+                "voucher_type": "Salary Slip",
+                "voucher_no": slip_name,
+                "is_cancelled": 0
+            },
+            fields=["name", "account", "against", "credit", "debit", "cost_center"]
+        )
         
-        # Get the cost_center with multiple fallbacks
-        cost_center = getattr(doc, 'cost_center', None)
-        
-        # Try various fallbacks for cost_center
-        if not cost_center:
-            # Try department's cost center
-            department = getattr(doc, 'department', None)
-            if department:
-                cost_center = frappe.db.get_value('Department', department, 'cost_center')
+        # If no existing entries, return empty list
+        if not gl_entries:
+            return []
             
-            # Try employee's cost center
-            if not cost_center:
-                employee = getattr(doc, 'employee', None)
-                if employee:
-                    cost_center = frappe.db.get_value('Employee', employee, 'cost_center')
-                    
-            # Try payroll entry's cost center
-            if not cost_center:
-                payroll_entry = getattr(doc, 'payroll_entry', None)
-                if payroll_entry:
-                    cost_center = frappe.db.get_value('Payroll Entry', payroll_entry, 'cost_center')
-                    
-            # Try company's cost center as last resort
-            if not cost_center and hasattr(doc, 'company') and doc.company:
-                cost_center = frappe.db.get_value('Company', doc.company, 'cost_center')
-                
-        # Get project with fallback
-        project = getattr(doc, 'project', None)
+        # Process department to get cost center
+        department = frappe.db.get_value('Salary Slip', slip_name, 'department')
         
-        # Process earnings
-        for earning in doc.earnings:
-            if not earning.salary_component:
-                continue
+        # Add cost center if not already in GL entries
+        if department:
+            try:
+                # Check if cost_center column exists in Department table
+                if frappe.db.has_column('Department', 'cost_center'):
+                    cost_center = frappe.db.get_value('Department', department, 'cost_center')
+                    if cost_center:
+                        for entry in gl_entries:
+                            if not entry.cost_center:
+                                entry.cost_center = cost_center
+                else:
+                    # Try to get cost center from Company
+                    company = frappe.db.get_value('Salary Slip', slip_name, 'company')
+                    if company:
+                        cost_center = frappe.db.get_value('Company', company, 'cost_center')
+                        if cost_center:
+                            for entry in gl_entries:
+                                if not entry.cost_center:
+                                    entry.cost_center = cost_center
+            except Exception as e:
+                frappe.log_error(
+                    f"Error getting cost center for {slip_name}, department {department}: {str(e)}\n\n"
+                    f"Traceback: {frappe.get_traceback()}",
+                    "GL Entry Override Error"
+                )
+                # Continue processing without cost center
+                pass
                 
-            # Get account based on component and type
-            account = get_component_account(earning.salary_component, "earnings", doc.company)
-            if not account:
-                continue
-                
-            # Create debit entry
-            gl_entries.append({
-                "account": account,
-                "against": earning.salary_component,
-                "debit": flt(earning.amount),
-                "credit": 0,
-                "cost_center": cost_center,
-                "project": project
-            })
-            
-            # For statistical components, create balancing credit entry
-            if getattr(earning, 'statistical_component', 0) == 1:
-                default_payable = get_default_payable_account(doc)
-                gl_entries.append({
-                    "account": default_payable,
-                    "against": earning.salary_component,
-                    "debit": 0,
-                    "credit": flt(earning.amount),
-                    "cost_center": cost_center,
-                    "project": project
-                })
-        
-        # Process deductions (except loans)
-        for deduction in doc.deductions:
-            if not deduction.salary_component:
-                continue
-            
-            # Handle loan repayments separately
-            if getattr(deduction, 'is_loan_repayment', False):
-                continue
-                
-            # Get account based on component and type
-            account = get_component_account(deduction.salary_component, "deductions", doc.company)
-            if not account:
-                continue
-                
-            # Create credit entry
-            gl_entries.append({
-                "account": account,
-                "against": deduction.salary_component,
-                "debit": 0,
-                "credit": flt(deduction.amount),
-                "cost_center": cost_center,
-                "project": project
-            })
-            
-            # For statistical components, create balancing debit entry
-            if getattr(deduction, 'statistical_component', 0) == 1:
-                default_payable = get_default_payable_account(doc)
-                gl_entries.append({
-                    "account": default_payable,
-                    "against": deduction.salary_component,
-                    "debit": flt(deduction.amount),
-                    "credit": 0,
-                    "cost_center": cost_center,
-                    "project": project
-                })
-        
         return gl_entries
         
     except Exception as e:
         frappe.log_error(
-            f"Error in get_existing_gl_entries for {getattr(doc, 'name', 'Unknown')}: {str(e)}\n"
+            f"Error in get_existing_gl_entries for {slip_name}: {str(e)}\n\n"
             f"Traceback: {frappe.get_traceback()}",
-            "Salary Slip GL Entry Error"
+            "GL Entry Override Error"
         )
         return []
 

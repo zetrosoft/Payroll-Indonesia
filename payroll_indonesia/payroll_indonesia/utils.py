@@ -1573,3 +1573,77 @@ def get_ytd_tax_info(employee, date=None):
             "is_using_ter": 0,
             "ter_rate": 0
         }
+# Di file utils.py, tambahkan fungsi helper untuk mendapatkan BPJS Settings dengan fallback
+
+def get_bpjs_settings_safely():
+    """
+    Get BPJS Settings with fallback if not found
+    
+    Returns:
+        object: BPJS Settings document or dict with default values
+    """
+    try:
+        # Check if DocType exists
+        if not frappe.db.exists("DocType", "BPJS Settings"):
+            frappe.log_error("BPJS Settings DocType not found", "BPJS Settings Error")
+            return create_default_settings_dict()
+            
+        # Try to get the singleton
+        try:
+            return frappe.get_doc("BPJS Settings", "BPJS Settings")
+        except frappe.DoesNotExistError:
+            frappe.log_error("BPJS Settings singleton not found, will create", "BPJS Settings")
+            return create_default_bpjs_settings()
+            
+    except Exception as e:
+        frappe.log_error(
+            f"Error retrieving BPJS Settings: {str(e)}\n\n{frappe.get_traceback()}", 
+            "BPJS Settings Error"
+        )
+        return create_default_settings_dict()
+
+def create_default_settings_dict():
+    """Create default settings dictionary when BPJS Settings document can't be found"""
+    return {
+        "kesehatan_employee_percent": 1.0,
+        "kesehatan_employer_percent": 4.0,
+        "kesehatan_max_salary": 12000000.0,
+        "jht_employee_percent": 2.0,
+        "jht_employer_percent": 3.7,
+        "jp_employee_percent": 1.0,
+        "jp_employer_percent": 2.0,
+        "jp_max_salary": 9000000.0,
+        "jkk_percent": 0.54,
+        "jkm_percent": 0.3
+    }
+
+def create_default_bpjs_settings():
+    """Try to create BPJS Settings document if it doesn't exist"""
+    try:
+        default_values = create_default_settings_dict()
+        
+        # Create new BPJS Settings
+        doc = frappe.new_doc("BPJS Settings")
+        
+        # Set default values
+        for key, value in default_values.items():
+            if hasattr(doc, key):
+                setattr(doc, key, value)
+                
+        # Add flags to bypass validation
+        doc.flags.ignore_permissions = True
+        doc.flags.ignore_mandatory = True
+        doc.flags.ignore_validate = True
+        
+        # Try to save
+        doc.insert()
+        frappe.db.commit()
+        
+        frappe.log_error("Created default BPJS Settings", "BPJS Settings")
+        return doc
+    except Exception as e:
+        frappe.log_error(
+            f"Failed to create default BPJS Settings: {str(e)}\n\n{frappe.get_traceback()}", 
+            "BPJS Settings Error"
+        )
+        return create_default_settings_dict()
