@@ -19,6 +19,262 @@ _ter_rate_last_clear = now_datetime()
 _ptkp_mapping_cache = None
 
 def calculate_monthly_pph_with_ter(doc, employee):
+    """
+    Calculate PPh 21 using TER method based on PMK 168/2023
+    
+    Applies TER calculation to the provided salary slip, ensuring:
+    - Original gross_pay is preserved
+    - Monthly and annual amounts are properly tracked
+    - Status and calculation details are recorded
+    """
+    try:
+        # Validate employee status_pajak
+        if not hasattr(employee, 'status_pajak') or not employee.status_pajak:
+            employee.status_pajak = "TK0"  # Default to TK0 if not set
+            frappe.msgprint(_("Warning: Employee tax status not set, using TK0 as default"))
+
+        # Log start of TER calculation with explicit tag
+        frappe.logger().debug(f"[TER] Calculation start for {doc.name}, employee: {getattr(employee, 'name', 'unknown')}")
+        frappe.logger().debug(f"[TER] Initial gross_pay: {flt(doc.gross_pay)}")
+
+        # PENTING: Simpan nilai original gross_pay dan JANGAN mengubahnya
+        original_gross_pay = flt(doc.gross_pay)
+        monthly_gross_pay = flt(original_gross_pay)
+        
+        # Status perhitungan - default "REGULAR"
+        ter_calculation_status = "REGULAR"
+        
+        # Check if bypass_annual_detection is enabled
+        bypass_detection = False
+        if hasattr(doc, 'bypass_annual_detection') and doc.bypass_annual_detection:
+            bypass_detection = True
+            ter_calculation_status = "BYPASS"
+            frappe.logger().info(
+                f"[TER] Bypassing annual detection for {doc.name} - using gross_pay as-is: {flt(original_gross_pay)}"
+            )
+        
+        # Only perform detection if bypass is not enabled
+        is_annual = False
+        reason = ""
+        
+        if not bypass_detection:
+            # Improved detection logic for annual vs monthly gross_pay
+            total_earnings = flt(sum(flt(e.amount) for e in doc.earnings)) if hasattr(doc, 'earnings') and doc.earnings else 0
+            
+            # Detect if gross_pay might be annual
+            
+            # Case 1: Compare with total earnings if available
+            if total_earnings > 0:
+                if flt(original_gross_pay) > flt(total_earnings) * 3:
+                    is_annual = True
+                    reason = f"gross_pay ({flt(original_gross_pay)}) significantly exceeds total earnings ({flt(total_earnings)})"
+                    monthly_gross_pay = flt(total_earnings)
+                    ter_calculation_status = "ADJUSTED_EARNINGS"
+            
+            # Case 2: Check for unreasonably high values (likely annual)
+            elif flt(original_gross_pay) > 100000000:  # 100 million threshold
+                is_annual = True
+                reason = f"gross_pay exceeds 100,000,000 which is unlikely for monthly salary"
+                monthly_gross_pay = flt(original_gross_pay / 12)
+                ter_calculation_status = "ADJUSTED_HIGH_VALUE"
+            
+            # Case 3: Look for specific components if earnings comparison didn't trigger
+            elif not is_annual and hasattr(doc, 'earnings'):
+                # Find Gaji Pokok or Basic Salary component
+                basic_salary = 0
+                for e in doc.earnings:
+                    if e.salary_component in ["Gaji Pokok", "Basic Salary", "Basic Pay"]:
+                        basic_salary = flt(e.amount)
+                        break
+                
+                # Compare gross_pay with basic salary if found
+                if flt(basic_salary) > 0 and flt(original_gross_pay) > flt(basic_salary) * 10:
+                    is_annual = True
+                    reason = f"gross_pay ({flt(original_gross_pay)}) is more than 10x basic salary ({flt(basic_salary)})"
+                    
+                    # Check if gross_pay is close to 12x the basic salary
+                    if 11 < (flt(original_gross_pay) / flt(basic_salary)) < 13:
+                        monthly_gross_pay = flt(original_gross_pay / 12)
+                        ter_calculation_status = "ADJUSTED_ANNUAL_TO_MONTHLY"
+                    else:
+                        monthly_gross_pay = flt(total_earnings)  # Use total earnings as fallback
+                        ter_calculation_status = "ADJUSTED_TO_EARNINGS"
+        
+        # Hitung nilai tahunan untuk disimpan di annual_taxable_amount
+        annual_taxable_amount = flt(monthly_gross_pay * 12)
+        
+        # Log hasil deteksi dan penyesuaian nilai gross
+        if is_annual:
+            frappe.logger().warning(
+                f"[TER] Detected annual gross_pay in {doc.name}: {reason}. "
+                f"Monthly value: {flt(monthly_gross_pay)}, Annual value: {flt(annual_taxable_amount)}, "
+                f"Status: {ter_calculation_status}"
+            )
+            
+            # Store the adjustment reason for reference
+            if hasattr(doc, 'ter_calculation_note'):
+                doc.ter_calculation_note = f"Adjusted gross_pay from {flt(original_gross_pay):,.0f} to monthly: {flt(monthly_gross_pay):,.0f} ({reason})"
+                doc.db_set('ter_calculation_note', doc.ter_calculation_note, update_modified=False)
+        elif bypass_detection:
+            # Log that we're using the original value due to bypass
+            frappe.logger().debug(
+                f"[TER] Using gross_pay as-is due to bypass_annual_detection=1: {flt(monthly_gross_pay)}, "
+                f"Annual value: {flt(annual_taxable_amount)}, Status: {ter_calculation_status}"
+            )
+            if hasattr(doc, 'ter_calculation_note'):
+                doc.ter_calculation_note = f"Using original monthly gross_pay: {flt(monthly_gross_pay):,.0f} (bypass_annual_detection=1)"
+                doc.db_set('ter_calculation_note', doc.ter_calculation_note, update_modified=False)
+        
+        # Tambahkan log dengan format yang diminta
+        frappe.logger().debug(f"[TER] Gross Monthly: {flt(monthly_gross_pay)}, Annualized: {flt(annual_taxable_amount)}")
+        
+        # Simpan nilai monthly_gross_for_ter jika field tersedia
+        if hasattr(doc, 'monthly_gross_for_ter'):
+            doc.monthly_gross_for_ter = flt(monthly_gross_pay)
+            doc.db_set('monthly_gross_for_ter', flt(monthly_gross_pay), update_modified=False)
+            frappe.logger().debug(f"[TER] Set monthly_gross_for_ter to {flt(monthly_gross_pay)}")
+        
+        # Simpan nilai annual_taxable_amount jika field tersedia
+        if hasattr(doc, 'annual_taxable_amount'):
+            doc.annual_taxable_amount = flt(annual_taxable_amount)
+            doc.db_set('annual_taxable_amount', flt(annual_taxable_amount), update_modified=False)
+            frappe.logger().debug(f"[TER] Set annual_taxable_amount to {flt(annual_taxable_amount)}")
+            
+        # Simpan status perhitungan jika field tersedia
+        if hasattr(doc, 'ter_calculation_status'):
+            doc.ter_calculation_status = ter_calculation_status
+            doc.db_set('ter_calculation_status', ter_calculation_status, update_modified=False)
+            frappe.logger().debug(f"[TER] Set ter_calculation_status to {ter_calculation_status}")
+        
+        # Get status_pajak
+        status_pajak = employee.status_pajak
+        
+        # Map PTKP status to TER category
+        ter_category = map_ptkp_to_ter_category(status_pajak)
+        frappe.logger().debug(f"[TER] Category: {ter_category}")
+        
+        # Get TER rate using TER category and MONTHLY INCOME
+        ter_rate = flt(get_ter_rate(ter_category, monthly_gross_pay))
+        frappe.logger().debug(f"[TER] Rate: {ter_rate}")
+        
+        # Calculate tax using TER - MENGGUNAKAN INCOME BULANAN
+        monthly_tax = flt(monthly_gross_pay * ter_rate)
+        frappe.logger().debug(f"[TER] Tax calculation: {flt(monthly_gross_pay)} * {ter_rate} = {monthly_tax}")
+
+        # Save TER info
+        doc.is_using_ter = 1
+        doc.ter_rate = flt(ter_rate * 100)  # Convert to percentage for display
+        
+        # Pastikan nilai tersimpan langsung ke database
+        doc.db_set('is_using_ter', 1, update_modified=False)
+        doc.db_set('ter_rate', flt(ter_rate * 100), update_modified=False)
+        
+        # Simpan ter_category jika field tersedia
+        if hasattr(doc, 'ter_category'):
+            doc.ter_category = ter_category
+            doc.db_set('ter_category', ter_category, update_modified=False)
+
+        # Log untuk verifikasi nilai tersimpan
+        frappe.logger().debug(f"[TER] Values set: is_using_ter={getattr(doc, 'is_using_ter', 0)}, ter_rate={flt(getattr(doc, 'ter_rate', 0))}, ter_category={getattr(doc, 'ter_category', '')}")
+
+        # Update PPh 21 component
+        update_component_amount(doc, "PPh 21", flt(monthly_tax), "deductions")
+
+        # Add note about adjustment if needed
+        adjustment_note = ""
+        if is_annual:
+            adjustment_note = f" (Penghasilan disesuaikan dari {flt(original_gross_pay):,.0f} ke {flt(monthly_gross_pay):,.0f})"
+        elif bypass_detection:
+            adjustment_note = f" (bypass_annual_detection=1)"
+
+        # Use the centralized function to add tax info to payroll note
+        add_tax_info_to_note(doc, "TER", {
+            "status_pajak": status_pajak,
+            "ter_category": ter_category,
+            "gross_pay": flt(monthly_gross_pay),
+            "annual_taxable_amount": flt(annual_taxable_amount), 
+            "ter_rate": flt(ter_rate * 100),
+            "monthly_tax": flt(monthly_tax),
+            "ter_calculation_status": ter_calculation_status,
+            "note": f"Perhitungan TER: penghasilan bulanan × tarif TER{adjustment_note}"
+        })
+        
+        # Verifikasi nilai ter
+        verify_ter_values(doc, ter_rate, ter_category)
+        
+        # Verifikasi nilai tidak berubah
+        verify_calculation_integrity(doc, original_gross_pay, monthly_gross_pay, annual_taxable_amount, ter_calculation_status)
+        
+        frappe.logger().debug(f"[TER] Calculation completed for {doc.name}")
+
+    except Exception as e:
+        frappe.log_error(
+            f"[TER] Calculation Error for Employee {getattr(employee, 'name', 'unknown')}: {str(e)}\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "TER Calculation Error"
+        )
+        frappe.throw(_("Error calculating PPh 21 with TER: {0}").format(str(e)))
+
+def verify_calculation_integrity(doc, original_gross_pay, monthly_gross_pay, annual_taxable_amount, ter_calculation_status):
+    """
+    Verify the integrity of calculated values and ensure they're correctly stored
+    
+    Args:
+        doc: Salary Slip document
+        original_gross_pay: Original gross_pay value that shouldn't change
+        monthly_gross_pay: Calculated monthly gross pay for TER
+        annual_taxable_amount: Calculated annual taxable amount
+        ter_calculation_status: Status of the TER calculation
+    """
+    try:
+        # PENTING: Verifikasi gross_pay tidak berubah
+        if abs(flt(doc.gross_pay) - flt(original_gross_pay)) > 0.01:
+            frappe.logger().error(
+                f"[TER] ERROR: gross_pay changed during calculation for {doc.name}! "
+                f"Original: {flt(original_gross_pay)}, Current: {flt(doc.gross_pay)}. Restoring original value."
+            )
+            doc.gross_pay = flt(original_gross_pay)
+            doc.db_set('gross_pay', flt(original_gross_pay), update_modified=False)
+            
+        # Verifikasi monthly_gross_for_ter
+        if hasattr(doc, 'monthly_gross_for_ter') and abs(flt(doc.monthly_gross_for_ter) - flt(monthly_gross_pay)) > 0.01:
+            frappe.logger().warning(
+                f"[TER] monthly_gross_for_ter verification failed for {doc.name}: "
+                f"expected {flt(monthly_gross_pay)}, got {flt(doc.monthly_gross_for_ter)}"
+            )
+            doc.monthly_gross_for_ter = flt(monthly_gross_pay)
+            doc.db_set('monthly_gross_for_ter', flt(monthly_gross_pay), update_modified=False)
+            
+        # Verifikasi annual_taxable_amount
+        if hasattr(doc, 'annual_taxable_amount') and abs(flt(doc.annual_taxable_amount) - flt(annual_taxable_amount)) > 0.01:
+            frappe.logger().warning(
+                f"[TER] annual_taxable_amount verification failed for {doc.name}: "
+                f"expected {flt(annual_taxable_amount)}, got {flt(doc.annual_taxable_amount)}"
+            )
+            doc.annual_taxable_amount = flt(annual_taxable_amount)
+            doc.db_set('annual_taxable_amount', flt(annual_taxable_amount), update_modified=False)
+            
+        # Verifikasi ter_calculation_status
+        if hasattr(doc, 'ter_calculation_status') and doc.ter_calculation_status != ter_calculation_status:
+            frappe.logger().warning(
+                f"[TER] ter_calculation_status verification failed for {doc.name}: "
+                f"expected {ter_calculation_status}, got {doc.ter_calculation_status}"
+            )
+            doc.ter_calculation_status = ter_calculation_status
+            doc.db_set('ter_calculation_status', ter_calculation_status, update_modified=False)
+            
+        # Log success
+        frappe.logger().debug(
+            f"[TER] Value integrity verified for {doc.name}: "
+            f"gross_pay={flt(doc.gross_pay)}, "
+            f"monthly_gross_for_ter={flt(getattr(doc, 'monthly_gross_for_ter', 0))}, "
+            f"annual_taxable_amount={flt(getattr(doc, 'annual_taxable_amount', 0))}, "
+            f"ter_calculation_status={getattr(doc, 'ter_calculation_status', '')}"
+        )
+            
+    except Exception as e:
+        frappe.logger().error(f"[TER] Error during calculation integrity verification for {doc.name}: {str(e)}")
+        # We don't throw here since this is a verification function
     """Calculate PPh 21 using TER method based on PMK 168/2023"""
     try:
         # Validate employee status_pajak
@@ -27,10 +283,10 @@ def calculate_monthly_pph_with_ter(doc, employee):
             frappe.msgprint(_("Warning: Employee tax status not set, using TK0 as default"))
 
         # Log start of TER calculation for debugging
-        frappe.logger().debug(f"TER calculation start for {doc.name}, employee: {getattr(employee, 'name', 'unknown')}")
-        frappe.logger().debug(f"Initial gross_pay: {doc.gross_pay}")
+        frappe.logger().debug(f"[TER] Calculation start for {doc.name}, employee: {getattr(employee, 'name', 'unknown')}")
+        frappe.logger().debug(f"[TER] Initial gross_pay: {doc.gross_pay}")
 
-        # Pastikan gross_pay adalah nilai bulanan, bukan tahunan
+        # PENTING: Simpan nilai original gross_pay dan JANGAN mengubahnya
         original_gross_pay = doc.gross_pay
         monthly_gross_pay = original_gross_pay
         
@@ -39,7 +295,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
         if hasattr(doc, 'bypass_annual_detection') and doc.bypass_annual_detection:
             bypass_detection = True
             frappe.logger().info(
-                f"Bypassing annual detection for {doc.name} - using gross_pay as-is: {original_gross_pay}"
+                f"[TER] Bypassing annual detection for {doc.name} - using gross_pay as-is: {original_gross_pay}"
             )
         
         # Only perform detection if bypass is not enabled
@@ -85,64 +341,74 @@ def calculate_monthly_pph_with_ter(doc, employee):
                     else:
                         monthly_gross_pay = total_earnings  # Use total earnings as fallback
         
-        # Log if an adjustment was made
+        # Hitung nilai tahunan untuk disimpan di annual_taxable_amount
+        annual_taxable_amount = monthly_gross_pay * 12
+        
+        # Log hasil deteksi dan penyesuaian nilai gross
         if is_annual:
             frappe.logger().warning(
-                f"Detected annual gross_pay in TER calculation for {doc.name}: {reason}. "
-                f"Adjusted from {original_gross_pay} to {monthly_gross_pay}"
+                f"[TER] Detected annual gross_pay in {doc.name}: {reason}. "
+                f"Monthly value: {monthly_gross_pay}, Annual value: {annual_taxable_amount}"
             )
             
             # Store the adjustment reason for reference
             if hasattr(doc, 'ter_calculation_note'):
-                doc.ter_calculation_note = f"Adjusted gross_pay from {original_gross_pay:,.0f} to {monthly_gross_pay:,.0f} ({reason})"
+                doc.ter_calculation_note = f"Adjusted gross_pay from {original_gross_pay:,.0f} to monthly: {monthly_gross_pay:,.0f} ({reason})"
         elif bypass_detection:
             # Log that we're using the original value due to bypass
             frappe.logger().debug(
-                f"Using original gross_pay for TER calculation due to bypass_annual_detection=1: {original_gross_pay}"
+                f"[TER] Using gross_pay as-is due to bypass_annual_detection=1: {monthly_gross_pay}, "
+                f"Annual value: {annual_taxable_amount}"
             )
             if hasattr(doc, 'ter_calculation_note'):
-                doc.ter_calculation_note = f"Using original gross_pay: {original_gross_pay:,.0f} (bypass_annual_detection=1)"
-                
-        frappe.logger().debug(f"Using monthly_gross_pay: {monthly_gross_pay} for TER calculation")
+                doc.ter_calculation_note = f"Using original monthly gross_pay: {monthly_gross_pay:,.0f} (bypass_annual_detection=1)"
+        
+        # Tambahkan log dengan format yang diminta
+        frappe.logger().debug(f"[TER] Gross Monthly: {monthly_gross_pay}, Annualized: {annual_taxable_amount}")
+        
+        # Simpan nilai annual_taxable_amount jika field tersedia
+        if hasattr(doc, 'annual_taxable_amount'):
+            doc.annual_taxable_amount = annual_taxable_amount
+            doc.db_set('annual_taxable_amount', annual_taxable_amount, update_modified=False)
+            frappe.logger().debug(f"[TER] Set annual_taxable_amount to {annual_taxable_amount}")
         
         # Get status_pajak
         status_pajak = employee.status_pajak
         
         # Map PTKP status to TER category
         ter_category = map_ptkp_to_ter_category(status_pajak)
-        frappe.logger().debug(f"TER category: {ter_category}")
+        frappe.logger().debug(f"[TER] Category: {ter_category}")
         
         # Get TER rate using TER category and MONTHLY INCOME
         ter_rate = get_ter_rate(ter_category, monthly_gross_pay)
-        frappe.logger().debug(f"TER rate: {ter_rate}")
+        frappe.logger().debug(f"[TER] Rate: {ter_rate}")
         
-        # Calculate tax using TER - LANGSUNG MENGALIKAN DENGAN INCOME BULANAN
+        # Calculate tax using TER - MENGGUNAKAN INCOME BULANAN
         monthly_tax = monthly_gross_pay * ter_rate
-        frappe.logger().debug(f"Monthly tax calculation: {monthly_gross_pay} * {ter_rate} = {monthly_tax}")
+        frappe.logger().debug(f"[TER] Tax calculation: {monthly_gross_pay} * {ter_rate} = {monthly_tax}")
 
-        # Save TER info - NILAI INI PERLU DIATUR DAN DISIMPAN DENGAN BENAR
+        # Save TER info
         doc.is_using_ter = 1
         doc.ter_rate = ter_rate * 100  # Convert to percentage for display
         
-        # PENTING: Pastikan nilai tersimpan ke database menggunakan db_set
-        # Ini akan memastikan nilai tersimpan langsung ke database, bukan hanya di objek Python
+        # Pastikan nilai tersimpan langsung ke database
         doc.db_set('is_using_ter', 1, update_modified=False)
         doc.db_set('ter_rate', ter_rate * 100, update_modified=False)
         
-        # Simpan juga ter_category jika field tersedia
+        # Simpan ter_category jika field tersedia
         if hasattr(doc, 'ter_category'):
             doc.ter_category = ter_category
             doc.db_set('ter_category', ter_category, update_modified=False)
 
-        # Tambahkan logging debug untuk memverifikasi nilai telah diatur
-        frappe.logger().debug(f"TER values set: is_using_ter={doc.is_using_ter}, ter_rate={doc.ter_rate}, ter_category={ter_category}")
+        # Log untuk verifikasi nilai tersimpan
+        frappe.logger().debug(f"[TER] Values set: is_using_ter={doc.is_using_ter}, ter_rate={doc.ter_rate}, ter_category={ter_category}")
 
         # Update PPh 21 component
         update_component_amount(doc, "PPh 21", monthly_tax, "deductions")
 
         # Add note about adjustment if needed
         adjustment_note = ""
-        if monthly_gross_pay != original_gross_pay:
+        if is_annual:
             adjustment_note = f" (Penghasilan disesuaikan dari {original_gross_pay:,.0f} ke {monthly_gross_pay:,.0f})"
         elif bypass_detection:
             adjustment_note = f" (bypass_annual_detection=1)"
@@ -151,20 +417,39 @@ def calculate_monthly_pph_with_ter(doc, employee):
         add_tax_info_to_note(doc, "TER", {
             "status_pajak": status_pajak,
             "ter_category": ter_category,
-            "gross_pay": monthly_gross_pay,  # Use the adjusted monthly gross pay
+            "gross_pay": monthly_gross_pay,
+            "annual_taxable_amount": annual_taxable_amount,  # Add annual amount to note
             "ter_rate": ter_rate * 100,
             "monthly_tax": monthly_tax,
             "note": f"Perhitungan TER: penghasilan bulanan × tarif TER{adjustment_note}"
         })
         
-        # TAMBAHAN: Verifikasi nilai ter setelah kalkulasi
+        # Verifikasi nilai ter
         verify_ter_values(doc, ter_rate, ter_category)
         
-        frappe.logger().debug(f"TER calculation completed for {doc.name}")
+        # Verifikasi annual_taxable_amount
+        if hasattr(doc, 'annual_taxable_amount') and abs(doc.annual_taxable_amount - annual_taxable_amount) > 0.01:
+            frappe.logger().warning(
+                f"[TER] annual_taxable_amount verification failed for {doc.name}: "
+                f"expected {annual_taxable_amount}, got {doc.annual_taxable_amount}"
+            )
+            doc.annual_taxable_amount = annual_taxable_amount
+            doc.db_set('annual_taxable_amount', annual_taxable_amount, update_modified=False)
+        
+        frappe.logger().debug(f"[TER] Calculation completed for {doc.name}")
+
+        # PENTING: Verifikasi gross_pay tidak berubah
+        if abs(doc.gross_pay - original_gross_pay) > 0.01:
+            frappe.logger().error(
+                f"[TER] ERROR: gross_pay changed during calculation for {doc.name}! "
+                f"Original: {original_gross_pay}, Current: {doc.gross_pay}. Restoring original value."
+            )
+            doc.gross_pay = original_gross_pay
+            doc.db_set('gross_pay', original_gross_pay, update_modified=False)
 
     except Exception as e:
         frappe.log_error(
-            f"TER Calculation Error for Employee {getattr(employee, 'name', 'unknown')}: {str(e)}\n"
+            f"[TER] Calculation Error for Employee {getattr(employee, 'name', 'unknown')}: {str(e)}\n"
             f"Traceback: {frappe.get_traceback()}",
             "TER Calculation Error"
         )
