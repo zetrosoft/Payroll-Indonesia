@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-10 14:30:00 by dannyaudian
+# Last modified: 2025-06-01 09:40:00 by dannyaudian
 
 import frappe
 from frappe import _
@@ -44,11 +44,18 @@ def update_tax_summaries(month=None, year=None, company=None):
         if not year:
             year = current_date.year
             
+        # Convert to integer if they are strings
+        try:
+            month = int(month)
+            year = int(year)
+        except (ValueError, TypeError):
+            frappe.throw(_("Month and year must be valid numbers"))
+            
         # Validate month and year
-        if not isinstance(month, int) or month < 1 or month > 12:
+        if month < 1 or month > 12:
             frappe.throw(_("Invalid month: {0}. Must be between 1 and 12").format(month))
             
-        if not isinstance(year, int) or year < 2000 or year > current_date.year + 1:
+        if year < 2000 or year > current_date.year + 1:
             frappe.throw(_("Invalid year: {0}. Must be between 2000 and {1}").format(
                 year, current_date.year + 1
             ))
@@ -212,14 +219,15 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
         if not hasattr(summary, 'monthly_details'):
             frappe.throw(_("Employee Tax Summary structure is invalid: missing monthly_details child table"))
         
-        # Remove existing monthly detail for this month if it exists
+        # Filter out existing monthly detail for this month if it exists
+        # This approach avoids issues with directly modifying child tables
         existing_details = []
-        for d in summary.monthly_details:
-            if d.month != month:
+        for d in summary.get("monthly_details"):  # Use get() to safely access child table
+            if getattr(d, "month", 0) != month:
                 existing_details.append(d)
-                
-        # Replace monthly_details table with filtered list (excluding current month)
-        summary.monthly_details = existing_details
+        
+        # Replace monthly_details with filtered list
+        summary.set("monthly_details", existing_details)
         
         # Calculate monthly totals from salary slips
         monthly_data = calculate_monthly_totals(slip_names)
@@ -227,19 +235,27 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
         if not monthly_data:
             frappe.throw(_("Failed to calculate totals from salary slips"))
         
-        # Add new monthly detail using standard append method
-        row = summary.append('monthly_details', {})
-        row.month = month
-        row.gross_pay = monthly_data["gross_pay"]
-        row.bpjs_deductions = monthly_data["bpjs_deductions"]
-        row.tax_amount = monthly_data["tax_amount"]
-        row.salary_slip = monthly_data["latest_slip"]
-        row.is_using_ter = 1 if monthly_data["is_using_ter"] else 0
-        row.ter_rate = monthly_data["ter_rate"]
-        
-        # Set TER category if available
-        if monthly_data["ter_category"] and hasattr(row, 'ter_category'):
-            row.ter_category = monthly_data["ter_category"]
+        # Add new monthly detail - using standard append pattern
+        try:
+            row = summary.append("monthly_details", {})
+            row.month = month
+            row.gross_pay = monthly_data["gross_pay"]
+            row.bpjs_deductions = monthly_data["bpjs_deductions"]
+            row.tax_amount = monthly_data["tax_amount"]
+            row.salary_slip = monthly_data["latest_slip"]
+            row.is_using_ter = 1 if monthly_data["is_using_ter"] else 0
+            row.ter_rate = monthly_data["ter_rate"]
+            
+            # Set TER category if available
+            if monthly_data["ter_category"] and hasattr(row, 'ter_category'):
+                row.ter_category = monthly_data["ter_category"]
+        except Exception as e:
+            frappe.log_error(
+                f"Error adding monthly detail row: {str(e)}\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "Monthly Detail Error"
+            )
+            frappe.throw(_("Error adding monthly detail: {0}").format(str(e)))
             
         # Update TER information on parent if applicable
         if monthly_data["is_using_ter"]:
@@ -254,9 +270,8 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
         
         # Recalculate YTD tax
         total_tax = 0
-        for detail in summary.monthly_details:
-            if hasattr(detail, 'tax_amount'):
-                total_tax += flt(detail.tax_amount)
+        for detail in summary.get("monthly_details"):
+            total_tax += flt(getattr(detail, "tax_amount", 0))
                 
         if hasattr(summary, 'ytd_tax'):
             summary.ytd_tax = total_tax
@@ -301,6 +316,8 @@ def create_new_summary(employee, employee_name, year, month, slip_names):
             
         # Create new summary document
         summary = frappe.new_doc("Employee Tax Summary")
+        
+        # Set main fields
         summary.employee = employee
         summary.employee_name = employee_name
         summary.year = year
@@ -323,20 +340,28 @@ def create_new_summary(employee, employee_name, year, month, slip_names):
                 
             if hasattr(summary, 'ter_category') and monthly_data["ter_category"]:
                 summary.ter_category = monthly_data["ter_category"]
-                
-        # Add first monthly detail
-        row = summary.append('monthly_details', {})
-        row.month = month
-        row.gross_pay = monthly_data["gross_pay"]
-        row.bpjs_deductions = monthly_data["bpjs_deductions"]
-        row.tax_amount = monthly_data["tax_amount"]
-        row.salary_slip = monthly_data["latest_slip"]
-        row.is_using_ter = 1 if monthly_data["is_using_ter"] else 0
-        row.ter_rate = monthly_data["ter_rate"]
         
-        # Set TER category if available and field exists
-        if monthly_data["ter_category"] and hasattr(row, 'ter_category'):
-            row.ter_category = monthly_data["ter_category"]
+        # Add first monthly detail - using try/except for safety
+        try:
+            row = summary.append('monthly_details', {})
+            row.month = month
+            row.gross_pay = monthly_data["gross_pay"]
+            row.bpjs_deductions = monthly_data["bpjs_deductions"]
+            row.tax_amount = monthly_data["tax_amount"]
+            row.salary_slip = monthly_data["latest_slip"]
+            row.is_using_ter = 1 if monthly_data["is_using_ter"] else 0
+            row.ter_rate = monthly_data["ter_rate"]
+            
+            # Set TER category if available and field exists
+            if monthly_data["ter_category"] and hasattr(row, 'ter_category'):
+                row.ter_category = monthly_data["ter_category"]
+        except Exception as e:
+            frappe.log_error(
+                f"Error adding monthly detail row for new summary: {str(e)}\n"
+                f"Traceback: {frappe.get_traceback()}",
+                "New Summary Error"
+            )
+            frappe.throw(_("Error adding monthly detail to new summary: {0}").format(str(e)))
             
         # Insert the document
         summary.insert(ignore_permissions=True)
@@ -372,50 +397,64 @@ def calculate_monthly_totals(slip_names):
             "is_using_ter": False,
             "ter_rate": 0,
             "ter_category": "",
-            "latest_slip": slip_names[0]  # Default to first slip
+            "latest_slip": slip_names[0] if slip_names else None  # Default to first slip
         }
+        
+        # Check if we have valid slip names
+        if not result["latest_slip"]:
+            frappe.throw(_("No valid salary slip names provided"))
         
         # Track which TER category to use
         ter_categories_found = []
         
         for slip_name in slip_names:
             try:
-                slip = frappe.get_doc("Salary Slip", slip_name)
+                # Use safe get_doc approach with error handling
+                slip = None
+                try:
+                    slip = frappe.get_doc("Salary Slip", slip_name)
+                except Exception as doc_error:
+                    frappe.log_error(
+                        f"Error retrieving salary slip {slip_name}: {str(doc_error)}",
+                        "Slip Retrieval Error"
+                    )
+                    continue
                 
-                # Add gross pay
-                if hasattr(slip, 'gross_pay'):
-                    result["gross_pay"] += flt(slip.gross_pay)
+                # Add gross pay - safely access attributes
+                result["gross_pay"] += flt(getattr(slip, "gross_pay", 0))
                     
-                # Check for TER usage
-                if hasattr(slip, 'is_using_ter') and slip.is_using_ter:
+                # Check for TER usage - safely access attributes
+                if getattr(slip, "is_using_ter", 0):
                     result["is_using_ter"] = True
                     
-                    if hasattr(slip, 'ter_rate') and flt(slip.ter_rate) > flt(result["ter_rate"]):
-                        result["ter_rate"] = flt(slip.ter_rate)
+                    if flt(getattr(slip, "ter_rate", 0)) > flt(result["ter_rate"]):
+                        result["ter_rate"] = flt(getattr(slip, "ter_rate", 0))
                         
                     # Get TER category if available
-                    if hasattr(slip, 'ter_category') and slip.ter_category:
-                        ter_categories_found.append(slip.ter_category)
+                    ter_category = getattr(slip, "ter_category", "")
+                    if ter_category:
+                        ter_categories_found.append(ter_category)
                     
-                # Get BPJS components
-                if hasattr(slip, 'deductions'):
-                    for deduction in slip.deductions:
-                        if hasattr(deduction, 'salary_component') and deduction.salary_component in [
-                            "BPJS JHT Employee", 
-                            "BPJS JP Employee", 
-                            "BPJS Kesehatan Employee"
-                        ]:
-                            result["bpjs_deductions"] += flt(deduction.amount)
-                            
-                        # Get PPh 21
-                        if hasattr(deduction, 'salary_component') and deduction.salary_component == "PPh 21":
-                            result["tax_amount"] += flt(deduction.amount)
+                # Get BPJS components and PPh 21 safely
+                deductions = getattr(slip, "deductions", []) or []
+                for deduction in deductions:
+                    salary_component = getattr(deduction, "salary_component", "")
+                    
+                    if salary_component in ["BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee"]:
+                        result["bpjs_deductions"] += flt(getattr(deduction, "amount", 0))
+                    
+                    # Get PPh 21    
+                    if salary_component == "PPh 21":
+                        result["tax_amount"] += flt(getattr(deduction, "amount", 0))
                 
                 # Update latest slip based on posting date
-                if hasattr(slip, 'posting_date'):
+                posting_date = getattr(slip, "posting_date", None)
+                if posting_date:
                     try:
                         current_latest = frappe.get_doc("Salary Slip", result["latest_slip"])
-                        if not hasattr(current_latest, 'posting_date') or getdate(slip.posting_date) > getdate(current_latest.posting_date):
+                        current_latest_date = getattr(current_latest, "posting_date", None)
+                        
+                        if not current_latest_date or getdate(posting_date) > getdate(current_latest_date):
                             result["latest_slip"] = slip_name
                     except Exception:
                         # If error getting current latest, use this slip
@@ -439,11 +478,20 @@ def calculate_monthly_totals(slip_names):
                 # If no category found but TER is used, get from employee status
                 try:
                     latest_slip = frappe.get_doc("Salary Slip", result["latest_slip"])
-                    if hasattr(latest_slip, 'employee') and latest_slip.employee:
-                        emp_doc = frappe.get_doc("Employee", latest_slip.employee)
-                        if hasattr(emp_doc, 'status_pajak') and emp_doc.status_pajak:
-                            result["ter_category"] = map_ptkp_to_ter_category(emp_doc.status_pajak)
-                except Exception:
+                    employee_id = getattr(latest_slip, "employee", None)
+                    
+                    if employee_id:
+                        emp_doc = frappe.get_doc("Employee", employee_id)
+                        status_pajak = getattr(emp_doc, "status_pajak", "")
+                        
+                        if status_pajak:
+                            result["ter_category"] = map_ptkp_to_ter_category(status_pajak)
+                except Exception as emp_error:
+                    frappe.log_error(
+                        f"Error getting TER category from employee: {str(emp_error)}\n"
+                        f"Traceback: {frappe.get_traceback()}",
+                        "TER Category Error"
+                    )
                     # If error, leave category empty
                     pass
         
@@ -500,8 +548,11 @@ def validate_monthly_entries():
                 # Get the document
                 summary_doc = frappe.get_doc("Employee Tax Summary", tax_summary.name)
                 
+                # Safely get monthly details
+                monthly_details = summary_doc.get("monthly_details", [])
+                
                 # Check monthly details
-                if not hasattr(summary_doc, 'monthly_details') or not summary_doc.monthly_details:
+                if not monthly_details:
                     summary["errors"] += 1
                     summary["details"].append({
                         "employee": tax_summary.employee,
@@ -513,9 +564,8 @@ def validate_monthly_entries():
                     
                 # Calculate YTD tax from monthly details
                 calculated_ytd = 0
-                for detail in summary_doc.monthly_details:
-                    if hasattr(detail, 'tax_amount'):
-                        calculated_ytd += flt(detail.tax_amount)
+                for detail in monthly_details:
+                    calculated_ytd += flt(getattr(detail, "tax_amount", 0))
                 
                 # Compare with stored value
                 current_ytd = flt(tax_summary.ytd_tax)
@@ -578,3 +628,6 @@ def validate_monthly_entries():
             "Monthly Validation Error"
         )
         frappe.throw(_("Error validating monthly entries: {0}").format(str(e)))
+
+# Define public exports
+__all__ = ['update_tax_summaries', 'validate_monthly_entries']
