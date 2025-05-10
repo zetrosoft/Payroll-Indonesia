@@ -34,46 +34,57 @@ def calculate_monthly_pph_with_ter(doc, employee):
         original_gross_pay = doc.gross_pay
         monthly_gross_pay = original_gross_pay
         
-        # Improved detection logic for annual vs monthly gross_pay
-        total_earnings = sum(flt(e.amount) for e in doc.earnings) if hasattr(doc, 'earnings') and doc.earnings else 0
+        # Check if bypass_annual_detection is enabled
+        bypass_detection = False
+        if hasattr(doc, 'bypass_annual_detection') and doc.bypass_annual_detection:
+            bypass_detection = True
+            frappe.logger().info(
+                f"Bypassing annual detection for {doc.name} - using gross_pay as-is: {original_gross_pay}"
+            )
         
-        # Detect if gross_pay might be annual
+        # Only perform detection if bypass is not enabled
         is_annual = False
         reason = ""
         
-        # Case 1: Compare with total earnings if available
-        if total_earnings > 0:
-            if original_gross_pay > total_earnings * 3:
-                is_annual = True
-                reason = f"gross_pay ({original_gross_pay}) significantly exceeds total earnings ({total_earnings})"
-                monthly_gross_pay = total_earnings
-        
-        # Case 2: Check for unreasonably high values (likely annual)
-        elif original_gross_pay > 100000000:  # 100 million threshold
-            is_annual = True
-            reason = f"gross_pay exceeds 100,000,000 which is unlikely for monthly salary"
-            monthly_gross_pay = original_gross_pay / 12
-        
-        # Case 3: Look for specific components if earnings comparison didn't trigger
-        elif not is_annual and hasattr(doc, 'earnings'):
-            # Find Gaji Pokok or Basic Salary component
-            basic_salary = 0
-            for e in doc.earnings:
-                if e.salary_component in ["Gaji Pokok", "Basic Salary", "Basic Pay"]:
-                    basic_salary = flt(e.amount)
-                    break
+        if not bypass_detection:
+            # Improved detection logic for annual vs monthly gross_pay
+            total_earnings = sum(flt(e.amount) for e in doc.earnings) if hasattr(doc, 'earnings') and doc.earnings else 0
             
-            # Compare gross_pay with basic salary if found
-            if basic_salary > 0 and original_gross_pay > basic_salary * 10:
+            # Detect if gross_pay might be annual
+            
+            # Case 1: Compare with total earnings if available
+            if total_earnings > 0:
+                if original_gross_pay > total_earnings * 3:
+                    is_annual = True
+                    reason = f"gross_pay ({original_gross_pay}) significantly exceeds total earnings ({total_earnings})"
+                    monthly_gross_pay = total_earnings
+            
+            # Case 2: Check for unreasonably high values (likely annual)
+            elif original_gross_pay > 100000000:  # 100 million threshold
                 is_annual = True
-                reason = f"gross_pay ({original_gross_pay}) is more than 10x basic salary ({basic_salary})"
+                reason = f"gross_pay exceeds 100,000,000 which is unlikely for monthly salary"
+                monthly_gross_pay = original_gross_pay / 12
+            
+            # Case 3: Look for specific components if earnings comparison didn't trigger
+            elif not is_annual and hasattr(doc, 'earnings'):
+                # Find Gaji Pokok or Basic Salary component
+                basic_salary = 0
+                for e in doc.earnings:
+                    if e.salary_component in ["Gaji Pokok", "Basic Salary", "Basic Pay"]:
+                        basic_salary = flt(e.amount)
+                        break
                 
-                # Check if gross_pay is close to 12x the basic salary
-                if 11 < (original_gross_pay / basic_salary) < 13:
-                    monthly_gross_pay = original_gross_pay / 12
-                else:
-                    monthly_gross_pay = total_earnings  # Use total earnings as fallback
+                # Compare gross_pay with basic salary if found
+                if basic_salary > 0 and original_gross_pay > basic_salary * 10:
+                    is_annual = True
+                    reason = f"gross_pay ({original_gross_pay}) is more than 10x basic salary ({basic_salary})"
                     
+                    # Check if gross_pay is close to 12x the basic salary
+                    if 11 < (original_gross_pay / basic_salary) < 13:
+                        monthly_gross_pay = original_gross_pay / 12
+                    else:
+                        monthly_gross_pay = total_earnings  # Use total earnings as fallback
+        
         # Log if an adjustment was made
         if is_annual:
             frappe.logger().warning(
@@ -84,6 +95,13 @@ def calculate_monthly_pph_with_ter(doc, employee):
             # Store the adjustment reason for reference
             if hasattr(doc, 'ter_calculation_note'):
                 doc.ter_calculation_note = f"Adjusted gross_pay from {original_gross_pay:,.0f} to {monthly_gross_pay:,.0f} ({reason})"
+        elif bypass_detection:
+            # Log that we're using the original value due to bypass
+            frappe.logger().debug(
+                f"Using original gross_pay for TER calculation due to bypass_annual_detection=1: {original_gross_pay}"
+            )
+            if hasattr(doc, 'ter_calculation_note'):
+                doc.ter_calculation_note = f"Using original gross_pay: {original_gross_pay:,.0f} (bypass_annual_detection=1)"
                 
         frappe.logger().debug(f"Using monthly_gross_pay: {monthly_gross_pay} for TER calculation")
         
@@ -126,6 +144,8 @@ def calculate_monthly_pph_with_ter(doc, employee):
         adjustment_note = ""
         if monthly_gross_pay != original_gross_pay:
             adjustment_note = f" (Penghasilan disesuaikan dari {original_gross_pay:,.0f} ke {monthly_gross_pay:,.0f})"
+        elif bypass_detection:
+            adjustment_note = f" (bypass_annual_detection=1)"
 
         # Use the centralized function to add tax info to payroll note
         add_tax_info_to_note(doc, "TER", {
@@ -149,7 +169,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
             "TER Calculation Error"
         )
         frappe.throw(_("Error calculating PPh 21 with TER: {0}").format(str(e)))
-
+        
 def verify_ter_values(doc, ter_rate, ter_category):
     """
     Verifikasi nilai TER telah diatur dan tersimpan dengan benar
