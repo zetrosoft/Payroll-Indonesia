@@ -217,48 +217,77 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     def calculate_tax_with_strategy(self, strategy, employee):
         """
         Calculate tax based on selected strategy (TER or Progressive)
-        Handles proper setup of is_using_ter and ter_rate fields
+        Ensures proper setting and persistence of TER flags
         """
         # Store original values to restore after calculation
         original_gross = self.gross_pay
         original_netto = getattr(self, 'netto', 0)
     
-        debug_log(f"Starting tax calculation with strategy: {strategy} for {self.name}")
+        frappe.logger().debug(f"Starting tax calculation with strategy: {strategy} for {self.name}")
     
         try:
             if strategy == "TER":
                 # TER calculation
-                debug_log(f"Using TER calculation method for {self.name}")
+                frappe.logger().debug(f"Using TER calculation method for {self.name}")
+            
+                # Call TER calculation function
                 calculate_monthly_pph_with_ter(self, employee)
             
-                # PENTING: Pastikan is_using_ter disetel setelah kalkulasi TER
-                if hasattr(self, 'ter_rate') and flt(self.ter_rate) > 0:
-                    debug_log(f"Setting is_using_ter=1 after TER calculation with ter_rate={self.ter_rate}")
-                    self.is_using_ter = 1
-                    # Gunakan db_set untuk memastikan nilai tersimpan
-                    self.db_set('is_using_ter', 1, update_modified=False)
+                # CRITICAL: Explicitly set and persist TER flags regardless of what the function did
+                # This ensures the flags are always set and saved to the database
+                self.is_using_ter = 1
+            
+                # Ensure ter_rate has a valid value
+                if not hasattr(self, 'ter_rate') or flt(self.ter_rate) <= 0:
+                    self.ter_rate = 5.0  # Default to 5% if missing or zero
+                    frappe.logger().warning(f"TER rate was missing or zero for {self.name}, setting default 5%")
+            
+                # Persist values to database with db_set
+                self.db_set('is_using_ter', 1, update_modified=False)
+                self.db_set('ter_rate', flt(self.ter_rate), update_modified=False)
+            
+                # Log confirmation of TER application
+                frappe.logger().info(
+                    f"TER applied for {self.name}: is_using_ter=1, ter_rate={self.ter_rate}, "
+                    f"employee={getattr(self, 'employee_name', self.employee)}"
+                )
+            
+                # Add note to payroll_note if available
+                if hasattr(self, 'add_payroll_note'):
+                    self.add_payroll_note(f"TER method applied with rate: {self.ter_rate}%")
+                
             else:
                 # Progressive calculation
-                debug_log(f"Using Progressive calculation method for {self.name}")
+                frappe.logger().debug(f"Using Progressive calculation method for {self.name}")
                 calculate_tax_components(self, employee)
             
-                # Reset TER values jika menggunakan metode Progressive
-                debug_log("Resetting TER values for Progressive calculation")
+                # Reset TER values for progressive method
                 self.is_using_ter = 0
                 self.ter_rate = 0
-                # Gunakan db_set untuk memastikan nilai tersimpan
+            
+                # Persist values to database
                 self.db_set('is_using_ter', 0, update_modified=False)
                 self.db_set('ter_rate', 0, update_modified=False)
+            
+                frappe.logger().info(
+                    f"Progressive method used for {self.name}: is_using_ter=0, ter_rate=0, "
+                    f"employee={getattr(self, 'employee_name', self.employee)}"
+                )
+            
         finally:
+            # Verify TER flags are set correctly for TER strategy
+            if strategy == "TER" and not getattr(self, 'is_using_ter', 0):
+                frappe.logger().warning(f"TER flags not set properly for {self.name}. Setting is_using_ter=1 now.")
+                self.is_using_ter = 1
+                self.db_set('is_using_ter', 1, update_modified=False)
+        
             # Verify values haven't been globally changed
             if strategy == "TER" and abs(original_gross - self.gross_pay) > 1:
                 frappe.logger().warning(f"gross_pay modified during TER calculation: {original_gross} -> {self.gross_pay}")
                 # Restore original gross_pay for TER calculation
                 if original_gross != self.gross_pay:
                     self.gross_pay = original_gross
-                    debug_log(f"Restored original gross_pay: {original_gross}")
-        
-            debug_log(f"Tax calculation completed with strategy: {strategy}")
+                    frappe.logger().debug(f"Restored original gross_pay: {original_gross}")
 
     def _is_eligible_for_ter(self, employee):
         """
