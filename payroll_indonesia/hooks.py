@@ -278,5 +278,10 @@ whitelist_methods = [
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
     "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.create_default_mapping",
     "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation.update_all_bpjs_components",
-    "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation.hitung_bpjs"
+    "payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation.hitung_bpjs",
+    "payroll_indonesia.api.diagnose_salary_slip",
+    "payroll_indonesia.api.get_employee",
+    "payroll_indonesia.api.get_salary_slips_by_employee",
+    "payroll_indonesia.api.get_salary_slip",
+    "payroll_indonesia.api.get_recent_salary_slips"
 ]

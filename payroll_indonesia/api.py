@@ -5,8 +5,9 @@
 
 import frappe
 import json
+import re
 from frappe import _
-from frappe.utils import getdate, nowdate, cint, flt
+from frappe.utils import getdate, nowdate, cint, flt, strip_html
 
 #
 # EMPLOYEE API ENDPOINTS
@@ -307,3 +308,107 @@ def get_recent_salary_slips(limit=10, company=None):
     except Exception as e:
         frappe.log_error(f"Error getting recent salary slips: {str(e)}\n{frappe.get_traceback()}", "API Error")
         frappe.throw(_("Error retrieving recent salary slips: {0}").format(str(e)))
+
+@frappe.whitelist()
+def diagnose_salary_slip(slip_name):
+    """
+    Diagnose issues with salary slip calculation
+    Args:
+        slip_name: Name of the salary slip
+    Returns:
+        dict: Detailed diagnostic information
+    """
+    try:
+        # Get the document
+        doc = frappe.get_doc("Salary Slip", slip_name)
+        
+        # Collect key information for debugging
+        result = {
+            "name": doc.name,
+            "employee": doc.employee,
+            "employee_name": doc.employee_name,
+            "start_date": doc.start_date,
+            "end_date": doc.end_date,
+            "posting_date": doc.posting_date,
+            "gross_pay": doc.gross_pay,
+            "total_deduction": doc.total_deduction,
+            "net_pay": doc.net_pay,
+            "earnings": [],
+            "deductions": [],
+            "tax_details": {}
+        }
+        
+        # Get earnings details
+        for earning in doc.earnings:
+            result["earnings"].append({
+                "component": earning.salary_component,
+                "amount": earning.amount
+            })
+        
+        # Get deductions details
+        for deduction in doc.deductions:
+            result["deductions"].append({
+                "component": deduction.salary_component,
+                "amount": deduction.amount
+            })
+        
+        # Check for tax calculation method and TER info
+        result["tax_details"]["is_using_ter"] = getattr(doc, "is_using_ter", 0)
+        result["tax_details"]["ter_rate"] = getattr(doc, "ter_rate", 0)
+        
+        # Check for tax amounts
+        pph21_amount = 0
+        for deduction in doc.deductions:
+            if deduction.salary_component == "PPh 21" or "PPh 21" in deduction.salary_component:
+                pph21_amount = deduction.amount
+                break
+        
+        result["tax_details"]["pph21_amount"] = pph21_amount
+        
+        # Extract tax calculation details from payroll_note
+        if hasattr(doc, "payroll_note") and doc.payroll_note:
+            result["payroll_note"] = doc.payroll_note
+            
+            # Try to extract key information from payroll_note
+            note = strip_html(doc.payroll_note)
+            
+            # Extract tax method
+            if "Method: TER" in note:
+                result["tax_details"]["method"] = "TER"
+            elif "Method: PROGRESSIVE" in note:
+                result["tax_details"]["method"] = "PROGRESSIVE"
+                
+            # Extract gross pay from note
+            gross_pattern = r"Penghasilan Bruto: Rp ([\d,]+)"
+            gross_match = re.search(gross_pattern, note)
+            if gross_match:
+                result["tax_details"]["note_gross_pay"] = gross_match.group(1)
+                
+            # Extract TER rate if present
+            ter_pattern = r"Tarif Efektif Rata-rata: ([\d.]+)%"
+            ter_match = re.search(ter_pattern, note)
+            if ter_match:
+                result["tax_details"]["note_ter_rate"] = ter_match.group(1)
+        
+        # Check if any TER adjustment was made
+        if "gross_pay adjusted" in str(result.get("payroll_note", "")):
+            result["tax_details"]["gross_pay_adjusted"] = True
+            
+            # Try to extract before and after values
+            adjustment_pattern = r"gross_pay adjusted from ([\d,]+) to ([\d,]+)"
+            adjustment_match = re.search(adjustment_pattern, str(result.get("payroll_note", "")), re.IGNORECASE)
+            if adjustment_match:
+                result["tax_details"]["adjusted_from"] = adjustment_match.group(1)
+                result["tax_details"]["adjusted_to"] = adjustment_match.group(2)
+        
+        # Check additional tax-related fields if they exist
+        for field in ["biaya_jabatan", "netto", "total_bpjs", "ptkp"]:
+            if hasattr(doc, field):
+                result["tax_details"][field] = getattr(doc, field)
+                
+        return result
+    except Exception as e:
+        return {
+            "error": str(e),
+            "traceback": frappe.get_traceback()
+        }
