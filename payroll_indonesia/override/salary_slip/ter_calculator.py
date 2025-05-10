@@ -1,3 +1,4 @@
+Apply
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
@@ -102,9 +103,22 @@ def calculate_monthly_pph_with_ter(doc, employee):
         monthly_tax = monthly_gross_pay * ter_rate
         frappe.logger().debug(f"Monthly tax calculation: {monthly_gross_pay} * {ter_rate} = {monthly_tax}")
 
-        # Save TER info
+        # Save TER info - NILAI INI PERLU DIATUR DAN DISIMPAN DENGAN BENAR
         doc.is_using_ter = 1
         doc.ter_rate = ter_rate * 100  # Convert to percentage for display
+        
+        # PENTING: Pastikan nilai tersimpan ke database menggunakan db_set
+        # Ini akan memastikan nilai tersimpan langsung ke database, bukan hanya di objek Python
+        doc.db_set('is_using_ter', 1, update_modified=False)
+        doc.db_set('ter_rate', ter_rate * 100, update_modified=False)
+        
+        # Simpan juga ter_category jika field tersedia
+        if hasattr(doc, 'ter_category'):
+            doc.ter_category = ter_category
+            doc.db_set('ter_category', ter_category, update_modified=False)
+
+        # Tambahkan logging debug untuk memverifikasi nilai telah diatur
+        frappe.logger().debug(f"TER values set: is_using_ter={doc.is_using_ter}, ter_rate={doc.ter_rate}, ter_category={ter_category}")
 
         # Update PPh 21 component
         update_component_amount(doc, "PPh 21", monthly_tax, "deductions")
@@ -124,6 +138,9 @@ def calculate_monthly_pph_with_ter(doc, employee):
             "note": f"Perhitungan TER: penghasilan bulanan × tarif TER{adjustment_note}"
         })
         
+        # TAMBAHAN: Verifikasi nilai ter setelah kalkulasi
+        verify_ter_values(doc, ter_rate, ter_category)
+        
         frappe.logger().debug(f"TER calculation completed for {doc.name}")
 
     except Exception as e:
@@ -133,6 +150,56 @@ def calculate_monthly_pph_with_ter(doc, employee):
             "TER Calculation Error"
         )
         frappe.throw(_("Error calculating PPh 21 with TER: {0}").format(str(e)))
+
+def verify_ter_values(doc, ter_rate, ter_category):
+    """
+    Verifikasi nilai TER telah diatur dan tersimpan dengan benar
+    Mencoba memastikan nilai is_using_ter tercenting
+    """
+    try:
+        # Cek nilai is_using_ter seharusnya 1
+        if not getattr(doc, 'is_using_ter', 0) == 1:
+            frappe.logger().warning(f"TER values verification failed - is_using_ter not set to 1 for {doc.name}")
+            # Atur ulang nilai menggunakan db_set langsung ke database
+            doc.is_using_ter = 1
+            doc.db_set('is_using_ter', 1, update_modified=False)
+            
+        # Verifikasi ter_rate
+        expected_ter_rate = ter_rate * 100
+        current_ter_rate = getattr(doc, 'ter_rate', 0)
+        if abs(current_ter_rate - expected_ter_rate) > 0.01:  # Allow small floating point differences
+            frappe.logger().warning(
+                f"TER rate verification failed for {doc.name}: expected {expected_ter_rate}, got {current_ter_rate}"
+            )
+            # Atur ulang nilai
+            doc.ter_rate = expected_ter_rate
+            doc.db_set('ter_rate', expected_ter_rate, update_modified=False)
+            
+        # Verifikasi ter_category jika field tersedia
+        if hasattr(doc, 'ter_category') and doc.ter_category != ter_category:
+            frappe.logger().warning(
+                f"TER category verification failed for {doc.name}: expected {ter_category}, got {doc.ter_category}"
+            )
+            doc.ter_category = ter_category
+            doc.db_set('ter_category', ter_category, update_modified=False)
+            
+        # Verifikasi ulang setelah pengaturan
+        frappe.logger().debug(
+            f"TER values after verification: is_using_ter={getattr(doc, 'is_using_ter', 0)}, "
+            f"ter_rate={getattr(doc, 'ter_rate', 0)}, ter_category={getattr(doc, 'ter_category', '')}"
+        )
+        
+        # Force reload objek untuk memastikan nilai baru terbaca dari database
+        if hasattr(doc, 'reload'):
+            doc.reload()
+            frappe.logger().debug(
+                f"TER values after reload: is_using_ter={getattr(doc, 'is_using_ter', 0)}, "
+                f"ter_rate={getattr(doc, 'ter_rate', 0)}"
+            )
+            
+    except Exception as e:
+        frappe.logger().error(f"Error during TER values verification for {doc.name}: {str(e)}")
+        # We don't throw here since this is a verification function, not a critical calculation
               
 def map_ptkp_to_ter_category(status_pajak):
     """

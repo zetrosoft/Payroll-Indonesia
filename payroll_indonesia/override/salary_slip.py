@@ -82,6 +82,9 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
       - Implemented with 3 TER categories (TER A, TER B, TER C) based on PTKP
     - Integration with Employee Tax Summary
     """
+class IndonesiaPayrollSalarySlip(SalarySlip):
+    # ... rest of code here ...
+    
     def validate(self):
         """Validate salary slip and calculate Indonesian components with enhanced BPJS handling"""
         employee_info = f"{self.employee} ({self.employee_name})" if hasattr(self, 'employee_name') else self.employee
@@ -154,6 +157,9 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             tax_strategy = self.determine_tax_strategy(employee)
             self.calculate_tax_with_strategy(tax_strategy, employee)
             
+            # PENTING: Verifikasi is_using_ter setelah kalkulasi
+            self.verify_ter_settings()
+            
             # Generate tax ID data
             self.generate_tax_id_data(employee)
 
@@ -173,49 +179,76 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             )
             frappe.throw(_("Error dalam validasi Salary Slip: {0}").format(str(e)))
     
-    def determine_tax_strategy(self, employee):
+    def verify_ter_settings(self):
         """
-        Determine which tax calculation strategy should be used
-        Returns: String indicating the strategy ("TER" or "PROGRESSIVE")
+        Verifikasi pengaturan TER dan pastikan nilai tersimpan dengan benar
+        Fungsi baru untuk memastikan is_using_ter dan ter_rate teratur dengan benar
         """
+        debug_log(f"Verifying TER settings for {self.name}")
+        
+        # Jika ter_rate > 0, pastikan is_using_ter = 1
+        if hasattr(self, 'ter_rate') and flt(self.ter_rate) > 0:
+            if not hasattr(self, 'is_using_ter') or not self.is_using_ter:
+                debug_log(f"TER rate is {self.ter_rate} but is_using_ter is not set. Setting is_using_ter=1")
+                self.is_using_ter = 1
+                # Gunakan db_set untuk memastikan nilai tersimpan langsung ke database
+                self.db_set('is_using_ter', 1, update_modified=False)
+        
+        # Jika ada ter_category, pastikan is_using_ter = 1
+        if hasattr(self, 'ter_category') and self.ter_category:
+            if not hasattr(self, 'is_using_ter') or not self.is_using_ter:
+                debug_log(f"TER category is {self.ter_category} but is_using_ter is not set. Setting is_using_ter=1")
+                self.is_using_ter = 1
+                self.db_set('is_using_ter', 1, update_modified=False)
+        
+        # Jika is_using_ter=0, pastikan ter_rate=0
+        if hasattr(self, 'is_using_ter') and not self.is_using_ter:
+            if hasattr(self, 'ter_rate') and flt(self.ter_rate) > 0:
+                debug_log(f"is_using_ter=0 but ter_rate={self.ter_rate}. Resetting ter_rate to 0")
+                self.ter_rate = 0
+                self.db_set('ter_rate', 0, update_modified=False)
+            
+            if hasattr(self, 'ter_category') and self.ter_category:
+                debug_log(f"is_using_ter=0 but ter_category is set. Clearing ter_category")
+                self.ter_category = ""
+                self.db_set('ter_category', "", update_modified=False)
+        
+        debug_log(f"TER settings verified: is_using_ter={getattr(self, 'is_using_ter', 0)}, ter_rate={getattr(self, 'ter_rate', 0)}")
+    
+    def calculate_tax_with_strategy(self, strategy, employee):
+        # Store original values to restore after calculation
+        original_gross = self.gross_pay
+        original_netto = getattr(self, 'netto', 0)
+    
         try:
-            # Get PPh 21 Settings - only get required fields for better performance
-            pph_settings = frappe.get_cached_value(
-                "PPh 21 Settings", 
-                "PPh 21 Settings",
-                ["calculation_method", "use_ter", "default_ter_rate"],
-                as_dict=True
-            ) or {}
-        
-            # Check if calculation_method and use_ter fields exist
-            if not pph_settings.get('calculation_method'):
-                return "PROGRESSIVE"
-            
-            if not pph_settings.get('use_ter'):
-                return "PROGRESSIVE"
-            
-            # Special check for December - Always use Progressive for December per PMK 168/2023
-            if self.end_date and getdate(self.end_date).month == 12:
-                debug_log(f"December month detected for {self.name} - Using Progressive method as required by PMK 168/2023")
-                return "PROGRESSIVE"
-        
-            # Check if TER method is enabled globally
-            if pph_settings.get('calculation_method') == "TER" and pph_settings.get('use_ter'):
-                # Use should_use_ter_method from ter_calculator.py for consistency
-                if should_use_ter_method(employee, pph_settings):
-                    # Set TER category for reference
-                    if hasattr(employee, 'status_pajak') and employee.status_pajak:
-                        from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
-                        ter_category = map_ptkp_to_ter_category(employee.status_pajak)
-                        self.ter_category = ter_category
-                        debug_log(f"Using TER method ({ter_category}) for {self.name} based on status_pajak {employee.status_pajak}")
-                    return "TER"
-        
-            # Default to progressive method
-            return "PROGRESSIVE"
-        except Exception as e:
-            debug_log(f"Error determining tax strategy for {employee.name}: {str(e)}")
-            return "PROGRESSIVE"
+            if strategy == "TER":
+                # TER calculation
+                calculate_monthly_pph_with_ter(self, employee)
+                
+                # PENTING: Pastikan is_using_ter disetel setelah kalkulasi TER
+                if hasattr(self, 'ter_rate') and flt(self.ter_rate) > 0:
+                    debug_log(f"Setting is_using_ter=1 after TER calculation with ter_rate={self.ter_rate}")
+                    self.is_using_ter = 1
+                    # Gunakan db_set untuk memastikan nilai tersimpan
+                    self.db_set('is_using_ter', 1, update_modified=False)
+            else:
+                # Progressive calculation
+                calculate_tax_components(self, employee)
+                
+                # Reset TER values jika menggunakan metode Progressive
+                debug_log("Resetting TER values for Progressive calculation")
+                self.is_using_ter = 0
+                self.ter_rate = 0
+                # Gunakan db_set untuk memastikan nilai tersimpan
+                self.db_set('is_using_ter', 0, update_modified=False)
+                self.db_set('ter_rate', 0, update_modified=False)
+        finally:
+            # Verify values haven't been globally changed
+            if strategy == "TER" and abs(original_gross - self.gross_pay) > 1:
+                frappe.logger().warning(f"gross_pay modified during TER calculation: {original_gross} -> {self.gross_pay}")
+                # Restore original gross_pay for TER calculation
+                if original_gross != self.gross_pay:
+                    self.gross_pay = original_gross
 
     def _is_eligible_for_ter(self, employee):
         """
@@ -277,31 +310,13 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             debug_log(f"Starting on_submit for salary slip {self.name}", 
                       employee=getattr(self, 'employee_name', self.employee))
             
+            # Verifikasi TER settings sebelum submit
+            self.verify_ter_settings()
+            
             # Verify BPJS components before submission - using imported function
             verification = verify_bpjs_components(self)
             
-            # If all components are zero but employee is enrolled, attempt recalculation
-            if verification["all_zero"]:
-                try:
-                    employee = self.get_employee_doc()
-                    is_enrolled = check_bpjs_enrollment(employee_doc=employee)
-                    
-                    if is_enrolled:
-                        debug_log(
-                            f"WARNING: Employee {employee.name} is enrolled in BPJS but all BPJS components are zero. "
-                            f"This may indicate a calculation issue."
-                        )
-                        
-                        # Re-attempt BPJS calculation as a fallback
-                        base_salary = self.get_base_salary_for_bpjs()
-                        if base_salary <= 0:
-                            base_salary = self.gross_pay if hasattr(self, 'gross_pay') and self.gross_pay > 0 else 4900000
-                            debug_log(f"Using alternative base salary for recalculation: {base_salary}")
-                            
-                        calculate_bpjs_components(self, employee, base_salary)
-                        debug_log(f"BPJS recalculation completed with base salary: {base_salary}")
-                except Exception as e:
-                    debug_log(f"Error during BPJS verification: {str(e)}", trace=True)
+            # ... rest of code here ...
         
             # Call parent on_submit method
             super(IndonesiaPayrollSalarySlip, self).on_submit()
@@ -309,19 +324,8 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             # Use optimized queue for document creation
             self.queue_document_creation()
         
-            # Calculate and log execution time
-            end_time = now_datetime()
-            execution_time = (end_time - start_time).total_seconds()
-            
-            # Add detailed note to payroll_note
-            message = (
-                f"Submit berhasil: Pembuatan dokumen terkait telah dijadwalkan. "
-                f"Waktu proses: {execution_time:.2f} detik."
-            )
-            self.add_payroll_note(message)
-            
-            debug_log(f"on_submit completed in {execution_time:.2f} seconds for {self.name}")
-            
+            # ... rest of code here ...
+        
         except Exception as e:
             debug_log(f"Error in on_submit for {self.name}: {str(e)}", trace=True)
             frappe.log_error(
@@ -330,6 +334,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 "Salary Slip Submit Error"
             )
             frappe.throw(_("Error during salary slip submission: {0}").format(str(e)))
+
     
     def queue_document_creation(self):
         """
