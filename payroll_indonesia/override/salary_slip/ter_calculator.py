@@ -26,77 +26,49 @@ def calculate_monthly_pph_with_ter(doc, employee):
             employee.status_pajak = "TK0"  # Default to TK0 if not set
             frappe.msgprint(_("Warning: Employee tax status not set, using TK0 as default"))
 
-        # Tambahkan log untuk debugging
-        frappe.logger().debug(f"TER calculation started for {doc.name}, employee: {getattr(employee, 'name', 'unknown')}")
-        frappe.logger().debug(f"Original gross_pay: {doc.gross_pay}")
+        # Pastikan gross_pay adalah nilai bulanan, bukan tahunan
+        # Jika ditemukan indikasi gross_pay tahunan, bagi dengan 12
+        original_gross_pay = doc.gross_pay
+        monthly_gross_pay = original_gross_pay
         
-        # Get original status_pajak (for display purposes)
-        status_pajak = employee.status_pajak
-        
-        # PENTING: Deteksi dan koreksi gross_pay yang mungkin sudah disetahunkan
-        # Pendekatan 1: Periksa jika gross_pay jauh lebih besar dari total earnings
+        # Deteksi jika gross_pay mungkin disetahunkan
+        # Cek total earnings asli
         total_earnings = sum(flt(e.amount) for e in doc.earnings) if hasattr(doc, 'earnings') else 0
-        if total_earnings > 0 and (doc.gross_pay / total_earnings > 10):
-            frappe.logger().warning(f"TER calculation - gross_pay ({doc.gross_pay}) appears to be much larger than total earnings ({total_earnings})")
-            monthly_gross_pay = total_earnings  # Gunakan total earnings sebagai gross_pay yang benar
-        # Pendekatan 2: Periksa jika gross_pay terlalu besar (mungkin sudah disetahunkan)
-        elif doc.gross_pay > 50000000:  # Asumsi gaji bulanan wajar di Indonesia
-            frappe.logger().warning(f"TER calculation - gross_pay unusually high: {doc.gross_pay}, likely annualized")
-            monthly_gross_pay = doc.gross_pay / 12
-        # Pendekatan 3: Jika komponen gaji pokok ada, bandingkan dengan gross_pay
-        elif hasattr(doc, 'earnings'):
-            basic_salary = 0
-            for e in doc.earnings:
-                if e.salary_component in ["Basic Salary", "Gaji Pokok", "Basic Pay"]:
-                    basic_salary = flt(e.amount)
-                    break
-            
-            if basic_salary > 0 and (doc.gross_pay / basic_salary > 10):
-                frappe.logger().warning(f"TER calculation - gross_pay ({doc.gross_pay}) appears to be much larger than basic salary ({basic_salary})")
-                # Cek apakah gross_pay sekitar 12x basic salary (indikasi disetahunkan)
-                if 11 < (doc.gross_pay / basic_salary) < 13:
-                    monthly_gross_pay = doc.gross_pay / 12
-                else:
-                    monthly_gross_pay = total_earnings
-            else:
-                monthly_gross_pay = doc.gross_pay
-        else:
-            monthly_gross_pay = doc.gross_pay
         
-        # Log hasil deteksi
-        if monthly_gross_pay != doc.gross_pay:
-            frappe.logger().debug(f"TER calculation - adjusted gross_pay from {doc.gross_pay} to {monthly_gross_pay}")
+        # Jika gross_pay jauh lebih besar dari total earnings, kemungkinan sudah disetahunkan
+        if total_earnings > 0 and original_gross_pay > total_earnings * 5:
+            frappe.logger().warning(f"Gross pay ({original_gross_pay}) appears much higher than total earnings ({total_earnings})")
+            monthly_gross_pay = total_earnings
+        
+        # Get status_pajak
+        status_pajak = employee.status_pajak
         
         # Map PTKP status to TER category
         ter_category = map_ptkp_to_ter_category(status_pajak)
         
-        # Get TER rate using TER category
+        # Get TER rate using TER category - PASTIKAN MENGGUNAKAN PENGHASILAN BULANAN
         ter_rate = get_ter_rate(ter_category, monthly_gross_pay)
         
-        # Calculate tax using TER
+        # Calculate tax using TER - LANGSUNG MENGALIKAN DENGAN INCOME BULANAN
         monthly_tax = monthly_gross_pay * ter_rate
-
-        # Log for debugging
-        frappe.logger().debug(f"TER calculation - using ter_category: {ter_category}")
-        frappe.logger().debug(f"TER calculation - using ter_rate: {ter_rate}")
-        frappe.logger().debug(f"TER calculation - monthly_tax result: {monthly_tax}")
 
         # Save TER info
         doc.is_using_ter = 1
         doc.ter_rate = ter_rate * 100  # Convert to percentage for display
-        
+
         # Update PPh 21 component
+        from .base import update_component_amount
         update_component_amount(doc, "PPh 21", monthly_tax, "deductions")
 
         # Use the centralized function to add tax info to payroll note
+        from .tax_calculator import add_tax_info_to_note
         add_tax_info_to_note(doc, "TER", {
             "status_pajak": status_pajak,
-            "ter_category": ter_category,  # Include TER category in note
-            "gross_pay": monthly_gross_pay,  # Use the monthly gross pay value we determined
-            "ter_rate": ter_rate * 100,  # Convert to percentage for display
+            "ter_category": ter_category,
+            "gross_pay": monthly_gross_pay,  # Gunakan nilai yang sudah disesuaikan
+            "ter_rate": ter_rate * 100,
             "monthly_tax": monthly_tax,
-            "note": "Perhitungan menggunakan metode TER sesuai PMK 168/2023" + 
-                   (f" (adjusted gross_pay: {doc.gross_pay} → {monthly_gross_pay})" if monthly_gross_pay != doc.gross_pay else "")
+            "note": "Gross pay disesuaikan" if monthly_gross_pay != original_gross_pay else ""
         })
 
     except Exception as e:
@@ -106,7 +78,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
             "TER Calculation Error"
         )
         frappe.throw(_("Error calculating PPh 21 with TER: {0}").format(str(e)))
-
+        
 def map_ptkp_to_ter_category(status_pajak):
     """
     Map PTKP status to TER category based on PMK 168/2023

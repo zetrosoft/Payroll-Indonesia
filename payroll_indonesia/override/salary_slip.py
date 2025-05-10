@@ -250,28 +250,24 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             return True
 
     def calculate_tax_with_strategy(self, strategy, employee):
-        """
-        Calculate tax based on selected strategy
-        Args:
-            strategy: String indicating strategy ("TER" or "PROGRESSIVE")
-            employee: Employee document
-        """
-        if strategy == "TER":
-            debug_log(f"Calculating tax with TER for {self.name}")
-            
-            # Set is_using_ter flag explicitly
-            self.is_using_ter = 1
-            
-            # Use calculate_monthly_pph_with_ter from ter_calculator.py
-            calculate_monthly_pph_with_ter(self, employee)
-        else:
-            debug_log(f"Calculating tax with Progressive method for {self.name}")
-            
-            # Ensure is_using_ter is set to 0 for consistency
-            self.is_using_ter = 0
-            
-            # Use calculate_tax_components from tax_calculator.py
-            calculate_tax_components(self, employee)
+        # Store original values to restore after calculation
+        original_gross = self.gross_pay
+        original_netto = getattr(self, 'netto', 0)
+    
+        try:
+            if strategy == "TER":
+                # TER calculation
+                calculate_monthly_pph_with_ter(self, employee)
+            else:
+                # Progressive calculation
+                calculate_tax_components(self, employee)
+        finally:
+            # Verify values haven't been globally changed
+            if strategy == "TER" and abs(original_gross - self.gross_pay) > 1:
+                frappe.logger().warning(f"gross_pay modified during TER calculation: {original_gross} -> {self.gross_pay}")
+                # Restore original gross_pay for TER calculation
+                if original_gross != self.gross_pay:
+                    self.gross_pay = original_gross
 
     def on_submit(self):
         """Create related documents on submit and verify BPJS values"""
