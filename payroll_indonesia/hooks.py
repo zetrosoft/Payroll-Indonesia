@@ -189,7 +189,6 @@ fixtures = [
 scheduler_events = {
     "daily": [
         "payroll_indonesia.utilities.tax_slab.create_income_tax_slab", 
-        "payroll_indonesia.override.salary_structure.update_salary_structures",
         "payroll_indonesia.payroll_indonesia.bpjs.daily_tasks.check_bpjs_settings"
     ],
     "monthly": [
