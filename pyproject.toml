@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+# Last modified: 2025-05-11 11:41:35 by dannyaudian
+# Source URL: https://github.com/dannyaudian/Payroll-Indonesia/blob/main/pyproject.toml
+
 [build-system]
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -10,3 +14,22 @@ authors = [
     {name = "PT. Innovasi Terbaik Bangsa", email = "danny.a.pratama@cao-group.co.id"}
 ]
 requires-python = ">=3.10"
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | migrations
+)/
+'''
