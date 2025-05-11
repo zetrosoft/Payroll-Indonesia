@@ -12,7 +12,7 @@ import hashlib
 from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 
 # Import utility functions
-from payroll_indonesia.payroll_indonesia.utils.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 # Function imported from base.py - keeping this as it's not part of circular dependency
 from .base import update_component_amount

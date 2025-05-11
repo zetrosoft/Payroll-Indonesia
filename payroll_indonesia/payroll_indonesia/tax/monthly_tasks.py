@@ -12,7 +12,7 @@ from collections import Counter
 # Import from pph_ter.py instead of ter_calculator.py
 from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 # Import cache utils
-from payroll_indonesia.payroll_indonesia.utils.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 def update_tax_summaries(month=None, year=None, company=None):
     """

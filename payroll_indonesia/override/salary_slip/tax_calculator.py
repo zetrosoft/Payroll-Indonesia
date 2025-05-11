@@ -28,7 +28,7 @@ from .base import update_component_amount, get_component_amount
 from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 
 # Import centralized cache utilities
-from payroll_indonesia.payroll_indonesia.utils.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 def calculate_tax_components(doc, employee):
     """
