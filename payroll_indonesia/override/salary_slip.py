@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 08:21:30 by dannyaudian
+# Last modified: 2025-05-11 09:07:44 by dannyaudian
 
 import frappe
 from frappe import _
-from frappe.utils import flt, cint, getdate, now_datetime, add_to_date
+from frappe.utils import flt, cint, getdate, now_datetime, add_to_date, date_diff
 from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
 import json
 import hashlib
@@ -50,7 +50,10 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         employee_info = f"{self.employee} ({self.employee_name})" if hasattr(self, 'employee_name') else self.employee
         
         try:
-            # Call parent validation first
+            # Additional validations for Indonesian payroll
+            self._validate_input_data()
+            
+            # Call parent validation after our validations
             super().validate()
             
             # Initialize additional fields
@@ -58,6 +61,9 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             
             # Get employee document
             employee = self._get_employee_doc()
+            
+            # Additional validation for tax ID fields
+            self._validate_tax_fields(employee)
             
             # Calculate BPJS components
             self._calculate_bpjs(employee)
@@ -88,6 +94,100 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 _("Error validating salary slip: {0}").format(str(e)),
                 title=_("Validation Failed")
             )
+            
+    def _validate_input_data(self):
+        """
+        Validate basic input data for salary slip including:
+        - Gross pay is non-negative
+        - Posting date is within payroll entry range
+        """
+        # Validate gross pay is non-negative
+        if hasattr(self, 'gross_pay') and self.gross_pay < 0:
+            frappe.throw(
+                _("Gross pay cannot be negative. Current value: {0}").format(self.gross_pay),
+                title=_("Invalid Gross Pay")
+            )
+            
+        # Validate posting date within payroll entry date range if linked to payroll entry
+        if hasattr(self, 'payroll_entry') and self.payroll_entry and hasattr(self, 'posting_date'):
+            try:
+                payroll_entry_doc = frappe.get_doc("Payroll Entry", self.payroll_entry)
+                start_date = getdate(payroll_entry_doc.start_date)
+                end_date = getdate(payroll_entry_doc.end_date)
+                posting_date = getdate(self.posting_date)
+                
+                # Check if posting date is within range
+                if posting_date < start_date or posting_date > end_date:
+                    frappe.throw(
+                        _("Posting date {0} must be within payroll period {1} to {2}").format(
+                            posting_date, start_date, end_date
+                        ),
+                        title=_("Invalid Posting Date")
+                    )
+                    
+                # Check if the posting date is too far from the period
+                days_diff = min(date_diff(posting_date, start_date), date_diff(end_date, posting_date))
+                if days_diff > 31:  # More than a month difference
+                    frappe.throw(
+                        _("Posting date {0} is too far from the payroll period ({1} to {2})").format(
+                            posting_date, start_date, end_date
+                        ),
+                        title=_("Invalid Posting Date")
+                    )
+            except Exception as e:
+                if isinstance(e, frappe.exceptions.ValidationError):
+                    raise
+                    
+                frappe.log_error(
+                    "Error validating posting date: {0}".format(str(e)),
+                    "Posting Date Validation Error"
+                )
+                frappe.throw(
+                    _("Error validating posting date: {0}").format(str(e)),
+                    title=_("Validation Error")
+                )
+            
+    def _validate_tax_fields(self, employee):
+        """
+        Validate required tax fields when PPh 21 component is present:
+        - NPWP (Tax ID) should be present
+        - Status Pajak (Tax Status) should be set
+        """
+        # Check if PPh 21 component exists in deductions
+        has_pph21 = False
+        if hasattr(self, 'deductions'):
+            for deduction in self.deductions:
+                if deduction.salary_component == "PPh 21" and flt(deduction.amount) > 0:
+                    has_pph21 = True
+                    break
+                    
+        # Only validate tax fields if PPh 21 is being calculated
+        if has_pph21:
+            # Validate NPWP exists
+            npwp = getattr(self, 'npwp', '') or getattr(employee, 'npwp', '')
+            if not npwp:
+                frappe.throw(
+                    _("NPWP (Tax ID) is required for PPh 21 calculation. Please update employee record."),
+                    title=_("Missing NPWP")
+                )
+                
+            # Validate status_pajak (Tax Status) exists
+            status_pajak = getattr(employee, 'status_pajak', '')
+            if not status_pajak:
+                frappe.throw(
+                    _("Tax status (Status Pajak) is required for PPh 21 calculation. Please update employee record."),
+                    title=_("Missing Tax Status")
+                )
+                
+            # Check if status_pajak is valid
+            valid_status = ["TK0", "TK1", "TK2", "TK3", "K0", "K1", "K2", "K3", "HB0", "HB1", "HB2", "HB3"]
+            if status_pajak not in valid_status:
+                frappe.throw(
+                    _("Invalid tax status: {0}. Should be one of: {1}").format(
+                        status_pajak, ", ".join(valid_status)
+                    ),
+                    title=_("Invalid Tax Status")
+                )
     
     def _initialize_payroll_fields(self):
         """
@@ -518,7 +618,14 @@ def _create_enhanced_method(original_method, enhancement_func):
         A new function that combines both behaviors
     """
     def enhanced_method(self, *args, **kwargs):
-        # Call the original method first
+        # First apply our additional validations if this is the validate method
+        if original_method.__name__ == 'validate':
+            _validate_input_data_standalone(self)
+            employee = _get_employee_doc_standalone(self)
+            if employee:
+                _validate_tax_fields_standalone(self, employee)
+        
+        # Call the original method
         result = original_method(self, *args, **kwargs)
         
         # Then apply our enhancement
@@ -551,6 +658,133 @@ def _create_enhanced_method(original_method, enhancement_func):
         enhanced_method.__doc__ = "Enhanced with Indonesian payroll features."
         
     return enhanced_method
+
+# Standalone validation functions for use with enhanced methods
+def _validate_input_data_standalone(doc):
+    """
+    Validate basic input data for salary slip including:
+    - Gross pay is non-negative
+    - Posting date is within payroll entry range
+    
+    For use with the enhanced validate method.
+    """
+    # Validate gross pay is non-negative
+    if hasattr(doc, 'gross_pay') and doc.gross_pay < 0:
+        frappe.throw(
+            _("Gross pay cannot be negative. Current value: {0}").format(doc.gross_pay),
+            title=_("Invalid Gross Pay")
+        )
+        
+    # Validate posting date within payroll entry date range if linked to payroll entry
+    if hasattr(doc, 'payroll_entry') and doc.payroll_entry and hasattr(doc, 'posting_date'):
+        try:
+            payroll_entry_doc = frappe.get_doc("Payroll Entry", doc.payroll_entry)
+            start_date = getdate(payroll_entry_doc.start_date)
+            end_date = getdate(payroll_entry_doc.end_date)
+            posting_date = getdate(doc.posting_date)
+            
+            # Check if posting date is within range
+            if posting_date < start_date or posting_date > end_date:
+                frappe.throw(
+                    _("Posting date {0} must be within payroll period {1} to {2}").format(
+                        posting_date, start_date, end_date
+                    ),
+                    title=_("Invalid Posting Date")
+                )
+                
+            # Check if the posting date is too far from the period
+            days_diff = min(date_diff(posting_date, start_date), date_diff(end_date, posting_date))
+            if days_diff > 31:  # More than a month difference
+                frappe.throw(
+                    _("Posting date {0} is too far from the payroll period ({1} to {2})").format(
+                        posting_date, start_date, end_date
+                    ),
+                    title=_("Invalid Posting Date")
+                )
+        except Exception as e:
+            if isinstance(e, frappe.exceptions.ValidationError):
+                raise
+                
+            frappe.log_error(
+                "Error validating posting date: {0}".format(str(e)),
+                "Posting Date Validation Error"
+            )
+            frappe.throw(
+                _("Error validating posting date: {0}").format(str(e)),
+                title=_("Validation Error")
+            )
+
+def _get_employee_doc_standalone(doc):
+    """
+    Get employee document for standalone validation.
+    
+    Returns:
+        frappe.Document: The employee document or None if not found
+    """
+    if hasattr(doc, 'employee') and doc.employee:
+        try:
+            # Check cache first
+            cache_key = f"employee_doc:{doc.employee}"
+            employee_doc = get_cached_value(cache_key)
+            
+            if employee_doc is None:
+                employee_doc = frappe.get_doc("Employee", doc.employee)
+                # Cache for 1 hour
+                cache_value(cache_key, employee_doc, 3600)
+                
+            return employee_doc
+        except Exception as e:
+            frappe.log_error(
+                "Error retrieving employee {0} for standalone validation: {1}".format(
+                    doc.employee, str(e)
+                ),
+                "Employee Retrieval Warning"
+            )
+    return None
+
+def _validate_tax_fields_standalone(doc, employee):
+    """
+    Validate required tax fields when PPh 21 component is present:
+    - NPWP (Tax ID) should be present
+    - Status Pajak (Tax Status) should be set
+    
+    For use with the enhanced validate method.
+    """
+    # Check if PPh 21 component exists in deductions
+    has_pph21 = False
+    if hasattr(doc, 'deductions'):
+        for deduction in doc.deductions:
+            if deduction.salary_component == "PPh 21" and flt(deduction.amount) > 0:
+                has_pph21 = True
+                break
+                
+    # Only validate tax fields if PPh 21 is being calculated
+    if has_pph21:
+        # Validate NPWP exists
+        npwp = getattr(doc, 'npwp', '') or getattr(employee, 'npwp', '')
+        if not npwp:
+            frappe.throw(
+                _("NPWP (Tax ID) is required for PPh 21 calculation. Please update employee record."),
+                title=_("Missing NPWP")
+            )
+            
+        # Validate status_pajak (Tax Status) exists
+        status_pajak = getattr(employee, 'status_pajak', '')
+        if not status_pajak:
+            frappe.throw(
+                _("Tax status (Status Pajak) is required for PPh 21 calculation. Please update employee record."),
+                title=_("Missing Tax Status")
+            )
+            
+        # Check if status_pajak is valid
+        valid_status = ["TK0", "TK1", "TK2", "TK3", "K0", "K1", "K2", "K3", "HB0", "HB1", "HB2", "HB3"]
+        if status_pajak not in valid_status:
+            frappe.throw(
+                _("Invalid tax status: {0}. Should be one of: {1}").format(
+                    status_pajak, ", ".join(valid_status)
+                ),
+                title=_("Invalid Tax Status")
+            )
 
 def _enhance_validate(doc, *args, **kwargs):
     """
