@@ -207,7 +207,7 @@ def verify_calculation_integrity(
         if hasattr(doc, "monthly_gross_for_ter"):
             if abs(flt(doc.monthly_gross_for_ter) - monthly_gross_pay) > 0.01:
                 errors.append(
-                    f"monthly_gross_for_ter mismatch: expected {monthly_gross_pay}, "
+                    f"monthly_gross_for_ter mismatch: expected {monthly_gross_pay},"
                     f"got {doc.monthly_gross_for_ter}"
                 )
                 doc.monthly_gross_for_ter = monthly_gross_pay
@@ -218,7 +218,7 @@ def verify_calculation_integrity(
             expected_annual = flt(monthly_gross_pay * MONTHS_PER_YEAR)
             if abs(flt(doc.annual_taxable_amount) - expected_annual) > 0.01:
                 errors.append(
-                    f"annual_taxable_amount mismatch: expected {expected_annual}, "
+                    f"annual_taxable_amount mismatch: expected {expected_annual},"
                     f"got {doc.annual_taxable_amount}"
                 )
                 doc.annual_taxable_amount = expected_annual

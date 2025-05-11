@@ -251,9 +251,9 @@ def update_tax_summaries(month=None, year=None, company=None):
                 continue
         # Log summary
         log_message = (
-            "Tax summary update completed for {0:02d}-{1}. "
-            "Updated: {2}, Created: {3}, "
-            "Errors: {4}, Total: {5}".format(
+            "Tax summary update completed for {0:02d}-{1}."
+            " Updated: {2}, Created: {3},"
+            " Errors: {4}, Total: {5}".format(
                 month,
                 year,
                 summary["updated"],

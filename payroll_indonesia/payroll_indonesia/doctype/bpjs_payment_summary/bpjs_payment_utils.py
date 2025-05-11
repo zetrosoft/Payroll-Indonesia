@@ -4,7 +4,6 @@
 # Last modified: 2025-05-08 11:11:10 by dannyaudian
 
 import frappe
-from frappe import _
 from frappe.utils import flt, fmt_money, now_datetime
 
 # Removed unused imports: getdate, add_months, date_diff

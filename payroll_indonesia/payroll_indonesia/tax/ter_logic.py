@@ -18,7 +18,6 @@ and can be imported by other modules without causing circular dependencies.
 """
 
 import frappe
-from frappe import _
 from frappe.utils import flt, getdate
 
 # Import cache utilities
