@@ -7,7 +7,7 @@ import frappe
 import json
 import re
 from frappe import _
-from frappe.utils import getdate, nowdate, cint, flt, strip_html
+from frappe.utils import getdate, cint, flt, strip_html
 
 #
 # EMPLOYEE API ENDPOINTS

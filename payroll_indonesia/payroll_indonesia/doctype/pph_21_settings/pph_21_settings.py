@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-09 03:55:15 by dannyaudian
+# Last modified: 2025-05-11 13:12:56 by dannyaudian
 
 import frappe
+import json
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, cint, now_datetime
 
 # Import from central utilities
 from payroll_indonesia.payroll_indonesia.utils import (
+    get_settings,
     get_default_config,
     debug_log,
     get_ptkp_settings,
@@ -20,7 +22,7 @@ from payroll_indonesia.payroll_indonesia.utils import (
 class PPh21Settings(Document):
     def __init__(self, *args, **kwargs):
         super(PPh21Settings, self).__init__(*args, **kwargs)
-        # Flag untuk mencegah rekursi
+        # Flag to prevent recursion
         self._updating_from_config = False
 
     def validate(self):
@@ -40,24 +42,28 @@ class PPh21Settings(Document):
         if self.use_ter:
             self.validate_ter_table()
 
+        # Sync with Payroll Indonesia Settings
+        if not self._updating_from_config:
+            self.sync_to_payroll_settings()
+
     def on_update(self):
         """Update settings when document is updated"""
         debug_log("on_update method called for PPh 21 Settings", "PPh 21 Settings")
 
-        # Hindari rekursi jika flag diset
+        # Avoid recursion if flag is set
         if getattr(self, "_updating_from_config", False):
             debug_log("Skipping on_update due to _updating_from_config flag", "PPh 21 Settings")
             return
 
-        # Hindari rekursi jika ignore_on_update diset
+        # Avoid recursion if ignore_on_update is set
         if getattr(self.flags, "ignore_on_update", False):
             debug_log("Skipping on_update due to ignore_on_update flag", "PPh 21 Settings")
             return
 
-        # Update settings from config dengan flag untuk hindari rekursi
+        # Update settings from config with flag to prevent recursion
         try:
             self._updating_from_config = True
-            self.update_settings_from_config()
+            self.sync_from_payroll_settings()
         finally:
             self._updating_from_config = False
 
@@ -90,12 +96,22 @@ class PPh21Settings(Document):
 
     def validate_ptkp_table(self):
         """Validate PTKP entries against required values"""
-        config = get_default_config()
+        # Get centralized settings
+        pi_settings = get_settings()
 
-        # Required PTKP statuses from config or defaults
-        ptkp_config = config.get("ptkp", {})
+        # Get PTKP values from settings
+        ptkp_values = {}
+        try:
+            if hasattr(pi_settings, "ptkp_table"):
+                ptkp_values = pi_settings.get_ptkp_values_dict()
+        except Exception:
+            debug_log(
+                "Error getting PTKP values from Payroll Indonesia Settings", "PPh 21 Settings"
+            )
+
+        # Required PTKP statuses from settings or defaults
         required_status = (
-            list(ptkp_config.keys()) if ptkp_config else ["TK0", "K0", "K1", "K2", "K3"]
+            list(ptkp_values.keys()) if ptkp_values else ["TK0", "K0", "K1", "K2", "K3"]
         )
 
         if not self.ptkp_table or len(self.ptkp_table) == 0:
@@ -123,11 +139,24 @@ class PPh21Settings(Document):
                 "No TER rates found in database, checking for default values", "PPh 21 Settings"
             )
 
-            # Load TER rates from config
-            ter_rates = get_default_config("ter_rates")
+            # Try to get TER rates from centralized settings
+            pi_settings = get_settings()
+            ter_rates = {}
+
+            try:
+                if hasattr(pi_settings, "ter_rates") and pi_settings.ter_rates:
+                    if isinstance(pi_settings.ter_rates, str):
+                        ter_rates = frappe.parse_json(pi_settings.ter_rates)
+                    else:
+                        ter_rates = pi_settings.ter_rates
+            except Exception as e:
+                frappe.log_error(
+                    f"Error parsing TER rates from settings: {str(e)}", "PPh 21 Settings"
+                )
+
             if ter_rates:
                 debug_log(
-                    f"Creating TER rates from config for {len(ter_rates)} tax statuses",
+                    f"Creating TER rates from settings for {len(ter_rates)} tax statuses",
                     "PPh 21 Settings",
                 )
                 self.load_ter_rates_from_config(ter_rates)
@@ -140,13 +169,28 @@ class PPh21Settings(Document):
                     indicator="yellow",
                 )
                 debug_log(
-                    "No TER rates in config or database, user needs to define them",
+                    "No TER rates in settings or database, user needs to define them",
                     "PPh 21 Settings",
                 )
 
     def load_brackets_from_config(self):
         """Load tax brackets from configuration"""
-        tax_brackets = get_pph21_brackets()
+        # Get centralized settings
+        pi_settings = get_settings()
+
+        # Try to get tax brackets from settings
+        tax_brackets = []
+        try:
+            if hasattr(pi_settings, "tax_brackets_table"):
+                tax_brackets = pi_settings.get_tax_brackets_list()
+        except Exception:
+            debug_log(
+                "Error getting tax brackets from Payroll Indonesia Settings", "PPh 21 Settings"
+            )
+
+        # Fallback to utility function
+        if not tax_brackets:
+            tax_brackets = get_pph21_brackets()
 
         if not tax_brackets:
             debug_log(
@@ -177,7 +221,22 @@ class PPh21Settings(Document):
 
     def load_ptkp_from_config(self):
         """Load PTKP values from configuration"""
-        ptkp_values = get_ptkp_settings()
+        # Get centralized settings
+        pi_settings = get_settings()
+
+        # Try to get PTKP values from settings
+        ptkp_values = {}
+        try:
+            if hasattr(pi_settings, "ptkp_table"):
+                ptkp_values = pi_settings.get_ptkp_values_dict()
+        except Exception:
+            debug_log(
+                "Error getting PTKP values from Payroll Indonesia Settings", "PPh 21 Settings"
+            )
+
+        # Fallback to utility function
+        if not ptkp_values:
+            ptkp_values = get_ptkp_settings()
 
         if not ptkp_values:
             debug_log(
@@ -219,7 +278,25 @@ class PPh21Settings(Document):
             debug_log(f"Creating {len(rates)} TER rates for status {status}", "PPh 21 Settings")
 
             for rate_data in rates:
-                # Create TER rate entry
+                # Skip if already exists
+                if frappe.db.exists(
+                    "PPh 21 TER Table",
+                    {
+                        "status_pajak": status,
+                        "income_from": rate_data.get("income_from", 0),
+                        "income_to": rate_data.get("income_to", 0),
+                    },
+                ):
+                    continue
+
+                # Create description
+                description = ""
+                if rate_data.get("is_highest_bracket", 0) or rate_data.get("income_to", 0) == 0:
+                    description = f"{status} > {float(rate_data.get('income_from', 0)):,.0f}"
+                else:
+                    description = f"{status} {float(rate_data.get('income_from', 0)):,.0f} - {float(rate_data.get('income_to', 0)):,.0f}"
+
+                # Create TER entry
                 ter_entry = frappe.new_doc("PPh 21 TER Table")
                 ter_entry.parent = "PPh 21 Settings"
                 ter_entry.parentfield = "ter_rates"
@@ -228,8 +305,11 @@ class PPh21Settings(Document):
                 ter_entry.income_from = flt(rate_data.get("income_from", 0))
                 ter_entry.income_to = flt(rate_data.get("income_to", 0))
                 ter_entry.rate = flt(rate_data.get("rate", 0))
+                ter_entry.is_highest_bracket = rate_data.get("is_highest_bracket", 0)
+                ter_entry.description = description
 
                 # Insert with permission bypass
+                ter_entry.flags.ignore_permissions = True
                 ter_entry.insert(ignore_permissions=True)
 
         # Commit changes
@@ -269,107 +349,116 @@ class PPh21Settings(Document):
         except ValueError:
             return status
 
-    def update_settings_from_config(self):
-        """Update settings from configuration"""
-        # Cek apakah sudah dalam proses update untuk hindari rekursi
+    def sync_from_payroll_settings(self):
+        """Update settings from Payroll Indonesia Settings"""
+        # Check if already in update process to avoid recursion
         if getattr(self, "_updating_from_config", False):
-            debug_log("update_settings_from_config: Avoiding recursion", "PPh 21 Settings")
+            debug_log("sync_from_payroll_settings: Avoiding recursion", "PPh 21 Settings")
             return
 
-        debug_log("Starting update_settings_from_config", "PPh 21 Settings")
+        debug_log("Starting sync_from_payroll_settings", "PPh 21 Settings")
 
-        # Dapatkan konfigurasi
-        config = get_default_config()
-        tax_config = config.get("tax", {})
+        # Get Payroll Indonesia Settings
+        pi_settings = get_settings()
 
-        # Cek perubahan field
+        # Check if fields need updating
         modified = False
 
-        # Update calculation method if not set
-        if not self.calculation_method and tax_config.get("tax_calculation_method"):
-            self.calculation_method = tax_config.get("tax_calculation_method")
+        # Update calculation method if set in centralized settings
+        if (
+            hasattr(pi_settings, "tax_calculation_method")
+            and self.calculation_method != pi_settings.tax_calculation_method
+        ):
+            self.calculation_method = pi_settings.tax_calculation_method
             modified = True
             debug_log(
-                f"Setting calculation_method to {self.calculation_method} from config",
+                f"Setting calculation_method to {self.calculation_method} from Payroll Indonesia Settings",
                 "PPh 21 Settings",
             )
 
         # Update TER settings
-        if tax_config.get("use_ter") is not None and self.use_ter != tax_config.get("use_ter"):
-            self.use_ter = cint(tax_config.get("use_ter"))
-            modified = True
-            debug_log(f"Setting use_ter to {self.use_ter} from config", "PPh 21 Settings")
-
-        # Update gross up settings
-        if tax_config.get("use_gross_up") is not None and self.use_gross_up != tax_config.get(
-            "use_gross_up"
-        ):
-            self.use_gross_up = cint(tax_config.get("use_gross_up"))
-            modified = True
-            debug_log(f"Setting use_gross_up to {self.use_gross_up} from config", "PPh 21 Settings")
-
-        # Update NPWP mandatory settings
-        if tax_config.get("npwp_mandatory") is not None and self.npwp_mandatory != tax_config.get(
-            "npwp_mandatory"
-        ):
-            self.npwp_mandatory = cint(tax_config.get("npwp_mandatory"))
+        if hasattr(pi_settings, "use_ter") and self.use_ter != pi_settings.use_ter:
+            self.use_ter = cint(pi_settings.use_ter)
             modified = True
             debug_log(
-                f"Setting npwp_mandatory to {self.npwp_mandatory} from config", "PPh 21 Settings"
+                f"Setting use_ter to {self.use_ter} from Payroll Indonesia Settings",
+                "PPh 21 Settings",
+            )
+
+        # Update gross up settings
+        if hasattr(pi_settings, "use_gross_up") and self.use_gross_up != pi_settings.use_gross_up:
+            self.use_gross_up = cint(pi_settings.use_gross_up)
+            modified = True
+            debug_log(
+                f"Setting use_gross_up to {self.use_gross_up} from Payroll Indonesia Settings",
+                "PPh 21 Settings",
+            )
+
+        # Update NPWP mandatory settings
+        if (
+            hasattr(pi_settings, "npwp_mandatory")
+            and self.npwp_mandatory != pi_settings.npwp_mandatory
+        ):
+            self.npwp_mandatory = cint(pi_settings.npwp_mandatory)
+            modified = True
+            debug_log(
+                f"Setting npwp_mandatory to {self.npwp_mandatory} from Payroll Indonesia Settings",
+                "PPh 21 Settings",
             )
 
         # Update biaya jabatan settings
-        if tax_config.get("biaya_jabatan_percent") is not None:
-            self.biaya_jabatan_percent = flt(tax_config.get("biaya_jabatan_percent"))
+        if hasattr(pi_settings, "biaya_jabatan_percent"):
+            self.biaya_jabatan_percent = flt(pi_settings.biaya_jabatan_percent)
             modified = True
             debug_log(
-                f"Setting biaya_jabatan_percent to {self.biaya_jabatan_percent} from config",
+                f"Setting biaya_jabatan_percent to {self.biaya_jabatan_percent} from Payroll Indonesia Settings",
                 "PPh 21 Settings",
             )
 
-        if tax_config.get("biaya_jabatan_max") is not None:
-            self.biaya_jabatan_max = flt(tax_config.get("biaya_jabatan_max"))
+        if hasattr(pi_settings, "biaya_jabatan_max"):
+            self.biaya_jabatan_max = flt(pi_settings.biaya_jabatan_max)
             modified = True
             debug_log(
-                f"Setting biaya_jabatan_max to {self.biaya_jabatan_max} from config",
+                f"Setting biaya_jabatan_max to {self.biaya_jabatan_max} from Payroll Indonesia Settings",
                 "PPh 21 Settings",
             )
 
-        # Simpan perubahan jika diperlukan, dengan cara yang aman
+        # Save changes if needed, safely
         if modified:
             debug_log(
                 "Saving modified settings with direct db_set to avoid recursion", "PPh 21 Settings"
             )
             try:
-                # Gunakan db_set untuk update field tanpa memanggil save()
+                # Use db_set to update fields without calling save()
                 fields_to_update = {}
-                if not self.calculation_method and tax_config.get("tax_calculation_method"):
-                    fields_to_update["calculation_method"] = tax_config.get(
-                        "tax_calculation_method"
-                    )
-
-                if tax_config.get("use_ter") is not None and self.use_ter != tax_config.get(
-                    "use_ter"
+                if (
+                    hasattr(pi_settings, "tax_calculation_method")
+                    and self.calculation_method != pi_settings.tax_calculation_method
                 ):
-                    fields_to_update["use_ter"] = cint(tax_config.get("use_ter"))
+                    fields_to_update["calculation_method"] = pi_settings.tax_calculation_method
 
-                if tax_config.get(
-                    "use_gross_up"
-                ) is not None and self.use_gross_up != tax_config.get("use_gross_up"):
-                    fields_to_update["use_gross_up"] = cint(tax_config.get("use_gross_up"))
+                if hasattr(pi_settings, "use_ter") and self.use_ter != pi_settings.use_ter:
+                    fields_to_update["use_ter"] = cint(pi_settings.use_ter)
 
-                if tax_config.get(
-                    "npwp_mandatory"
-                ) is not None and self.npwp_mandatory != tax_config.get("npwp_mandatory"):
-                    fields_to_update["npwp_mandatory"] = cint(tax_config.get("npwp_mandatory"))
+                if (
+                    hasattr(pi_settings, "use_gross_up")
+                    and self.use_gross_up != pi_settings.use_gross_up
+                ):
+                    fields_to_update["use_gross_up"] = cint(pi_settings.use_gross_up)
 
-                if tax_config.get("biaya_jabatan_percent") is not None:
+                if (
+                    hasattr(pi_settings, "npwp_mandatory")
+                    and self.npwp_mandatory != pi_settings.npwp_mandatory
+                ):
+                    fields_to_update["npwp_mandatory"] = cint(pi_settings.npwp_mandatory)
+
+                if hasattr(pi_settings, "biaya_jabatan_percent"):
                     fields_to_update["biaya_jabatan_percent"] = flt(
-                        tax_config.get("biaya_jabatan_percent")
+                        pi_settings.biaya_jabatan_percent
                     )
 
-                if tax_config.get("biaya_jabatan_max") is not None:
-                    fields_to_update["biaya_jabatan_max"] = flt(tax_config.get("biaya_jabatan_max"))
+                if hasattr(pi_settings, "biaya_jabatan_max"):
+                    fields_to_update["biaya_jabatan_max"] = flt(pi_settings.biaya_jabatan_max)
 
                 # Update fields directly in DB
                 for field, value in fields_to_update.items():
@@ -386,12 +475,131 @@ class PPh21Settings(Document):
                 )
                 debug_log(f"Error in direct db update: {str(e)}", "PPh 21 Settings", trace=True)
 
+    def sync_to_payroll_settings(self):
+        """Sync changes to Payroll Indonesia Settings"""
+        try:
+            # Get Payroll Indonesia Settings
+            pi_settings = get_settings()
+
+            # Fields to sync to Payroll Indonesia Settings
+            fields_to_sync = {
+                "tax_calculation_method": self.calculation_method,
+                "use_ter": self.use_ter,
+                "use_gross_up": self.use_gross_up,
+                "npwp_mandatory": self.npwp_mandatory,
+                "biaya_jabatan_percent": self.biaya_jabatan_percent,
+                "biaya_jabatan_max": self.biaya_jabatan_max,
+            }
+
+            needs_update = False
+            for field, value in fields_to_sync.items():
+                if hasattr(pi_settings, field) and pi_settings.get(field) != value:
+                    pi_settings.set(field, value)
+                    needs_update = True
+                    debug_log(
+                        f"Updating {field} in Payroll Indonesia Settings to {value}",
+                        "PPh 21 Settings",
+                    )
+
+            # Sync PTKP values
+            if self.ptkp_table and len(self.ptkp_table) > 0:
+                ptkp_values = {}
+                for row in self.ptkp_table:
+                    ptkp_values[row.status_pajak] = row.ptkp_amount
+
+                if ptkp_values:
+                    # Check if values are different from settings
+                    current_values = {}
+                    try:
+                        if hasattr(pi_settings, "ptkp_table"):
+                            current_values = pi_settings.get_ptkp_values_dict()
+                    except Exception:
+                        debug_log("Error getting PTKP values from settings", "PPh 21 Settings")
+
+                    if current_values != ptkp_values:
+                        # Update PTKP values in Payroll Indonesia Settings
+                        if hasattr(pi_settings, "ptkp_table"):
+                            # Clear and rebuild the table
+                            pi_settings.ptkp_table = []
+                            for status, amount in ptkp_values.items():
+                                pi_settings.append(
+                                    "ptkp_table",
+                                    {"status_pajak": status, "ptkp_amount": flt(amount)},
+                                )
+                            needs_update = True
+                            debug_log(
+                                f"Updated PTKP values in Payroll Indonesia Settings",
+                                "PPh 21 Settings",
+                            )
+
+            # Sync tax brackets
+            if self.bracket_table and len(self.bracket_table) > 0:
+                tax_brackets = []
+                for row in self.bracket_table:
+                    tax_brackets.append(
+                        {
+                            "income_from": row.income_from,
+                            "income_to": row.income_to,
+                            "tax_rate": row.tax_rate,
+                        }
+                    )
+
+                if tax_brackets:
+                    # Check if values are different from settings
+                    current_brackets = []
+                    try:
+                        if hasattr(pi_settings, "tax_brackets_table"):
+                            current_brackets = pi_settings.get_tax_brackets_list()
+                    except Exception:
+                        debug_log("Error getting tax brackets from settings", "PPh 21 Settings")
+
+                    if current_brackets != tax_brackets:
+                        # Update tax brackets in Payroll Indonesia Settings
+                        if hasattr(pi_settings, "tax_brackets_table"):
+                            # Clear and rebuild the table
+                            pi_settings.tax_brackets_table = []
+                            for bracket in tax_brackets:
+                                pi_settings.append(
+                                    "tax_brackets_table",
+                                    {
+                                        "income_from": flt(bracket["income_from"]),
+                                        "income_to": flt(bracket["income_to"]),
+                                        "tax_rate": flt(bracket["tax_rate"]),
+                                    },
+                                )
+                            needs_update = True
+                            debug_log(
+                                f"Updated tax brackets in Payroll Indonesia Settings",
+                                "PPh 21 Settings",
+                            )
+
+            # Save changes if needed
+            if needs_update:
+                pi_settings.app_last_updated = now_datetime()
+                pi_settings.app_updated_by = frappe.session.user
+                pi_settings.flags.ignore_validate = True
+                pi_settings.flags.ignore_permissions = True
+                pi_settings.save(ignore_permissions=True)
+                debug_log(
+                    "Payroll Indonesia Settings updated from PPh 21 Settings", "PPh 21 Settings"
+                )
+
+        except Exception as e:
+            frappe.log_error(
+                f"Error syncing to Payroll Indonesia Settings: {str(e)}", "PPh 21 Settings Error"
+            )
+            debug_log(
+                f"Error syncing to Payroll Indonesia Settings: {str(e)}",
+                "PPh 21 Settings",
+                trace=True,
+            )
+
 
 def on_update(doc, method):
     """Handler for on_update event"""
     debug_log("PPh 21 Settings on_update event handler called", "PPh 21 Settings")
 
-    # Hindari jika flag diset
+    # Avoid recursion if flag is set
     if getattr(doc, "_updating_from_config", False):
         debug_log("Skipping on_update handler due to _updating_from_config flag", "PPh 21 Settings")
         return
@@ -409,6 +617,9 @@ def on_update(doc, method):
     # Validate TER table if needed
     if doc.calculation_method == "TER":
         validate_ter_table()
+
+    # Sync to Payroll Indonesia Settings
+    doc.sync_to_payroll_settings()
 
 
 def validate_brackets(doc):
@@ -439,9 +650,19 @@ def validate_brackets(doc):
 
 def validate_ptkp_entries(doc):
     """Validate PTKP entries against required values"""
-    # Get required statuses from config
-    ptkp_config = get_default_config("ptkp")
-    required_status = list(ptkp_config.keys()) if ptkp_config else ["TK0", "K0", "K1", "K2", "K3"]
+    # Get required statuses from Payroll Indonesia Settings
+    pi_settings = get_settings()
+
+    # Try to get PTKP values from settings
+    ptkp_values = {}
+    try:
+        if hasattr(pi_settings, "ptkp_table"):
+            ptkp_values = pi_settings.get_ptkp_values_dict()
+    except Exception:
+        debug_log("Error getting PTKP values from Payroll Indonesia Settings", "PPh 21 Settings")
+
+    # Fallback to defaults
+    required_status = list(ptkp_values.keys()) if ptkp_values else ["TK0", "K0", "K1", "K2", "K3"]
 
     if not doc.ptkp_table:
         frappe.msgprint(_("PTKP values should be defined"))
@@ -471,7 +692,7 @@ def validate_ter_table():
 
 def update_from_config(doc=None):
     """
-    Update PPh 21 Settings from configuration
+    Update PPh 21 Settings from Payroll Indonesia Settings
 
     Args:
         doc (object, optional): PPh 21 Settings document. If None, will be fetched.
@@ -490,35 +711,44 @@ def update_from_config(doc=None):
         debug_log("PPh 21 Settings document not found and could not be created", "PPh 21 Settings")
         return
 
-    # Set flag untuk hindari rekursi
+    # Set flag to avoid recursion
     doc._updating_from_config = True
     debug_log("Setting _updating_from_config flag to avoid recursion", "PPh 21 Settings")
 
     try:
-        # Update settings from config
-        config = get_default_config()
-        tax_config = config.get("tax", {})
+        # Get Payroll Indonesia Settings
+        pi_settings = get_settings()
 
         # Set calculation method
-        if tax_config.get("tax_calculation_method"):
-            doc.calculation_method = tax_config.get("tax_calculation_method")
+        if hasattr(pi_settings, "tax_calculation_method"):
+            doc.calculation_method = pi_settings.tax_calculation_method
         else:
             doc.calculation_method = "Progressive"  # Default
 
         # Set TER usage
-        doc.use_ter = cint(tax_config.get("use_ter", 0))
+        doc.use_ter = cint(pi_settings.use_ter if hasattr(pi_settings, "use_ter") else 0)
 
         # Set gross up
-        doc.use_gross_up = cint(tax_config.get("use_gross_up", 0))
+        doc.use_gross_up = cint(
+            pi_settings.use_gross_up if hasattr(pi_settings, "use_gross_up") else 0
+        )
 
         # Set NPWP mandatory
-        doc.npwp_mandatory = cint(tax_config.get("npwp_mandatory", 0))
+        doc.npwp_mandatory = cint(
+            pi_settings.npwp_mandatory if hasattr(pi_settings, "npwp_mandatory") else 0
+        )
 
         # Set biaya jabatan settings
-        doc.biaya_jabatan_percent = flt(tax_config.get("biaya_jabatan_percent", 5.0))
-        doc.biaya_jabatan_max = flt(tax_config.get("biaya_jabatan_max", 500000.0))
+        doc.biaya_jabatan_percent = flt(
+            pi_settings.biaya_jabatan_percent
+            if hasattr(pi_settings, "biaya_jabatan_percent")
+            else 5.0
+        )
+        doc.biaya_jabatan_max = flt(
+            pi_settings.biaya_jabatan_max if hasattr(pi_settings, "biaya_jabatan_max") else 500000.0
+        )
 
-        # Save settings dengan flag untuk hindari rekursi
+        # Save settings with flags to avoid recursion
         doc.flags.ignore_validate = True
         doc.flags.ignore_mandatory = True
         doc.flags.ignore_on_update = True
@@ -539,11 +769,23 @@ def update_from_config(doc=None):
             doc.flags.ignore_on_update = True
             doc.save(ignore_permissions=True)
 
-        debug_log("PPh 21 Settings updated from configuration", "PPh 21 Settings")
+        debug_log("PPh 21 Settings updated from Payroll Indonesia Settings", "PPh 21 Settings")
 
         # Check if TER rates need to be loaded
         if doc.calculation_method == "TER" and frappe.db.count("PPh 21 TER Table") == 0:
-            ter_rates = get_default_config("ter_rates")
+            # Try to get TER rates from settings
+            ter_rates = {}
+            try:
+                if hasattr(pi_settings, "ter_rates") and pi_settings.ter_rates:
+                    if isinstance(pi_settings.ter_rates, str):
+                        ter_rates = json.loads(pi_settings.ter_rates)
+                    else:
+                        ter_rates = pi_settings.ter_rates
+            except Exception as e:
+                frappe.log_error(
+                    f"Error parsing TER rates from settings: {str(e)}", "PPh 21 Settings"
+                )
+
             if ter_rates:
                 doc.load_ter_rates_from_config(ter_rates)
                 frappe.db.commit()

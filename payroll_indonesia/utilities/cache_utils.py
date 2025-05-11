@@ -7,6 +7,7 @@ import frappe
 from frappe.utils import now_datetime, add_to_date
 import hashlib
 import json
+import functools
 
 # Main cache implementation with namespaces
 _UNIFIED_CACHE = {}
@@ -23,6 +24,55 @@ DEFAULT_TTL = {
     "salary_slip": 3600,  # 1 hour
     "default": 1800,  # 30 minutes (fallback)
 }
+
+
+def memoize_with_ttl(ttl=None, namespace=None):
+    """
+    Decorator to memoize a function with TTL (time-to-live) caching
+
+    Args:
+        ttl (int, optional): Time-to-live in seconds
+        namespace (str, optional): Cache namespace to use
+
+    Returns:
+        function: Decorated function with caching
+    """
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Generate a cache key from function name, args and kwargs
+            key_parts = [func.__module__, func.__name__]
+
+            # Add args to key
+            for arg in args:
+                key_parts.append(str(arg))
+
+            # Add sorted kwargs to key for stable hashing
+            sorted_kwargs = sorted(kwargs.items())
+            for k, v in sorted_kwargs:
+                key_parts.append(f"{k}:{v}")
+
+            # Generate the cache key
+            cache_key = ":".join(key_parts)
+
+            # Set namespace prefix
+            if namespace:
+                cache_key = f"{namespace}:{cache_key}"
+
+            # Try to get value from cache
+            cached_result = get_cached_value(cache_key, ttl)
+            if cached_result is not None:
+                return cached_result
+
+            # Calculate and cache result
+            result = func(*args, **kwargs)
+            cache_value(cache_key, result, ttl)
+            return result
+
+        return wrapper
+
+    return decorator
 
 
 def get_cached_value(cache_key, ttl=None):

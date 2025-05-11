@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-08 08:36:37 by dannyaudian
+# Last modified: 2025-05-11 13:12:56 by dannyaudian
 
 import frappe
 from frappe import _
+from payroll_indonesia.payroll_indonesia.utils import get_settings, get_ter_category
 
 
 def get_ter_rate(employee_doc, monthly_income):
@@ -25,7 +26,7 @@ def get_ter_rate(employee_doc, monthly_income):
     if not status_pajak:
         frappe.throw(_("Employee tax status (Status Pajak) is not set"))
 
-    # Map PTKP status to TER category according to PMK 168/2023
+    # Map PTKP status to TER category according to PMK 168/2023 using centralized settings
     ter_category = map_ptkp_to_ter_category(status_pajak)
 
     # Query the TER table for matching bracket
@@ -35,14 +36,26 @@ def get_ter_rate(employee_doc, monthly_income):
         FROM `tabPPh 21 TER Table`
         WHERE status_pajak = %s
           AND %s >= income_from
-          AND (%s <= income_to OR income_to = 0)
+          AND (%s < income_to OR income_to = 0)
         LIMIT 1
     """,
         (ter_category, monthly_income, monthly_income),
         as_dict=1,
     )
 
+    # If no TER rate found in table, try to get from Payroll Indonesia Settings
     if not ter:
+        try:
+            # Get centralized settings
+            settings = get_settings()
+            rate = settings.get_ter_rate(ter_category, monthly_income)
+            if rate:
+                # Convert to decimal since get_ter_rate returns percentage
+                return float(rate) / 100.0
+        except Exception as e:
+            frappe.log_error(f"Error getting TER rate from settings: {str(e)}", "TER Rate Error")
+
+        # If still not found, throw error
         frappe.throw(
             _(
                 "No TER rate found for category {0} (mapped from status {1}) and income {2}. "
@@ -66,7 +79,16 @@ def map_ptkp_to_ter_category(status_pajak):
     Returns:
         str: TER category ('TER A', 'TER B', or 'TER C')
     """
-    # Define mapping as per PMK 168/2023
+    # Use centralized mapping from Payroll Indonesia Settings
+    try:
+        # Get TER category from centralized settings
+        ter_category = get_ter_category(status_pajak)
+        if ter_category:
+            return ter_category
+    except Exception as e:
+        frappe.log_error(f"Error getting TER category from settings: {str(e)}", "TER Mapping Error")
+
+    # Fallback mapping as per PMK 168/2023 if settings are not available
     mapping = {
         # TER A: PTKP TK/0 (Rp 54 juta/tahun)
         "TK0": "TER A",
@@ -116,8 +138,69 @@ def calculate_pph21_with_ter(employee, monthly_income):
 
 
 def setup_default_ter_rates():
-    """Setup default TER rates based on PMK 168/2023"""
-    # TER rates based on PMK 168/2023
+    """
+    Setup default TER rates based on PMK 168/2023
+
+    Uses the Payroll Indonesia Settings for TER rates if available, or falls back to defaults
+    """
+    # Check if we already have TER rates
+    existing_count = frappe.db.count("PPh 21 TER Table")
+    if existing_count > 10:  # Arbitrary threshold
+        frappe.msgprint(
+            _("TER rates are already set up ({0} entries found)").format(existing_count)
+        )
+        return
+
+    # Try to get TER rates from Payroll Indonesia Settings
+    settings = get_settings()
+
+    ter_rates = {}
+    try:
+        if hasattr(settings, "ter_rates") and settings.ter_rates:
+            if isinstance(settings.ter_rates, str):
+                ter_rates = frappe.parse_json(settings.ter_rates)
+            else:
+                ter_rates = settings.ter_rates
+    except Exception as e:
+        frappe.log_error(f"Error parsing TER rates from settings: {str(e)}", "TER Setup Error")
+
+    # Use the central settings if available
+    if ter_rates:
+        for category, rates in ter_rates.items():
+            for rate_data in rates:
+                # Skip if already exists
+                if frappe.db.exists(
+                    "PPh 21 TER Table",
+                    {
+                        "status_pajak": category,
+                        "income_from": rate_data.get("income_from", 0),
+                        "income_to": rate_data.get("income_to", 0),
+                    },
+                ):
+                    continue
+
+                # Create sensible description
+                description = ""
+                if rate_data.get("is_highest_bracket", 0) or rate_data.get("income_to", 0) == 0:
+                    description = f"{category} > {float(rate_data.get('income_from', 0)):,.0f}"
+                else:
+                    description = f"{category} {float(rate_data.get('income_from', 0)):,.0f} - {float(rate_data.get('income_to', 0)):,.0f}"
+
+                # Create TER entry
+                doc = frappe.new_doc("PPh 21 TER Table")
+                doc.status_pajak = category
+                doc.income_from = float(rate_data.get("income_from", 0))
+                doc.income_to = float(rate_data.get("income_to", 0))
+                doc.rate = float(rate_data.get("rate", 0))
+                doc.is_highest_bracket = rate_data.get("is_highest_bracket", 0)
+                doc.description = description
+                doc.insert()
+
+        frappe.db.commit()
+        frappe.msgprint(_("TER rates set up from Payroll Indonesia Settings"))
+        return
+
+    # Fallback to hardcoded TER rates based on PMK 168/2023
     default_rates = [
         # TER A (PTKP TK/0: Rp 54 juta/tahun)
         {"status_pajak": "TER A", "income_from": 0, "income_to": 4500000, "rate": 0.0},
@@ -174,4 +257,36 @@ def setup_default_ter_rates():
             doc.update(rate_data)
             doc.insert()
 
+    # Update Payroll Indonesia Settings with the default TER rates
+    try:
+        # Group rates by category
+        ter_by_category = {}
+        for rate in default_rates:
+            category = rate["status_pajak"]
+            if category not in ter_by_category:
+                ter_by_category[category] = []
+
+            rate_obj = {
+                "income_from": rate["income_from"],
+                "income_to": rate["income_to"],
+                "rate": rate["rate"],
+            }
+
+            if "is_highest_bracket" in rate and rate["is_highest_bracket"]:
+                rate_obj["is_highest_bracket"] = 1
+
+            ter_by_category[category].append(rate_obj)
+
+        # Update settings
+        if ter_by_category:
+            settings.ter_rates = frappe.as_json(ter_by_category)
+            settings.flags.ignore_validate = True
+            settings.flags.ignore_permissions = True
+            settings.save(ignore_permissions=True)
+    except Exception as e:
+        frappe.log_error(
+            f"Error updating TER rates in Payroll Indonesia Settings: {str(e)}", "TER Setup Error"
+        )
+
+    frappe.db.commit()
     frappe.msgprint(_("Default TER rates set up based on PMK 168/2023"))
