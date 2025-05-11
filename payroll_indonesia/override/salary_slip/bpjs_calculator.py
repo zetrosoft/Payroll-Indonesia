@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 05:40:00 by dannyaudian
+# Last modified: 2025-05-11 08:26:15 by dannyaudian
 
 import frappe
 from frappe import _
@@ -42,7 +42,11 @@ def calculate_bpjs_components(doc, employee, base_salary):
         bpjs_config = check_bpjs_enrollment(employee)
         
         if not bpjs_config:
-            debug_log(f"Employee {employee_info} not enrolled in any BPJS program - skipping calculation")
+            # Non-critical information - log but continue
+            frappe.log_error(
+                "Employee {0} not enrolled in any BPJS program - skipping calculation".format(employee_info),
+                "BPJS Enrollment Info"
+            )
             
             # Initialize total_bpjs to 0 to avoid NoneType errors
             if hasattr(doc, 'total_bpjs'):
@@ -55,7 +59,11 @@ def calculate_bpjs_components(doc, employee, base_salary):
         
         # If no contributions calculated, initialize fields and return
         if bpjs_values["total_employee"] <= 0:
-            debug_log(f"No BPJS contributions calculated for {employee_info}. Check BPJS settings.")
+            # Non-critical information - log but continue
+            frappe.log_error(
+                "No BPJS contributions calculated for {0}. Check BPJS settings.".format(employee_info),
+                "BPJS Calculation Info"
+            )
             
             # Initialize total_bpjs to 0 to avoid NoneType errors
             if hasattr(doc, 'total_bpjs'):
@@ -64,7 +72,10 @@ def calculate_bpjs_components(doc, employee, base_salary):
             return
             
         # Update BPJS components in salary slip
-        debug_log(f"Updating BPJS components in salary slip {doc.name}")
+        frappe.log_error(
+            "Updating BPJS components in salary slip {0}".format(doc.name if hasattr(doc, 'name') else 'New'),
+            "BPJS Update Info"
+        )
         
         # BPJS Kesehatan Employee
         if bpjs_values["kesehatan_employee"] > 0:
@@ -96,7 +107,12 @@ def calculate_bpjs_components(doc, employee, base_salary):
         # Set total_bpjs in doc
         if hasattr(doc, 'total_bpjs'):
             doc.total_bpjs = flt(bpjs_values["total_employee"])
-            debug_log(f"Set total_bpjs to {doc.total_bpjs}")
+            frappe.log_error(
+                "Set total_bpjs to {0} for {1}".format(
+                    doc.total_bpjs, doc.name if hasattr(doc, 'name') else 'New'
+                ),
+                "BPJS Total Update"
+            )
             
         # Add BPJS details to payroll note
         add_bpjs_info_to_note(doc, bpjs_values)
@@ -104,18 +120,29 @@ def calculate_bpjs_components(doc, employee, base_salary):
         # Verify the components were properly added
         verify_bpjs_components(doc)
         
-        debug_log(f"BPJS components calculation completed for {doc.name}")
+        frappe.log_error(
+            "BPJS components calculation completed for {0}".format(
+                doc.name if hasattr(doc, 'name') else 'New'
+            ),
+            "BPJS Calculation Complete"
+        )
         
     except Exception as e:
-        # Log error with limited size
-        debug_log(f"Error in BPJS calculation: {str(e)[:100]}", employee=employee_info, trace=True)
+        # BPJS calculation can continue with default values - log error and show warning
+        frappe.log_error(
+            "Error calculating BPJS for {0}: {1}".format(employee_info, str(e)),
+            "BPJS Calculation Error"
+        )
         
         # Initialize total_bpjs to 0 to avoid NoneType errors in tax calculations
         if hasattr(doc, 'total_bpjs'):
             doc.total_bpjs = 0
             
-        # Don't raise exception to prevent process termination
-        frappe.msgprint(_("Warning: Error in BPJS calculation. See error log for details."))
+        # Show warning to user but continue processing
+        frappe.msgprint(
+            _("Warning: Error in BPJS calculation. Using zero values as fallback."),
+            indicator="orange"
+        )
 
 
 def verify_bpjs_components(doc):
@@ -140,7 +167,10 @@ def verify_bpjs_components(doc):
     try:
         # Check for BPJS components in deductions
         if not hasattr(doc, 'deductions') or not doc.deductions:
-            debug_log(f"No deductions found in doc {doc.name}")
+            frappe.log_error(
+                "No deductions found in doc {0}".format(doc.name if hasattr(doc, 'name') else 'unknown'),
+                "BPJS Verification Info"
+            )
             return result
             
         for deduction in doc.deductions:
@@ -169,7 +199,17 @@ def verify_bpjs_components(doc):
         return result
         
     except Exception as e:
-        debug_log(f"Error verifying BPJS components: {str(e)[:100]}", trace=True)
+        # Non-critical verification error - log and return default result
+        frappe.log_error(
+            "Error verifying BPJS components for {0}: {1}".format(
+                doc.name if hasattr(doc, 'name') else 'unknown', str(e)
+            ),
+            "BPJS Verification Error"
+        )
+        frappe.msgprint(
+            _("Warning: Could not verify BPJS components."),
+            indicator="orange"
+        )
         # Return default result on error
         return result
 
@@ -212,5 +252,11 @@ def add_bpjs_info_to_note(doc, bpjs_values):
         doc.payroll_note += "<!-- BPJS_CALCULATION_END -->\n"
         
     except Exception as e:
-        # Log error but continue
-        debug_log(f"Error adding BPJS info to note: {str(e)[:100]}", trace=True)
+        # Non-critical error - log and continue
+        frappe.log_error(
+            "Error adding BPJS info to note for {0}: {1}".format(
+                doc.name if hasattr(doc, 'name') else 'unknown', str(e)
+            ),
+            "BPJS Note Error"
+        )
+        # No msgprint needed as this is a background operation
