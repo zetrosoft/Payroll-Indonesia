@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-30 10:42:45 by dannyaudian
+# Last modified: 2025-05-11 08:28:29 by dannyaudian
 
 import frappe
 from frappe import _
@@ -16,49 +16,132 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
 
     def get_component(self, component_name):
         """Get amount of a salary component"""
-        for d in self.earnings + self.deductions:
-            if d.salary_component == component_name:
-                return d.amount
-        return 0
+        try:
+            if not component_name:
+                return 0
+                
+            for d in self.earnings + self.deductions:
+                if d.salary_component == component_name:
+                    return flt(d.amount)
+            return 0
+        except Exception as e:
+            # Non-critical error - log and return 0
+            frappe.log_error(
+                "Error getting component {0} from salary slip {1}: {2}".format(
+                    component_name, self.name if hasattr(self, 'name') else 'unknown', str(e)
+                ),
+                "Component Retrieval Error"
+            )
+            return 0
 
     def set_component(self, component_name, amount, is_deduction=False):
         """Set or update a component in earnings or deductions"""
-        target = self.deductions if is_deduction else self.earnings
-        found = False
-        for d in target:
-            if d.salary_component == component_name:
-                d.amount = flt(amount)
-                found = True
-                break
-        if not found:
-            target.append({
-                "salary_component": component_name,
-                "amount": flt(amount)
-            })
+        try:
+            if not component_name:
+                frappe.throw(
+                    _("Component name is required"),
+                    title=_("Missing Component Name")
+                )
+                
+            # Validate amount is a number
+            try:
+                amount = flt(amount)
+            except Exception as e:
+                frappe.log_error(
+                    "Invalid amount '{0}' for component {1}: {2}".format(
+                        amount, component_name, str(e)
+                    ),
+                    "Amount Validation Error"
+                )
+                frappe.msgprint(
+                    _("Invalid amount for component {0}, using 0").format(component_name),
+                    indicator="orange"
+                )
+                amount = 0
+                
+            # Select target collection
+            target = self.deductions if is_deduction else self.earnings
+            if not target:
+                frappe.throw(
+                    _("Target collection {0} is not initialized").format(
+                        "deductions" if is_deduction else "earnings"
+                    ),
+                    title=_("Invalid Document State")
+                )
+                
+            found = False
+            for d in target:
+                if d.salary_component == component_name:
+                    d.amount = amount
+                    found = True
+                    break
+                    
+            if not found:
+                # Verify component exists
+                if not frappe.db.exists("Salary Component", component_name):
+                    frappe.throw(
+                        _("Salary Component {0} does not exist").format(component_name),
+                        title=_("Invalid Component")
+                    )
+                    
+                target.append({
+                    "salary_component": component_name,
+                    "amount": amount
+                })
+        except Exception as e:
+            # Handle ValidationError separately
+            if isinstance(e, frappe.exceptions.ValidationError):
+                raise
+                
+            # Critical component update error - throw
+            frappe.log_error(
+                "Error setting component {0} to {1} in salary slip {2}: {3}".format(
+                    component_name, amount, 
+                    self.name if hasattr(self, 'name') else 'unknown', str(e)
+                ),
+                "Component Update Error"
+            )
+            frappe.throw(
+                _("Error updating component {0}: {1}").format(component_name, str(e)),
+                title=_("Component Update Failed")
+            )
 
     def initialize_payroll_fields(self):
         """
         Initialize additional payroll fields for Indonesian Payroll.
         """
-        defaults = {
-            'biaya_jabatan': 0,
-            'netto': 0,
-            'total_bpjs': 0,
-            'is_using_ter': 0,
-            'ter_rate': 0,
-            'koreksi_pph21': 0,
-            'payroll_note': "",
-            'npwp': "",
-            'ktp': "",
-            'is_final_gabung_suami': 0,
-        }
-        
-        # Set defaults for fields that don't exist or are None
-        for field, default in defaults.items():
-            if not hasattr(self, field) or getattr(self, field) is None:
-                setattr(self, field, default)
-                
-        return defaults  # Return defaults for external callers who might need them
+        try:
+            defaults = {
+                'biaya_jabatan': 0,
+                'netto': 0,
+                'total_bpjs': 0,
+                'is_using_ter': 0,
+                'ter_rate': 0,
+                'koreksi_pph21': 0,
+                'payroll_note': "",
+                'npwp': "",
+                'ktp': "",
+                'is_final_gabung_suami': 0,
+            }
+            
+            # Set defaults for fields that don't exist or are None
+            for field, default in defaults.items():
+                if not hasattr(self, field) or getattr(self, field) is None:
+                    setattr(self, field, default)
+                    
+            return defaults  # Return defaults for external callers who might need them
+        except Exception as e:
+            # Critical initialization error - throw
+            frappe.log_error(
+                "Error initializing payroll fields for {0}: {1}".format(
+                    self.name if hasattr(self, 'name') else 'New Salary Slip', str(e)
+                ),
+                "Field Initialization Error"
+            )
+            frappe.throw(
+                _("Could not initialize payroll fields: {0}").format(str(e)),
+                title=_("Initialization Failed")
+            )
 
     def queue_document_updates_on_cancel(self):
         """
@@ -80,7 +163,14 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             doc_str = json.dumps(self.as_dict())
             # Convert to MB (approximate)
             return len(doc_str) / (1024 * 1024)
-        except Exception:
+        except Exception as e:
+            # Non-critical error - log and return None
+            frappe.log_error(
+                "Error estimating memory usage for {0}: {1}".format(
+                    self.name if hasattr(self, 'name') else 'unknown', str(e)
+                ),
+                "Memory Estimation Error"
+            )
             return None
 
 # Module-level functions that need to be exported
@@ -141,11 +231,19 @@ def setup_fiscal_year_if_missing(date_str=None):
         }
         
     except Exception as e:
+        # This is a critical operation for payroll if called by user - log error
         frappe.log_error(
-            f"Error setting up fiscal year: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error setting up fiscal year: {0}".format(str(e)),
             "Fiscal Year Setup Error"
         )
+        
+        # If directly called by user, throw; otherwise return error
+        if frappe.local.form_dict.cmd == "payroll_indonesia.override.salary_slip.controller.setup_fiscal_year_if_missing":
+            frappe.throw(
+                _("Failed to set up fiscal year: {0}").format(str(e)),
+                title=_("Fiscal Year Setup Failed")
+            )
+            
         return {
             "status": "error",
             "message": str(e)
@@ -166,7 +264,7 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
     
     # Log start of batch process
     frappe.log_error(
-        f"Starting batch processing of salary slips. Batch size: {batch_size}",
+        "Starting batch processing of salary slips. Batch size: {0}".format(batch_size),
         "Batch Process - Start"
     )
     
@@ -186,9 +284,12 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
         if salary_slips and not slip_ids:
             slip_ids = [slip.name for slip in salary_slips if hasattr(slip, 'name')]
         
-        # If neither provided, raise error
+        # If neither provided, raise error - this is a validation failure
         if not slip_ids:
-            frappe.throw(_("No salary slips provided for batch processing"))
+            frappe.throw(
+                _("No salary slips provided for batch processing"),
+                title=_("Missing Input")
+            )
             
         # Remove duplicates and validate
         slip_ids = list(set(slip_ids))
@@ -205,7 +306,7 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
             
             # Log batch start
             frappe.log_error(
-                f"Processing batch {batch_count}: {len(batch_ids)} salary slips",
+                "Processing batch {0}: {1} salary slips".format(batch_count, len(batch_ids)),
                 "Batch Process - Batch Start"
             )
             
@@ -230,7 +331,7 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
                         batch_results["slip_results"].append({
                             "slip": slip_id,
                             "status": "skipped",
-                            "message": f"Salary slip not in draft status (docstatus={slip.docstatus})"
+                            "message": "Salary slip not in draft status (docstatus={0})".format(slip.docstatus)
                         })
                         continue
                         
@@ -261,7 +362,7 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
                     })
                     
                 except Exception as e:
-                    # Log the error
+                    # Non-critical error - individual slip failed but batch can continue
                     batch_results["failed"] += 1
                     results["failed"] += 1
                     results["errors"].append({
@@ -276,9 +377,10 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
                     })
                     
                     frappe.log_error(
-                        f"Error processing slip {slip_id} in batch {batch_count}: {str(e)}\n\n"
-                        f"Traceback: {frappe.get_traceback()}",
-                        f"Batch Process - Slip Error"
+                        "Error processing slip {0} in batch {1}: {2}".format(
+                            slip_id, batch_count, str(e)
+                        ),
+                        "Batch Process - Slip Error"
                     )
             
             # Complete batch
@@ -294,10 +396,9 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
             
             # Log batch completion
             frappe.log_error(
-                f"Completed batch {batch_count}: "
-                f"Success: {batch_results['successful']}, "
-                f"Failed: {batch_results['failed']}, "
-                f"Time: {batch_time:.2f}s",
+                "Completed batch {0}: Success: {1}, Failed: {2}, Time: {3:.2f}s".format(
+                    batch_count, batch_results['successful'], batch_results['failed'], batch_time
+                ),
                 "Batch Process - Batch Complete"
             )
             
@@ -307,8 +408,11 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
             
             # Add small delay between batches to allow background jobs to start
             frappe.db.commit()
-            frappe.db.set_value("Background Job Settings", None, 
-                               {"last_batch_processed_timestamp": now_datetime()})
+            frappe.db.set_value(
+                "Background Job Settings", 
+                None, 
+                {"last_batch_processed_timestamp": now_datetime()}
+            )
             frappe.db.commit()
             
         # Calculate total time
@@ -318,25 +422,43 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
         
         # Log completion
         frappe.log_error(
-            f"Batch processing complete. "
-            f"Total: {results['total']}, "
-            f"Success: {results['successful']}, "
-            f"Failed: {results['failed']}, "
-            f"Time: {total_time:.2f}s",
+            "Batch processing complete. Total: {0}, Success: {1}, Failed: {2}, Time: {3:.2f}s".format(
+                results['total'], results['successful'], results['failed'], total_time
+            ),
             "Batch Process - Complete"
+        )
+        
+        # Show summary to user
+        frappe.msgprint(
+            _("Processed {0} salary slips: {1} successful, {2} failed. See error log for details.").format(
+                results['total'], results['successful'], results['failed']
+            ),
+            indicator="green" if results['failed'] == 0 else "orange"
         )
         
         return results
         
     except Exception as e:
+        # Handle ValidationError separately
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise
+            
+        # Critical error in batch processing - log and throw
         frappe.log_error(
-            f"Error in batch processing: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error in batch processing: {0}".format(str(e)),
             "Batch Process - Error"
         )
+        
+        # Add error to results, but also throw since this is user-initiated
         results["errors"].append({
             "global_error": str(e)
         })
+        
+        frappe.throw(
+            _("Batch processing failed: {0}").format(str(e)),
+            title=_("Batch Processing Failed")
+        )
+        
         return results
 
 def check_fiscal_year_setup(date_str=None):
@@ -361,7 +483,7 @@ def check_fiscal_year_setup(date_str=None):
         if not fiscal_year:
             return {
                 "status": "error",
-                "message": f"No active Fiscal Year found for date {test_date}",
+                "message": "No active Fiscal Year found for date {0}".format(test_date),
                 "solution": "Create a Fiscal Year that includes this date in Company settings"
             }
         
@@ -370,6 +492,13 @@ def check_fiscal_year_setup(date_str=None):
             "fiscal_year": fiscal_year
         }
     except Exception as e:
+        # Non-critical check error - log and return error status
+        frappe.log_error(
+            "Error checking fiscal year setup for date {0}: {1}".format(
+                date_str if date_str else 'current date', str(e)
+            ),
+            "Fiscal Year Check Error"
+        )
         return {
             "status": "error",
             "message": str(e)
@@ -377,23 +506,43 @@ def check_fiscal_year_setup(date_str=None):
 
 def clear_caches():
     """Clear TER rate and YTD tax caches to prevent memory bloat"""
-    global _ter_rate_cache, _ytd_tax_cache
-    
-    # Define these to prevent NameError if they're not defined earlier
-    if '_ter_rate_cache' not in globals():
-        global _ter_rate_cache
-        _ter_rate_cache = {}
+    try:
+        global _ter_rate_cache, _ytd_tax_cache
         
-    if '_ytd_tax_cache' not in globals():
-        global _ytd_tax_cache
+        # Define these to prevent NameError if they're not defined earlier
+        if '_ter_rate_cache' not in globals():
+            global _ter_rate_cache
+            _ter_rate_cache = {}
+            
+        if '_ytd_tax_cache' not in globals():
+            global _ytd_tax_cache
+            _ytd_tax_cache = {}
+        
+        _ter_rate_cache = {}
         _ytd_tax_cache = {}
-    
-    _ter_rate_cache = {}
-    _ytd_tax_cache = {}
-    
-    # Schedule next cleanup in 30 minutes
-    frappe.enqueue(clear_caches, queue='long', job_name='clear_payroll_caches', is_async=True, now=False, 
-                   enqueue_after=add_to_date(now_datetime(), minutes=30))
+        
+        # Log cache clearing
+        frappe.log_error(
+            "TER rate and YTD tax caches cleared",
+            "Cache Clearing"
+        )
+        
+        # Schedule next cleanup in 30 minutes
+        frappe.enqueue(
+            clear_caches, 
+            queue='long', 
+            job_name='clear_payroll_caches', 
+            is_async=True, 
+            now=False, 
+            enqueue_after=add_to_date(now_datetime(), minutes=30)
+        )
+    except Exception as e:
+        # Non-critical error - log but don't interrupt processing
+        frappe.log_error(
+            "Error clearing caches: {0}".format(str(e)),
+            "Cache Clearing Error"
+        )
+        # No msgprint here as this is typically run as background task
 
 def diagnose_system_resources():
     """Get system resource information"""
@@ -408,9 +557,22 @@ def diagnose_system_resources():
             }
         }
     except ImportError:
+        # Non-critical error - just return status
         return {
             "memory_usage": {
                 "status": "psutil not installed"
+            }
+        }
+    except Exception as e:
+        # Non-critical error - log and return status
+        frappe.log_error(
+            "Error diagnosing system resources: {0}".format(str(e)),
+            "Resource Diagnosis Error"
+        )
+        return {
+            "memory_usage": {
+                "status": "error",
+                "message": str(e)
             }
         }
 
