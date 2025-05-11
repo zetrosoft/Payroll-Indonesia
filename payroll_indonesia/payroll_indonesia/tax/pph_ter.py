@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 15:01:13 by dannyaudianlanjutkan
+# Last modified: 2025-05-11 15:30:13 by dannyaudian
 
 """
 Tax Functions for TER (Tarif Efektif Rata-rata) Method
@@ -23,12 +23,13 @@ import json
 from typing import Dict, Any, Optional, List, Tuple, Union
 
 # Import the cache utilities
-from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 # Import constants
 from payroll_indonesia.constants import (
     CACHE_MEDIUM, CACHE_SHORT, CACHE_LONG,
-    TER_CATEGORY_A, TER_CATEGORY_B, TER_CATEGORY_C, TER_CATEGORIES
+    TER_CATEGORY_A, TER_CATEGORY_B, TER_CATEGORY_C, TER_CATEGORIES,
+    TER_MAX_RATE
 )
 
 def map_ptkp_to_ter_category(status_pajak: str) -> str:
@@ -254,13 +255,12 @@ def get_ter_rate(income: float, category: str = 'TER C') -> float:
             SELECT rate
             FROM `tabPPh 21 TER Table`
             WHERE status_pajak = %s
-            AND income_from <= %s
             AND is_highest_bracket = 1
             LIMIT 1
         """
         ter = frappe.db.sql(
             query,
-            [category, income],
+            [category],
             as_dict=1
         )
         
@@ -315,7 +315,7 @@ def calculate_monthly_tax_with_ter(income: float, ter_category: str) -> Tuple[fl
     """
     try:
         # Get TER rate for income and category
-        ter_rate = get_ter_rate(ter_category, income)
+        ter_rate = get_ter_rate(income, ter_category)
         
         # Calculate tax
         monthly_tax = flt(income * ter_rate)

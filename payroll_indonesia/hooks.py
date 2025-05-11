@@ -184,13 +184,11 @@ fixtures = [
 # Scheduler tasks
 scheduler_events = {
     "daily": [
-        "payroll_indonesia.utilities.cache_utils.clear_all_caches",
-        "payroll_indonesia.override.salary_slip.clear_salary_slip_caches"
+        "payroll_indonesia.utilities.cache_utils.clear_all_caches"
     ],
     "cron": {
         "0 */4 * * *": [
-            "payroll_indonesia.utilities.cache_utils.clear_all_caches",
-            "payroll_indonesia.override.salary_slip.clear_salary_slip_caches"
+            "payroll_indonesia.utilities.cache_utils.clear_all_caches"
         ]
     },
     "monthly": [

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 15:01:13 by dannyaudianlanjutkan
+# Last modified: 2025-05-11 15:30:13 by dannyaudian
 
 """
 Core TER and tax calculation logic for Indonesian payroll.
@@ -22,7 +22,7 @@ from frappe import _
 from frappe.utils import flt, getdate, cint
 
 # Import cache utilities
-from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
 
 # Import constants
 from payroll_indonesia.constants import (
