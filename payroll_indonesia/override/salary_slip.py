@@ -9,7 +9,7 @@ from frappe.utils import flt, getdate, now_datetime, add_to_date, date_diff
 from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
 
 # Import BPJS calculation module
-from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
+from payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
 from payroll_indonesia.override.salary_slip.bpjs_calculator import calculate_bpjs_components
 
 # Import centralized tax calculation
@@ -1021,8 +1021,6 @@ def check_fiscal_year_setup(date_str=None):
         dict: Status and message regarding fiscal year setup
     """
     try:
-        from frappe.utils import getdate
-
         test_date = getdate(date_str) if date_str else getdate()
 
         # Use cache for fiscal year lookup
@@ -1072,8 +1070,6 @@ def setup_fiscal_year_if_missing(date_str=None):
         dict: Status and details of the fiscal year setup operation
     """
     try:
-        from frappe.utils import getdate, add_to_date
-
         test_date = getdate(date_str) if date_str else getdate()
 
         # Check cache first

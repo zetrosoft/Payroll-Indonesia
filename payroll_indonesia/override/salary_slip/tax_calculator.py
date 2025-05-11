@@ -22,6 +22,9 @@ import frappe
 from frappe import _
 from frappe.utils import flt, getdate, cint
 
+# Import base module function for component update
+from payroll_indonesia.override.salary_slip.base import update_component_amount
+
 # Import TER calculation function from ter_calculator
 from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter
 
@@ -42,7 +45,7 @@ from payroll_indonesia.constants import (
 )
 
 # Import centralized tax logic functions
-from payroll_indonesia.payroll_indonesia.tax.ter_logic import (
+from payroll_indonesia.tax.ter_logic import (
     calculate_progressive_tax,
     get_ptkp_amount,
     should_use_ter_method,
@@ -50,7 +53,7 @@ from payroll_indonesia.payroll_indonesia.tax.ter_logic import (
 )
 
 # Import TER functions from pph_ter (single source of truth)
-from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
+from payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 
 
 def calculate_tax_components(doc, employee):

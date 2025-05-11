@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 08:28:29 by dannyaudian
+# Last modified: 2025-05-11 16:53:21 by dannyaudian
 
 import frappe
 from frappe import _
-from frappe.utils import flt, now_datetime, add_to_date
+from frappe.utils import flt, now_datetime, add_to_date, getdate
 from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
 import json
 
@@ -179,7 +179,7 @@ def setup_fiscal_year_if_missing(date_str=None):
         dict: Result of the fiscal year creation
     """
     try:
-        from frappe.utils import getdate, add_days, add_to_date
+        from frappe.utils import add_days
 
         test_date = getdate(date_str) if date_str else getdate()
 
@@ -460,8 +460,6 @@ def check_fiscal_year_setup(date_str=None):
         dict: Status of fiscal year setup
     """
     try:
-        from frappe.utils import getdate
-
         test_date = getdate(date_str) if date_str else getdate()
 
         # Query fiscal year

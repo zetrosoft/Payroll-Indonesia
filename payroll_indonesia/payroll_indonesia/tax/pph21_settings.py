@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 08:51:27 by dannyaudian
+# Last modified: 2025-05-11 17:10:22 by dannyaudian
 
 import frappe
 from frappe import _

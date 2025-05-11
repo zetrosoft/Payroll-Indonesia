@@ -585,7 +585,7 @@ def create_bpjs_supplier(config):
             if not frappe.db.exists("Supplier Group", supplier_group):
                 supplier_group = "Government"  # Fallback
                 if not frappe.db.exists("Supplier Group", supplier_group):
-                    debug_log(f"No suitable supplier group exists", "Supplier Setup")
+                    debug_log("No suitable supplier group exists", "Supplier Setup")
                     return False
 
         # Create supplier
@@ -1050,9 +1050,6 @@ def setup_salary_components(config):
         success_count = 0
         total_count = 0
 
-        # Get all companies for account assignment
-        company_records = frappe.get_all("Company", pluck="name")
-
         # Process all component types
         for component_type in ["earnings", "deductions"]:
             if component_type not in components:
@@ -1068,7 +1065,7 @@ def setup_salary_components(config):
 
                     if not component_name:
                         debug_log(
-                            f"Component name is missing in config", "Salary Component Setup Error"
+                            "Component name is missing in config", "Salary Component Setup Error"
                         )
                         continue
 
@@ -1203,14 +1200,14 @@ def display_installation_summary(results, config):
     """
 
     debug_log(
-        f"\n=== PAYROLL INDONESIA INSTALLATION SUMMARY ===\n"
+        "=== PAYROLL INDONESIA INSTALLATION SUMMARY ===\n"
         f"Accounts setup: {'Success' if results.get('accounts') else 'Failed'}\n"
         f"Suppliers setup: {'Success' if results.get('suppliers') else 'Failed'}\n"
         f"PPh 21 settings: {'Success' if results.get('pph21_settings') else 'Failed'}\n"
         f"Salary components: {'Success' if results.get('salary_components') else 'Failed'}\n"
         f"BPJS settings: {'Success' if results.get('bpjs_setup') else 'Failed'}\n"
-        f"===================================\n"
-        f"PMK 168/2023 Implementation: DONE\n"
-        f"===================================\n",
+        "===================================\n"
+        "PMK 168/2023 Implementation: DONE\n"
+        "===================================",
         "Installation Summary",
     )

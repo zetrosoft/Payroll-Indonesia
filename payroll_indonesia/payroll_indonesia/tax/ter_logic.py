@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 15:30:13 by dannyaudian
+# Last modified: 2025-05-11 16:28:44 by dannyaudian
 
 """
 Core TER and tax calculation logic for Indonesian payroll.
@@ -33,7 +33,6 @@ from payroll_indonesia.constants import (
     TER_CATEGORY_A,
     TER_CATEGORY_B,
     TER_CATEGORY_C,
-    TER_MAX_RATE,
     CURRENCY_PRECISION,
     BIAYA_JABATAN_PERCENT,
     BIAYA_JABATAN_MAX,
@@ -366,19 +365,19 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
     """
     try:
         # Get translation function early to avoid F823
-        translation_function = _
+        translate = frappe._
 
         # Validate parameters
         if not employee:
             frappe.throw(
-                translation_function("Employee ID is required for annual PPh calculation"),
-                title=translation_function("Missing Parameter"),
+                translate("Employee ID is required for annual PPh calculation"),
+                title=translate("Missing Parameter"),
             )
 
         if not year:
             frappe.throw(
-                translation_function("Tax year is required for annual PPh calculation"),
-                title=translation_function("Missing Parameter"),
+                translate("Tax year is required for annual PPh calculation"),
+                title=translate("Missing Parameter"),
             )
 
         # Get employee document if not provided
@@ -388,10 +387,8 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
                 emp_doc = frappe.get_doc("Employee", employee)
             except Exception as e:
                 frappe.throw(
-                    translation_function("Error retrieving employee {0}: {1}").format(
-                        employee, str(e)
-                    ),
-                    title=translation_function("Employee Not Found"),
+                    translate("Error retrieving employee {0}: {1}").format(employee, str(e)),
+                    title=translate("Employee Not Found"),
                 )
 
         # Get all salary slips for the year
@@ -530,7 +527,7 @@ def calculate_tax_already_paid(salary_slips):
             """
             SELECT parent, amount
             FROM `tabSalary Detail`
-            WHERE 
+            WHERE
                 parent IN %s
                 AND parentfield = 'deductions'
                 AND salary_component = 'PPh 21'
@@ -758,4 +755,4 @@ def add_tax_info_to_note(doc, tax_method, values):
         frappe.log_error("Error adding tax info to note: {0}".format(str(e)), "Tax Note Error")
         # Add a simple note to indicate there was an error
         if hasattr(doc, "payroll_note"):
-            doc.payroll_note += _("\n\nWarning: Could not add detailed tax calculation notes.")
+            doc.payroll_note += "\n\nWarning: Could not add detailed tax calculation notes."

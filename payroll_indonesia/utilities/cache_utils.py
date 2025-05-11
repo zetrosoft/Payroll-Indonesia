@@ -8,24 +8,239 @@ from frappe.utils import now_datetime, add_to_date
 import hashlib
 import json
 import functools
-
-# Main cache implementation with namespaces
-_UNIFIED_CACHE = {}
-_LAST_CLEAR_TIMESTAMPS = {}
-
-# Default TTL values for different cache types
-DEFAULT_TTL = {
-    "ter_rate": 1800,  # 30 minutes
-    "ytd": 3600,  # 1 hour
-    "ptkp_mapping": 3600,  # 1 hour
-    "tax_settings": 3600,  # 1 hour
-    "employee": 3600,  # 1 hour
-    "fiscal_year": 86400,  # 24 hours
-    "salary_slip": 3600,  # 1 hour
-    "default": 1800,  # 30 minutes (fallback)
-}
+from typing import Dict, Any, Optional
 
 
+# Main cache implementation as a class
+class CacheManager:
+    """Cache manager for Payroll Indonesia module with namespace support"""
+
+    # Cache storage
+    _storage = {}
+    _clear_timestamps = {}
+
+    # Default TTL values for different cache types
+    DEFAULT_TTL = {
+        "ter_rate": 1800,  # 30 minutes
+        "ytd": 3600,  # 1 hour
+        "ptkp_mapping": 3600,  # 1 hour
+        "tax_settings": 3600,  # 1 hour
+        "employee": 3600,  # 1 hour
+        "fiscal_year": 86400,  # 24 hours
+        "salary_slip": 3600,  # 1 hour
+        "default": 1800,  # 30 minutes (fallback)
+    }
+
+    @classmethod
+    def get(cls, cache_key: str, ttl: Optional[int] = None) -> Any:
+        """
+        Get a value from cache with expiry checking
+
+        Args:
+            cache_key (str): Cache key
+            ttl (int, optional): Time-to-live in seconds
+
+        Returns:
+            any: Cached value or None if not found or expired
+        """
+        # Get cache namespace from key prefix
+        namespace = cls._get_namespace_from_key(cache_key)
+
+        # Check if namespace needs clearing
+        cls._check_and_clear_namespace_if_needed(namespace)
+
+        # Normalize key to handle complex objects
+        if not isinstance(cache_key, str):
+            cache_key = cls._normalize_key(cache_key)
+
+        # Return value if present, None otherwise
+        entry = cls._storage.get(cache_key)
+
+        if not entry:
+            return None
+
+        # Check if entry has expired
+        now = now_datetime()
+        if (now - entry.get("timestamp")).total_seconds() > entry.get(
+            "ttl", cls.DEFAULT_TTL["default"]
+        ):
+            del cls._storage[cache_key]
+            return None
+
+        # Log hit if debug mode is on
+        if frappe.conf.get("developer_mode"):
+            frappe.logger().debug(f"Cache hit for key: {cache_key}")
+
+        return entry.get("value")
+
+    @classmethod
+    def set(cls, cache_key: str, value: Any, ttl: Optional[int] = None) -> None:
+        """
+        Store a value in cache with expiry time
+
+        Args:
+            cache_key (str): Cache key
+            value (any): Value to cache
+            ttl (int, optional): Time-to-live in seconds
+        """
+        if value is None:
+            # Don't cache None values
+            return
+
+        # Get cache namespace from key prefix
+        namespace = cls._get_namespace_from_key(cache_key)
+
+        # Get default TTL for this namespace
+        if ttl is None:
+            ttl = cls.DEFAULT_TTL.get(namespace, cls.DEFAULT_TTL["default"])
+
+        # Normalize key to handle complex objects
+        if not isinstance(cache_key, str):
+            cache_key = cls._normalize_key(cache_key)
+
+        # Store with timestamp and ttl
+        cls._storage[cache_key] = {
+            "value": value,
+            "timestamp": now_datetime(),
+            "ttl": ttl,
+            "namespace": namespace,
+        }
+
+        # Log if debug mode is on
+        if frappe.conf.get("developer_mode"):
+            frappe.logger().debug(
+                f"Cached value for key: {cache_key}, namespace: {namespace}, TTL: {ttl}s"
+            )
+
+    @classmethod
+    def clear(cls, prefix: Optional[str] = None) -> None:
+        """
+        Clear all cache entries with a specific prefix or namespace
+
+        Args:
+            prefix (str, optional): Key prefix to clear. If None, clear all caches.
+        """
+        if prefix is None:
+            # Clear all caches
+            cls._storage.clear()
+            cls._clear_timestamps.clear()
+            frappe.logger().info("All caches cleared")
+            return
+
+        # Normalize prefix for exact matches
+        if not prefix.endswith(":") and ":" in prefix:
+            prefix += ":"
+
+        # Find namespace from prefix
+        namespace = cls._get_namespace_from_key(prefix)
+
+        # Clear all entries with matching prefix
+        keys_to_delete = [k for k in cls._storage if k.startswith(prefix)]
+        for key in keys_to_delete:
+            del cls._storage[key]
+
+        # Update clear timestamp for namespace
+        cls._clear_timestamps[namespace] = now_datetime()
+
+        frappe.logger().info(
+            f"Cache cleared for prefix: {prefix}, keys cleared: {len(keys_to_delete)}"
+        )
+        return len(keys_to_delete)
+
+    @classmethod
+    def clear_all(cls) -> None:
+        """Clear all caches related to payroll calculations"""
+        # Clear our unified cache
+        cls._storage.clear()
+        cls._clear_timestamps.clear()
+
+        # Also clear frappe caches for tax and payroll related keys
+        cache_keys = [
+            "tax_calculator_cache",
+            "ter_calculator_cache",
+            "ptkp_mapping",
+            "ytd_tax_data",
+        ]
+
+        for key in cache_keys:
+            frappe.cache().delete_key(key)
+
+        frappe.logger().info("All payroll caches cleared")
+
+    @classmethod
+    def _get_namespace_from_key(cls, key: str) -> str:
+        """
+        Extract namespace from a cache key
+
+        Args:
+            key (str): Cache key
+
+        Returns:
+            str: Namespace (first part before colon or "default")
+        """
+        if not isinstance(key, str):
+            return "default"
+
+        if ":" in key:
+            return key.split(":", 1)[0]
+
+        return "default"
+
+    @classmethod
+    def _check_and_clear_namespace_if_needed(cls, namespace: str) -> None:
+        """
+        Check if a namespace needs clearing based on TTL
+
+        Args:
+            namespace (str): Cache namespace
+        """
+        now = now_datetime()
+        last_clear = cls._clear_timestamps.get(namespace)
+
+        if last_clear is None:
+            # First time - set timestamp
+            cls._clear_timestamps[namespace] = now
+            return
+
+        namespace_ttl = cls.DEFAULT_TTL.get(namespace, cls.DEFAULT_TTL["default"])
+
+        if (now - last_clear).total_seconds() > namespace_ttl:
+            # Clear all entries for this namespace
+            keys_to_delete = [k for k, v in cls._storage.items() if v.get("namespace") == namespace]
+
+            for key in keys_to_delete:
+                del cls._storage[key]
+
+            # Update timestamp
+            cls._clear_timestamps[namespace] = now
+            frappe.logger().debug(
+                f"Auto-cleared cache namespace: {namespace}, keys: {len(keys_to_delete)}"
+            )
+
+    @staticmethod
+    def _normalize_key(obj: Any) -> str:
+        """
+        Normalize complex objects into stable string keys
+
+        Args:
+            obj: Any object to use as a cache key
+
+        Returns:
+            str: Normalized string key
+        """
+        if isinstance(obj, str):
+            return obj
+
+        try:
+            # Try to convert to JSON and hash
+            json_str = json.dumps(obj, sort_keys=True)
+            return hashlib.md5(json_str.encode()).hexdigest()
+        except (TypeError, ValueError):
+            # Fallback to string representation
+            return hashlib.md5(str(obj).encode()).hexdigest()
+
+
+# Create decorator for memoization with TTL
 def memoize_with_ttl(ttl=None, namespace=None):
     """
     Decorator to memoize a function with TTL (time-to-live) caching
@@ -75,140 +290,7 @@ def memoize_with_ttl(ttl=None, namespace=None):
     return decorator
 
 
-def get_cached_value(cache_key, ttl=None):
-    """
-    Get a value from cache with expiry checking
-
-    Args:
-        cache_key (str): Cache key
-        ttl (int, optional): Time-to-live in seconds
-
-    Returns:
-        any: Cached value or None if not found or expired
-    """
-    global _UNIFIED_CACHE
-
-    # Get cache namespace from key prefix
-    namespace = get_namespace_from_key(cache_key)
-
-    # Check if namespace needs clearing
-    check_and_clear_namespace_if_needed(namespace)
-
-    # Normalize key to handle complex objects
-    if not isinstance(cache_key, str):
-        cache_key = normalize_key(cache_key)
-
-    # Return value if present, None otherwise
-    entry = _UNIFIED_CACHE.get(cache_key)
-
-    if not entry:
-        return None
-
-    # Check if entry has expired
-    now = now_datetime()
-    if (now - entry.get("timestamp")).total_seconds() > entry.get("ttl", DEFAULT_TTL["default"]):
-        del _UNIFIED_CACHE[cache_key]
-        return None
-
-    # Log hit if debug mode is on
-    if frappe.conf.get("developer_mode"):
-        frappe.logger().debug(f"Cache hit for key: {cache_key}")
-
-    return entry.get("value")
-
-
-def cache_value(cache_key, value, ttl=None):
-    """
-    Store a value in cache with expiry time
-
-    Args:
-        cache_key (str): Cache key
-        value (any): Value to cache
-        ttl (int, optional): Time-to-live in seconds
-    """
-    global _UNIFIED_CACHE
-
-    if value is None:
-        # Don't cache None values
-        return
-
-    # Get cache namespace from key prefix
-    namespace = get_namespace_from_key(cache_key)
-
-    # Get default TTL for this namespace
-    if ttl is None:
-        ttl = DEFAULT_TTL.get(namespace, DEFAULT_TTL["default"])
-
-    # Normalize key to handle complex objects
-    if not isinstance(cache_key, str):
-        cache_key = normalize_key(cache_key)
-
-    # Store with timestamp and ttl
-    _UNIFIED_CACHE[cache_key] = {
-        "value": value,
-        "timestamp": now_datetime(),
-        "ttl": ttl,
-        "namespace": namespace,
-    }
-
-    # Log if debug mode is on
-    if frappe.conf.get("developer_mode"):
-        frappe.logger().debug(
-            f"Cached value for key: {cache_key}, namespace: {namespace}, TTL: {ttl}s"
-        )
-
-
-def clear_cache(prefix=None):
-    """
-    Clear all cache entries with a specific prefix or namespace
-
-    Args:
-        prefix (str, optional): Key prefix to clear. If None, clear all caches.
-    """
-    global _UNIFIED_CACHE, _LAST_CLEAR_TIMESTAMPS
-
-    if prefix is None:
-        # Clear all caches
-        _UNIFIED_CACHE = {}
-        _LAST_CLEAR_TIMESTAMPS = {}
-        frappe.logger().info("All caches cleared")
-        return
-
-    # Normalize prefix for exact matches
-    if not prefix.endswith(":") and ":" in prefix:
-        prefix += ":"
-
-    # Find namespace from prefix
-    namespace = get_namespace_from_key(prefix)
-
-    # Clear all entries with matching prefix
-    keys_to_delete = [k for k in _UNIFIED_CACHE if k.startswith(prefix)]
-    for key in keys_to_delete:
-        del _UNIFIED_CACHE[key]
-
-    # Update clear timestamp for namespace
-    _LAST_CLEAR_TIMESTAMPS[namespace] = now_datetime()
-
-    frappe.logger().info(f"Cache cleared for prefix: {prefix}, keys cleared: {len(keys_to_delete)}")
-
-
-def clear_all_caches():
-    """Clear all caches related to payroll calculations"""
-    global _UNIFIED_CACHE, _LAST_CLEAR_TIMESTAMPS
-
-    # Clear our unified cache
-    _UNIFIED_CACHE = {}
-    _LAST_CLEAR_TIMESTAMPS = {}
-
-    # Also clear frappe caches for tax and payroll related keys
-    cache_keys = ["tax_calculator_cache", "ter_calculator_cache", "ptkp_mapping", "ytd_tax_data"]
-
-    for key in cache_keys:
-        frappe.cache().delete_key(key)
-
-    frappe.logger().info("All payroll caches cleared")
-
-
+# Schedule a background job to clear all caches
 def schedule_cache_clearing(minutes=30):
     """
     Schedule a background job to clear all caches after specified minutes
@@ -232,78 +314,46 @@ def schedule_cache_clearing(minutes=30):
         return False
 
 
-def get_namespace_from_key(key):
+# Public API functions that use the CacheManager but maintain the same interface
+def get_cached_value(cache_key, ttl=None):
     """
-    Extract namespace from a cache key
+    Get a value from cache with expiry checking
 
     Args:
-        key (str): Cache key
+        cache_key (str): Cache key
+        ttl (int, optional): Time-to-live in seconds
 
     Returns:
-        str: Namespace (first part before colon or "default")
+        any: Cached value or None if not found or expired
     """
-    if not isinstance(key, str):
-        return "default"
-
-    if ":" in key:
-        return key.split(":", 1)[0]
-
-    return "default"
+    return CacheManager.get(cache_key, ttl)
 
 
-def check_and_clear_namespace_if_needed(namespace):
+def cache_value(cache_key, value, ttl=None):
     """
-    Check if a namespace needs clearing based on TTL
+    Store a value in cache with expiry time
 
     Args:
-        namespace (str): Cache namespace
+        cache_key (str): Cache key
+        value (any): Value to cache
+        ttl (int, optional): Time-to-live in seconds
     """
-    global _LAST_CLEAR_TIMESTAMPS
-
-    now = now_datetime()
-    last_clear = _LAST_CLEAR_TIMESTAMPS.get(namespace)
-
-    if last_clear is None:
-        # First time - set timestamp
-        _LAST_CLEAR_TIMESTAMPS[namespace] = now
-        return
-
-    namespace_ttl = DEFAULT_TTL.get(namespace, DEFAULT_TTL["default"])
-
-    if (now - last_clear).total_seconds() > namespace_ttl:
-        # Clear all entries for this namespace
-        keys_to_delete = [k for k, v in _UNIFIED_CACHE.items() if v.get("namespace") == namespace]
-
-        for key in keys_to_delete:
-            del _UNIFIED_CACHE[key]
-
-        # Update timestamp
-        _LAST_CLEAR_TIMESTAMPS[namespace] = now
-        frappe.logger().debug(
-            f"Auto-cleared cache namespace: {namespace}, keys: {len(keys_to_delete)}"
-        )
+    CacheManager.set(cache_key, value, ttl)
 
 
-def normalize_key(obj):
+def clear_cache(prefix=None):
     """
-    Normalize complex objects into stable string keys
+    Clear all cache entries with a specific prefix or namespace
 
     Args:
-        obj: Any object to use as a cache key
-
-    Returns:
-        str: Normalized string key
+        prefix (str, optional): Key prefix to clear. If None, clear all caches.
     """
-    if isinstance(obj, str):
-        return obj
+    return CacheManager.clear(prefix)
 
-    try:
-        # Try to convert to JSON and hash
-        json_str = json.dumps(obj, sort_keys=True)
-        return hashlib.md5(json_str.encode()).hexdigest()
-    except (TypeError, ValueError):
-        # Fallback to string representation
-        return hashlib.md5(str(obj).encode()).hexdigest()
+
+def clear_all_caches():
+    """Clear all caches related to payroll calculations"""
+    CacheManager.clear_all()
 
 
 # Backward compatibility functions for older code
