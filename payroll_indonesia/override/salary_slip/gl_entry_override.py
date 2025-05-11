@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 05:50:00 by dannyaudian
+# Last modified: 2025-05-11 08:38:00 by dannyaudian
 
 import frappe
 from frappe import _
@@ -22,34 +22,51 @@ def override_salary_slip_gl_entries(doc, method=None):
     """
     try:
         doc_name = getattr(doc, 'name', 'Unknown')
-        frappe.logger().debug(f"[{now_datetime().strftime('%Y-%m-%d %H:%M:%S')}] on_submit_salary_slip hook triggered for {doc_name}")
+        frappe.log_error(
+            "on_submit_salary_slip hook triggered for {0}".format(doc_name),
+            "GL Entry Override"
+        )
         
         # Skip if no earnings/deductions
         if not hasattr(doc, 'earnings') or not hasattr(doc, 'deductions') or (not doc.earnings and not doc.deductions):
-            frappe.logger().debug(f"Skipping GL entry override for {doc_name}: No earnings or deductions found")
+            frappe.log_error(
+                "Skipping GL entry override for {0}: No earnings or deductions found".format(doc_name),
+                "GL Entry Info"
+            )
             return
         
         # Get company with fallback
         company = getattr(doc, 'company', None)
         if not company:
-            frappe.logger().warning(f"Cannot override GL entries for Salary Slip {doc_name}: Missing company")
+            frappe.log_error(
+                "Cannot override GL entries for Salary Slip {0}: Missing company".format(doc_name),
+                "GL Entry Error"
+            )
             return
         
         # Get BPJS account mapping for this company
         bpjs_mapping = get_bpjs_account_mapping(company)
         if not bpjs_mapping:
-            frappe.logger().warning(f"BPJS Account Mapping not found for company {company}. Using default accounts.")
+            # Not a critical error - we'll use default accounts
+            frappe.log_error(
+                "BPJS Account Mapping not found for company {0}. Using default accounts.".format(company),
+                "GL Entry Warning"
+            )
         
         # Get existing GL entries that will be created
         try:
             gl_entries = get_existing_gl_entries(doc)
             if not gl_entries:
-                frappe.logger().debug(f"No GL entries found for Salary Slip {doc_name}")
+                frappe.log_error(
+                    "No GL entries found for Salary Slip {0}".format(doc_name),
+                    "GL Entry Info"
+                )
                 return
         except Exception as e:
-            frappe.logger().error(
-                f"Error getting GL entries for Salary Slip {doc_name}: {str(e)}\n"
-                f"Traceback: {frappe.get_traceback()}"
+            # Non-critical error - log and continue with standard GL entries
+            frappe.log_error(
+                "Error getting GL entries for Salary Slip {0}: {1}".format(doc_name, str(e)),
+                "GL Entry Error"
             )
             # Continue with standard GL entries
             return
@@ -77,9 +94,12 @@ def override_salary_slip_gl_entries(doc, method=None):
                 modified_entry = process_bpjs_component_entry(entry, component, bpjs_mapping, company_abbr)
                 modified_entries.append(modified_entry)
             except Exception as e:
-                frappe.logger().error(
-                    f"Error processing BPJS component {component} in {doc_name}: {str(e)}\n"
-                    f"Traceback: {frappe.get_traceback()}"
+                # Non-critical error - log and keep original entry
+                frappe.log_error(
+                    "Error processing BPJS component {0} in {1}: {2}".format(
+                        component, doc_name, str(e)
+                    ),
+                    "BPJS Component Error"
                 )
                 # Keep original entry if processing fails
                 modified_entries.append(entry)
@@ -94,7 +114,10 @@ def override_salary_slip_gl_entries(doc, method=None):
             default_cost_center = get_default_cost_center(doc, company)
             
             if payroll_payable_account and tax_payable_account:
-                frappe.logger().debug(f"Creating GL entry for PPh 21 December correction: {koreksi_pph21}")
+                frappe.log_error(
+                    "Creating GL entry for PPh 21 December correction: {0}".format(koreksi_pph21),
+                    "GL Entry Info"
+                )
                 
                 # For positive correction (additional tax), debit payroll payable and credit tax payable
                 # For negative correction (tax refund), debit tax payable and credit payroll payable
@@ -108,7 +131,7 @@ def override_salary_slip_gl_entries(doc, method=None):
                         'cost_center': default_cost_center,
                         'against_voucher_type': 'Salary Slip',
                         'against_voucher': doc.name,
-                        'remarks': f"PPh 21 December Correction - {doc.employee_name}"
+                        'remarks': "PPh 21 December Correction - {0}".format(doc.employee_name)
                     })
                     
                     modified_entries.append({
@@ -119,7 +142,7 @@ def override_salary_slip_gl_entries(doc, method=None):
                         'cost_center': default_cost_center,
                         'against_voucher_type': 'Salary Slip',
                         'against_voucher': doc.name,
-                        'remarks': f"PPh 21 December Correction - {doc.employee_name}"
+                        'remarks': "PPh 21 December Correction - {0}".format(doc.employee_name)
                     })
                 else:
                     # Tax refund
@@ -131,7 +154,7 @@ def override_salary_slip_gl_entries(doc, method=None):
                         'cost_center': default_cost_center,
                         'against_voucher_type': 'Salary Slip',
                         'against_voucher': doc.name,
-                        'remarks': f"PPh 21 December Correction (Refund) - {doc.employee_name}"
+                        'remarks': "PPh 21 December Correction (Refund) - {0}".format(doc.employee_name)
                     })
                     
                     modified_entries.append({
@@ -142,7 +165,7 @@ def override_salary_slip_gl_entries(doc, method=None):
                         'cost_center': default_cost_center,
                         'against_voucher_type': 'Salary Slip',
                         'against_voucher': doc.name,
-                        'remarks': f"PPh 21 December Correction (Refund) - {doc.employee_name}"
+                        'remarks': "PPh 21 December Correction (Refund) - {0}".format(doc.employee_name)
                     })
         
         # Check for TER adjustment amount if present
@@ -154,7 +177,10 @@ def override_salary_slip_gl_entries(doc, method=None):
             default_cost_center = get_default_cost_center(doc, company)
             
             if payroll_payable_account and tax_payable_account:
-                frappe.logger().debug(f"Creating GL entry for TER adjustment: {ter_adjustment_amount}")
+                frappe.log_error(
+                    "Creating GL entry for TER adjustment: {0}".format(ter_adjustment_amount),
+                    "GL Entry Info"
+                )
                 
                 # For positive adjustment (additional tax), debit payroll payable and credit tax payable
                 # For negative adjustment (tax reduction), debit tax payable and credit payroll payable
@@ -168,7 +194,7 @@ def override_salary_slip_gl_entries(doc, method=None):
                         'cost_center': default_cost_center,
                         'against_voucher_type': 'Salary Slip',
                         'against_voucher': doc.name,
-                        'remarks': f"TER Adjustment - {doc.employee_name}"
+                        'remarks': "TER Adjustment - {0}".format(doc.employee_name)
                     })
                     
                     modified_entries.append({
@@ -179,7 +205,7 @@ def override_salary_slip_gl_entries(doc, method=None):
                         'cost_center': default_cost_center,
                         'against_voucher_type': 'Salary Slip',
                         'against_voucher': doc.name,
-                        'remarks': f"TER Adjustment - {doc.employee_name}"
+                        'remarks': "TER Adjustment - {0}".format(doc.employee_name)
                     })
                 else:
                     # Tax reduction
@@ -191,7 +217,7 @@ def override_salary_slip_gl_entries(doc, method=None):
                         'cost_center': default_cost_center,
                         'against_voucher_type': 'Salary Slip',
                         'against_voucher': doc.name,
-                        'remarks': f"TER Adjustment (Reduction) - {doc.employee_name}"
+                        'remarks': "TER Adjustment (Reduction) - {0}".format(doc.employee_name)
                     })
                     
                     modified_entries.append({
@@ -202,7 +228,7 @@ def override_salary_slip_gl_entries(doc, method=None):
                         'cost_center': default_cost_center,
                         'against_voucher_type': 'Salary Slip',
                         'against_voucher': doc.name,
-                        'remarks': f"TER Adjustment (Reduction) - {doc.employee_name}"
+                        'remarks': "TER Adjustment (Reduction) - {0}".format(doc.employee_name)
                     })
         
         # Add Employer BPJS GL entries if total_bpjs_employer exists
@@ -214,7 +240,10 @@ def override_salary_slip_gl_entries(doc, method=None):
             default_cost_center = get_default_cost_center(doc, company)
             
             if expense_account and bpjs_payable_account:
-                frappe.logger().debug(f"Creating GL entry for Employer BPJS: {employer_bpjs_amount}")
+                frappe.log_error(
+                    "Creating GL entry for Employer BPJS: {0}".format(employer_bpjs_amount),
+                    "GL Entry Info"
+                )
                 
                 # Add GL entries for employer BPJS contributions
                 modified_entries.append({
@@ -225,7 +254,7 @@ def override_salary_slip_gl_entries(doc, method=None):
                     'cost_center': default_cost_center,
                     'against_voucher_type': 'Salary Slip',
                     'against_voucher': doc.name,
-                    'remarks': f"Employer BPJS - {doc.employee_name}"
+                    'remarks': "Employer BPJS - {0}".format(doc.employee_name)
                 })
                 
                 modified_entries.append({
@@ -236,18 +265,25 @@ def override_salary_slip_gl_entries(doc, method=None):
                     'cost_center': default_cost_center,
                     'against_voucher_type': 'Salary Slip',
                     'against_voucher': doc.name,
-                    'remarks': f"Employer BPJS - {doc.employee_name}"
+                    'remarks': "Employer BPJS - {0}".format(doc.employee_name)
                 })
         
         # Replace GL entries with our modified entries
         doc.gl_entries = modified_entries
         
     except Exception as e:
-        frappe.logger().error(
-            f"Critical error in override_salary_slip_gl_entries for {getattr(doc, 'name', 'Unknown')}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}"
+        # Non-critical error - log and continue with default GL entries
+        frappe.log_error(
+            "Error in override_salary_slip_gl_entries for {0}: {1}".format(
+                getattr(doc, 'name', 'Unknown'), str(e)
+            ),
+            "GL Entry Override Error"
         )
-        # Don't re-raise - let the document submission continue with default GL entries
+        # Don't raise - let the document submission continue with default GL entries
+        frappe.msgprint(
+            _("Warning: Could not create custom GL entries. Using standard entries instead."),
+            indicator="orange"
+        )
 
 def override_payment_entry_gl_entries(doc, method=None):
     """
@@ -290,9 +326,21 @@ def override_payment_entry_gl_entries(doc, method=None):
         if not hasattr(doc, 'gl_entries') or not doc.gl_entries:
             return
             
-        # Load BPJS account config from defaults.json
-        mapping_config = frappe.get_file_json(frappe.get_app_path("payroll_indonesia", "config", "defaults.json"))
-        bpjs_accounts = mapping_config.get("gl_accounts", {}).get("bpjs_payable_accounts", {})
+        try:
+            # Load BPJS account config from defaults.json
+            mapping_config = frappe.get_file_json(frappe.get_app_path("payroll_indonesia", "config", "defaults.json"))
+            bpjs_accounts = mapping_config.get("gl_accounts", {}).get("bpjs_payable_accounts", {})
+        except Exception as e:
+            # Non-critical error - log and continue with original entries
+            frappe.log_error(
+                "Error loading BPJS account config: {0}".format(str(e)),
+                "BPJS Config Error"
+            )
+            frappe.msgprint(
+                _("Warning: Could not load BPJS account configuration. Using standard entries."),
+                indicator="orange"
+            )
+            return
         
         # Get company abbreviation
         company_abbr = frappe.get_cached_value('Company', company, 'abbr')
@@ -325,14 +373,23 @@ def override_payment_entry_gl_entries(doc, method=None):
                 if frappe.db.exists("Account", standardized_account):
                     entry.account = standardized_account
                     
-        frappe.logger().debug(f"Modified GL entries for BPJS Payment Entry {doc.name}")
+        frappe.log_error(
+            "Modified GL entries for BPJS Payment Entry {0}".format(doc.name),
+            "GL Entry Override"
+        )
         
     except Exception as e:
-        frappe.logger().error(
-            f"Error in override_payment_entry_gl_entries for {getattr(doc, 'name', 'Unknown')}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}"
+        # Non-critical error - log and continue with original entries
+        frappe.log_error(
+            "Error in override_payment_entry_gl_entries for {0}: {1}".format(
+                getattr(doc, 'name', 'Unknown'), str(e)
+            ),
+            "Payment Entry Override Error"
         )
-        # Don't raise error, continue with original GL entries
+        frappe.msgprint(
+            _("Warning: Could not customize GL accounts for BPJS payment. Using standard accounts."),
+            indicator="orange"
+        )
 
 def override_journal_entry_gl_entries(doc, method=None):
     """
@@ -371,10 +428,22 @@ def override_journal_entry_gl_entries(doc, method=None):
         if not hasattr(doc, 'accounts') or not doc.accounts:
             return
             
-        # Load BPJS account config from defaults.json
-        mapping_config = frappe.get_file_json(frappe.get_app_path("payroll_indonesia", "config", "defaults.json"))
-        bpjs_expense_accounts = mapping_config.get("gl_accounts", {}).get("bpjs_expense_accounts", {})
-        bpjs_payable_accounts = mapping_config.get("gl_accounts", {}).get("bpjs_payable_accounts", {})
+        try:
+            # Load BPJS account config from defaults.json
+            mapping_config = frappe.get_file_json(frappe.get_app_path("payroll_indonesia", "config", "defaults.json"))
+            bpjs_expense_accounts = mapping_config.get("gl_accounts", {}).get("bpjs_expense_accounts", {})
+            bpjs_payable_accounts = mapping_config.get("gl_accounts", {}).get("bpjs_payable_accounts", {})
+        except Exception as e:
+            # Non-critical error - log and continue with original entries
+            frappe.log_error(
+                "Error loading BPJS account config: {0}".format(str(e)),
+                "BPJS Config Error"
+            )
+            frappe.msgprint(
+                _("Warning: Could not load BPJS account configuration. Using standard entries."),
+                indicator="orange"
+            )
+            return
         
         # Get company abbreviation
         company_abbr = frappe.get_cached_value('Company', company, 'abbr')
@@ -419,14 +488,23 @@ def override_journal_entry_gl_entries(doc, method=None):
                     if frappe.db.exists("Account", standardized_account):
                         acc.account = standardized_account
                     
-        frappe.logger().debug(f"Modified accounts for BPJS Journal Entry {doc.name}")
+        frappe.log_error(
+            "Modified accounts for BPJS Journal Entry {0}".format(doc.name),
+            "GL Entry Override"
+        )
         
     except Exception as e:
-        frappe.logger().error(
-            f"Error in override_journal_entry_gl_entries for {getattr(doc, 'name', 'Unknown')}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}"
+        # Non-critical error - log and continue with original entries
+        frappe.log_error(
+            "Error in override_journal_entry_gl_entries for {0}: {1}".format(
+                getattr(doc, 'name', 'Unknown'), str(e)
+            ),
+            "Journal Entry Override Error"
         )
-        # Don't raise error, continue with original accounts
+        frappe.msgprint(
+            _("Warning: Could not customize GL accounts for BPJS journal entry. Using standard accounts."),
+            indicator="orange"
+        )
 
 def process_bpjs_component_entry(entry, component, bpjs_mapping, company_abbr=None):
     """
@@ -441,56 +519,65 @@ def process_bpjs_component_entry(entry, component, bpjs_mapping, company_abbr=No
     Returns:
         dict: Modified GL entry with updated account
     """
-    # Make a copy to avoid modifying the original
-    entry = dict(entry)
-    
-    # Handle different BPJS component types
-    if "Employer" in component:
-        # This is an employer contribution
-        if "Kesehatan" in component:
-            if entry.get('debit') and bpjs_mapping.kesehatan_employer_debit_account:
-                entry['account'] = bpjs_mapping.kesehatan_employer_debit_account
-            elif entry.get('credit') and bpjs_mapping.kesehatan_employer_credit_account:
-                entry['account'] = bpjs_mapping.kesehatan_employer_credit_account
-        elif "JHT" in component:
-            if entry.get('debit') and bpjs_mapping.jht_employer_debit_account:
-                entry['account'] = bpjs_mapping.jht_employer_debit_account
-            elif entry.get('credit') and bpjs_mapping.jht_employer_credit_account:
-                entry['account'] = bpjs_mapping.jht_employer_credit_account
-        elif "JP" in component:
-            if entry.get('debit') and bpjs_mapping.jp_employer_debit_account:
-                entry['account'] = bpjs_mapping.jp_employer_debit_account
-            elif entry.get('credit') and bpjs_mapping.jp_employer_credit_account:
-                entry['account'] = bpjs_mapping.jp_employer_credit_account
-        elif "JKK" in component:
-            if entry.get('debit') and bpjs_mapping.jkk_employer_debit_account:
-                entry['account'] = bpjs_mapping.jkk_employer_debit_account
-            elif entry.get('credit') and bpjs_mapping.jkk_employer_credit_account:
-                entry['account'] = bpjs_mapping.jkk_employer_credit_account
-        elif "JKM" in component:
-            if entry.get('debit') and bpjs_mapping.jkm_employer_debit_account:
-                entry['account'] = bpjs_mapping.jkm_employer_debit_account
-            elif entry.get('credit') and bpjs_mapping.jkm_employer_credit_account:
-                entry['account'] = bpjs_mapping.jkm_employer_credit_account
-    else:
-        # This is an employee contribution (deduction)
-        if "Kesehatan" in component and bpjs_mapping.kesehatan_employee_account:
-            if entry.get('credit'):
-                entry['account'] = bpjs_mapping.kesehatan_employee_account
-        elif "JHT" in component and bpjs_mapping.jht_employee_account:
-            if entry.get('credit'):
-                entry['account'] = bpjs_mapping.jht_employee_account
-        elif "JP" in component and bpjs_mapping.jp_employee_account:
-            if entry.get('credit'):
-                entry['account'] = bpjs_mapping.jp_employee_account
-    
-    # If not found in mapping but component is BPJS, use standardized account name as fallback
-    if company_abbr and ("BPJS" in component) and (not entry.get('account') or entry.get('account') == ""):
-        fallback_account = get_fallback_bpjs_account(component, company_abbr, entry.get('debit', 0) > 0)
-        if fallback_account:
-            entry['account'] = fallback_account
-    
-    return entry
+    try:
+        # Make a copy to avoid modifying the original
+        entry = dict(entry)
+        
+        # Handle different BPJS component types
+        if "Employer" in component:
+            # This is an employer contribution
+            if "Kesehatan" in component:
+                if entry.get('debit') and bpjs_mapping.kesehatan_employer_debit_account:
+                    entry['account'] = bpjs_mapping.kesehatan_employer_debit_account
+                elif entry.get('credit') and bpjs_mapping.kesehatan_employer_credit_account:
+                    entry['account'] = bpjs_mapping.kesehatan_employer_credit_account
+            elif "JHT" in component:
+                if entry.get('debit') and bpjs_mapping.jht_employer_debit_account:
+                    entry['account'] = bpjs_mapping.jht_employer_debit_account
+                elif entry.get('credit') and bpjs_mapping.jht_employer_credit_account:
+                    entry['account'] = bpjs_mapping.jht_employer_credit_account
+            elif "JP" in component:
+                if entry.get('debit') and bpjs_mapping.jp_employer_debit_account:
+                    entry['account'] = bpjs_mapping.jp_employer_debit_account
+                elif entry.get('credit') and bpjs_mapping.jp_employer_credit_account:
+                    entry['account'] = bpjs_mapping.jp_employer_credit_account
+            elif "JKK" in component:
+                if entry.get('debit') and bpjs_mapping.jkk_employer_debit_account:
+                    entry['account'] = bpjs_mapping.jkk_employer_debit_account
+                elif entry.get('credit') and bpjs_mapping.jkk_employer_credit_account:
+                    entry['account'] = bpjs_mapping.jkk_employer_credit_account
+            elif "JKM" in component:
+                if entry.get('debit') and bpjs_mapping.jkm_employer_debit_account:
+                    entry['account'] = bpjs_mapping.jkm_employer_debit_account
+                elif entry.get('credit') and bpjs_mapping.jkm_employer_credit_account:
+                    entry['account'] = bpjs_mapping.jkm_employer_credit_account
+        else:
+            # This is an employee contribution (deduction)
+            if "Kesehatan" in component and bpjs_mapping.kesehatan_employee_account:
+                if entry.get('credit'):
+                    entry['account'] = bpjs_mapping.kesehatan_employee_account
+            elif "JHT" in component and bpjs_mapping.jht_employee_account:
+                if entry.get('credit'):
+                    entry['account'] = bpjs_mapping.jht_employee_account
+            elif "JP" in component and bpjs_mapping.jp_employee_account:
+                if entry.get('credit'):
+                    entry['account'] = bpjs_mapping.jp_employee_account
+        
+        # If not found in mapping but component is BPJS, use standardized account name as fallback
+        if company_abbr and ("BPJS" in component) and (not entry.get('account') or entry.get('account') == ""):
+            fallback_account = get_fallback_bpjs_account(component, company_abbr, entry.get('debit', 0) > 0)
+            if fallback_account:
+                entry['account'] = fallback_account
+        
+        return entry
+    except Exception as e:
+        # Non-critical error - log and return original entry
+        frappe.log_error(
+            "Error processing BPJS component entry for {0}: {1}".format(component, str(e)),
+            "Component Processing Error"
+        )
+        # Keep original entry
+        return entry
 
 def get_bpjs_account_mapping(company):
     """
@@ -513,9 +600,13 @@ def get_bpjs_account_mapping(company):
                 mapping = frappe.get_doc("BPJS Account Mapping", mapping_dict.get("name"))
                 if mapping:
                     return mapping
-            except:
+            except Exception as e:
                 # Cache might be invalid, clear it
                 frappe.cache().delete_value(cache_key)
+                frappe.log_error(
+                    "Invalid cache for BPJS mapping: {0}".format(str(e)),
+                    "Cache Error"
+                )
         
         # If no cache or document not found, query directly
         mapping = frappe.get_all(
@@ -534,10 +625,18 @@ def get_bpjs_account_mapping(company):
             if mapping_name:
                 return frappe.get_doc("BPJS Account Mapping", mapping_name)
         except ImportError:
-            frappe.logger().warning(f"Could not import create_default_mapping for {company}")
+            # Non-critical error - log and continue without mapping
+            frappe.log_error(
+                "Could not import create_default_mapping for {0}".format(company),
+                "BPJS Mapping Error"
+            )
     
     except Exception as e:
-        frappe.logger().error(f"Error getting BPJS Account Mapping for {company}: {str(e)}")
+        # Non-critical error - log and continue without mapping
+        frappe.log_error(
+            "Error getting BPJS Account Mapping for {0}: {1}".format(company, str(e)),
+            "BPJS Mapping Error"
+        )
     
     return None
 
@@ -582,7 +681,10 @@ def get_existing_gl_entries(doc):
                             if not entry.get('cost_center'):
                                 entry['cost_center'] = cost_center
                 else:
-                    frappe.logger().debug(f"Department table does not have cost_center column")
+                    frappe.log_error(
+                        "Department table does not have cost_center column",
+                        "Cost Center Info"
+                    )
                     
                     # Try to get cost center from Company
                     company = frappe.db.get_value('Salary Slip', slip_name, 'company')
@@ -593,23 +695,29 @@ def get_existing_gl_entries(doc):
                                 if not entry.get('cost_center'):
                                     entry['cost_center'] = cost_center
             except Exception as e:
+                # Non-critical error - log and continue without cost center
                 frappe.log_error(
-                    f"Error getting cost center for {slip_name}, department {department}: {str(e)}\n\n"
-                    f"Traceback: {frappe.get_traceback()}",
-                    "GL Entry Override Error"
+                    "Error getting cost center for {0}, department {1}: {2}".format(
+                        slip_name, department, str(e)
+                    ),
+                    "Cost Center Error"
                 )
                 # Continue processing without cost center
-                pass
                 
         return gl_entries
         
     except Exception as e:
+        # Potentially critical error - throw since we need GL entries
         frappe.log_error(
-            f"Error in get_existing_gl_entries for {getattr(doc, 'name', 'Unknown')}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "GL Entry Override Error"
+            "Error retrieving GL entries for {0}: {1}".format(
+                getattr(doc, 'name', 'Unknown'), str(e)
+            ),
+            "GL Entry Retrieval Error"
         )
-        return []
+        frappe.throw(
+            _("Could not retrieve GL entries for salary slip: {0}").format(str(e)),
+            title=_("GL Entry Error")
+        )
 
 def get_component_account(salary_component, type_name, company):
     """
@@ -648,7 +756,11 @@ def get_component_account(salary_component, type_name, company):
         
         return account
     except Exception as e:
-        frappe.logger().error(f"Error getting account for component {salary_component}: {str(e)}")
+        # Non-critical error - log and return None
+        frappe.log_error(
+            "Error getting account for component {0}: {1}".format(salary_component, str(e)),
+            "Component Account Error"
+        )
         return None
 
 def get_default_bpjs_account(component_name, type_name, company):
@@ -715,7 +827,11 @@ def get_default_bpjs_account(component_name, type_name, company):
         
         return None
     except Exception as e:
-        frappe.logger().error(f"Error getting default BPJS account: {str(e)}")
+        # Non-critical error - log and return None
+        frappe.log_error(
+            "Error getting default BPJS account: {0}".format(str(e)),
+            "BPJS Account Error"
+        )
         return None
 
 def get_fallback_bpjs_account(component_name, company_abbr, is_debit):
@@ -760,7 +876,11 @@ def get_fallback_bpjs_account(component_name, company_abbr, is_debit):
             else:
                 return f"BPJS Payable - {company_abbr}"
     except Exception as e:
-        frappe.logger().error(f"Error getting fallback BPJS account: {str(e)}")
+        # Non-critical error - log and return None
+        frappe.log_error(
+            "Error getting fallback BPJS account: {0}".format(str(e)),
+            "Fallback Account Error"
+        )
         return None
 
 def get_default_payable_account(doc):
@@ -811,7 +931,11 @@ def get_default_payable_account(doc):
             
         return payable_account
     except Exception as e:
-        frappe.logger().error(f"Error getting default payable account: {str(e)}")
+        # Non-critical error - log and return None
+        frappe.log_error(
+            "Error getting default payable account: {0}".format(str(e)),
+            "Payable Account Error"
+        )
         return None
 
 def get_tax_payable_account(doc, company_abbr):
@@ -859,7 +983,11 @@ def get_tax_payable_account(doc, company_abbr):
                 
         return tax_payable_account
     except Exception as e:
-        frappe.logger().error(f"Error getting tax payable account: {str(e)}")
+        # Non-critical error - log and return None
+        frappe.log_error(
+            "Error getting tax payable account: {0}".format(str(e)),
+            "Tax Account Error"
+        )
         return None
 
 def get_bpjs_employer_expense_account(doc, company_abbr):
@@ -899,7 +1027,11 @@ def get_bpjs_employer_expense_account(doc, company_abbr):
                 
         return expense_account
     except Exception as e:
-        frappe.logger().error(f"Error getting BPJS employer expense account: {str(e)}")
+        # Non-critical error - log and return None
+        frappe.log_error(
+            "Error getting BPJS employer expense account: {0}".format(str(e)),
+            "BPJS Expense Account Error"
+        )
         return None
 
 def get_bpjs_payable_account(doc, company_abbr):
@@ -939,7 +1071,11 @@ def get_bpjs_payable_account(doc, company_abbr):
                 
         return payable_account
     except Exception as e:
-        frappe.logger().error(f"Error getting BPJS payable account: {str(e)}")
+        # Non-critical error - log and return None
+        frappe.log_error(
+            "Error getting BPJS payable account: {0}".format(str(e)),
+            "BPJS Payable Account Error"
+        )
         return None
 
 def get_default_cost_center(doc, company):
@@ -983,7 +1119,11 @@ def get_default_cost_center(doc, company):
         company_abbr = frappe.get_cached_value('Company', company, 'abbr')
         return f"Main - {company_abbr}"
     except Exception as e:
-        frappe.logger().error(f"Error getting default cost center: {str(e)}")
+        # Non-critical error - log and return None
+        frappe.log_error(
+            "Error getting default cost center: {0}".format(str(e)),
+            "Cost Center Error"
+        )
         return None
 
 def get_default_account(company, account_type=None):
@@ -1002,7 +1142,11 @@ def get_default_account(company, account_type=None):
             return frappe.get_cached_value('Company', company, account_type)
         return None
     except Exception as e:
-        frappe.logger().error(f"Error getting default account for {company}: {str(e)}")
+        # Non-critical error - log and return None
+        frappe.log_error(
+            "Error getting default account for {0}: {1}".format(company, str(e)),
+            "Default Account Error"
+        )
         return None
 
 @frappe.whitelist()
@@ -1018,6 +1162,20 @@ def diagnose_gl_entries(document_name, document_type="Salary Slip"):
         dict: Diagnostic information about GL entries
     """
     try:
+        # Validate input parameters
+        if not document_name:
+            frappe.throw(_("Document name is required"), title=_("Missing Parameter"))
+            
+        if not document_type:
+            frappe.throw(_("Document type is required"), title=_("Missing Parameter"))
+            
+        # Verify document exists
+        if not frappe.db.exists(document_type, document_name):
+            frappe.throw(
+                _("{0} '{1}' not found").format(document_type, document_name),
+                title=_("Document Not Found")
+            )
+            
         # Get the document
         doc = frappe.get_doc(document_type, document_name)
         
@@ -1095,8 +1253,18 @@ def diagnose_gl_entries(document_name, document_type="Salary Slip"):
                     
         return result
     except Exception as e:
-        return {
-            "error": str(e),
-            "traceback": frappe.get_traceback(),
-            "msg": f"Error diagnosing GL entries for {document_type} {document_name}"
-        }
+        # Handle ValidationError separately
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise
+            
+        # Critical diagnostic error - throw
+        frappe.log_error(
+            "Error diagnosing GL entries for {0} {1}: {2}".format(
+                document_type, document_name, str(e)
+            ),
+            "GL Diagnosis Error"
+        )
+        frappe.throw(
+            _("Error diagnosing GL entries: {0}").format(str(e)),
+            title=_("Diagnosis Failed")
+        )
