@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 06:01:09 by dannyaudian
 
 from __future__ import unicode_literals
 
@@ -82,9 +81,6 @@ doc_events = {
     },
     "Account": {
         "on_update": "payroll_indonesia.payroll_indonesia.account_hooks.account_on_update"
-    },
-    "GL Entry": {
-        "before_insert": "payroll_indonesia.override.salary_slip.gl_entry_override.override_salary_slip_gl_entries"
     }
 }
 
@@ -175,22 +171,19 @@ fixtures = [
 # Scheduler tasks
 scheduler_events = {
     "daily": [
-        "payroll_indonesia.utilities.tax_slab.create_income_tax_slab", 
-        "payroll_indonesia.utilities.cache_utils.clear_all_caches",  # Updated path
-        "payroll_indonesia.payroll_indonesia.bpjs.daily_tasks.check_bpjs_settings"
+        "payroll_indonesia.payroll_indonesia.utilities.cache_utils.clear_all_caches"
     ],
+    "cron": {
+        "0 */4 * * *": [
+            "payroll_indonesia.payroll_indonesia.utilities.cache_utils.clear_all_caches"
+        ]
+    },
     "monthly": [
         "payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries"
     ],
     "yearly": [
         "payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"
-    ],
-    "cron": {
-        # Clear cache every 4 hours to prevent memory bloat
-        "0 */4 * * *": [
-            "payroll_indonesia.utilities.cache_utils.clear_all_caches"  # Updated path
-        ]
-    }
+    ]
 }
 
 # Jinja template methods - only expose read-only and safe functions
@@ -218,6 +211,9 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.get_formatted_currency"
     ]
 }
+
+# Hook to initialize module functionality after app startup
+after_app_init = "payroll_indonesia.override.salary_slip.setup_hooks"
 
 # Whitelist for client-side API calls
 whitelist_methods = [
