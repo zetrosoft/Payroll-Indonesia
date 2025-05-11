@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 07:12:29 by dannyaudian
+# Last modified: 2025-05-11 08:21:30 by dannyaudian
 
 import frappe
 from frappe import _
@@ -73,33 +73,60 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             self.add_payroll_note("Validasi berhasil: Komponen BPJS dan Pajak dihitung.")
             
         except Exception as e:
-            self._handle_validation_error(e, employee_info)
+            # Handle ValidationError separately
+            if isinstance(e, frappe.exceptions.ValidationError):
+                raise
+                
+            # For other errors, log and re-raise
+            frappe.log_error(
+                "Error validating salary slip for {0}: {1}".format(
+                    employee_info, str(e)
+                ),
+                "Salary Slip Validation Error"
+            )
+            frappe.throw(
+                _("Error validating salary slip: {0}").format(str(e)),
+                title=_("Validation Failed")
+            )
     
     def _initialize_payroll_fields(self):
         """
         Initialize additional payroll fields with default values.
         Ensures all required fields exist with proper default values.
         """
-        defaults = {
-            'biaya_jabatan': 0,
-            'netto': 0,
-            'total_bpjs': 0,
-            'is_using_ter': 0,
-            'ter_rate': 0,
-            'ter_category': "",
-            'koreksi_pph21': 0,
-            'payroll_note': "",
-            'npwp': "",
-            'ktp': "",
-            'is_final_gabung_suami': 0,
-        }
-        
-        # Set defaults for fields that don't exist or are None
-        for field, default in defaults.items():
-            if not hasattr(self, field) or getattr(self, field) is None:
-                setattr(self, field, default)
-                
-        return defaults
+        try:
+            defaults = {
+                'biaya_jabatan': 0,
+                'netto': 0,
+                'total_bpjs': 0,
+                'is_using_ter': 0,
+                'ter_rate': 0,
+                'ter_category': "",
+                'koreksi_pph21': 0,
+                'payroll_note': "",
+                'npwp': "",
+                'ktp': "",
+                'is_final_gabung_suami': 0,
+            }
+            
+            # Set defaults for fields that don't exist or are None
+            for field, default in defaults.items():
+                if not hasattr(self, field) or getattr(self, field) is None:
+                    setattr(self, field, default)
+                    
+            return defaults
+        except Exception as e:
+            # This is a critical initialization step - throw
+            frappe.log_error(
+                "Error initializing payroll fields for {0}: {1}".format(
+                    self.name if hasattr(self, 'name') else 'New Salary Slip', str(e)
+                ),
+                "Payroll Field Initialization Error"
+            )
+            frappe.throw(
+                _("Could not initialize payroll fields: {0}").format(str(e)),
+                title=_("Field Initialization Error")
+            )
     
     def _get_employee_doc(self):
         """
@@ -113,7 +140,10 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             frappe.ValidationError: If employee cannot be found or retrieved
         """
         if not hasattr(self, 'employee') or not self.employee:
-            frappe.throw(_("Salary Slip must have an employee assigned"))
+            frappe.throw(
+                _("Salary Slip must have an employee assigned"),
+                title=_("Missing Employee")
+            )
             
         try:
             # Check cache first
@@ -127,7 +157,17 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 
             return employee_doc
         except Exception as e:
-            frappe.throw(_("Could not retrieve Employee {0}: {1}").format(self.employee, str(e)))
+            # Critical error - can't continue without employee
+            frappe.log_error(
+                "Error retrieving employee {0} for salary slip {1}: {2}".format(
+                    self.employee, self.name if hasattr(self, 'name') else 'New', str(e)
+                ),
+                "Employee Retrieval Error"
+            )
+            frappe.throw(
+                _("Could not retrieve Employee {0}: {1}").format(self.employee, str(e)),
+                title=_("Employee Not Found")
+            )
     
     def _calculate_bpjs(self, employee):
         """
@@ -137,11 +177,24 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         Args:
             employee (frappe.Document): Employee document for BPJS calculation
         """
-        # Get base salary for BPJS calculation
-        base_salary = self._get_base_salary_for_bpjs()
-        
-        # Use the bpjs_calculator to calculate and update components
-        calculate_bpjs_components(self, employee, base_salary)
+        try:
+            # Get base salary for BPJS calculation
+            base_salary = self._get_base_salary_for_bpjs()
+            
+            # Use the bpjs_calculator to calculate and update components
+            calculate_bpjs_components(self, employee, base_salary)
+        except Exception as e:
+            # Critical error - BPJS calculation is required
+            frappe.log_error(
+                "Error calculating BPJS for {0}: {1}".format(
+                    self.employee, str(e)
+                ),
+                "BPJS Calculation Error"
+            )
+            frappe.throw(
+                _("Failed to calculate BPJS components: {0}").format(str(e)),
+                title=_("BPJS Calculation Failed")
+            )
     
     def _get_base_salary_for_bpjs(self):
         """
@@ -151,32 +204,67 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         Returns:
             float: Salary amount to use for BPJS calculations
         """
-        # Use gross pay as the default base for BPJS
-        base_salary = self.gross_pay if hasattr(self, 'gross_pay') and self.gross_pay else 0
-        
-        # If no gross pay, try to calculate from earnings
-        if not base_salary and hasattr(self, 'earnings'):
-            for earning in self.earnings:
-                if earning.salary_component == "Gaji Pokok":
-                    base_salary += earning.amount
-        
-        # Log the base salary used
-        self.add_payroll_note(f"Base salary for BPJS: {base_salary}")
-        
-        return base_salary
+        try:
+            # Use gross pay as the default base for BPJS
+            base_salary = self.gross_pay if hasattr(self, 'gross_pay') and self.gross_pay else 0
+            
+            # If no gross pay, try to calculate from earnings
+            if not base_salary and hasattr(self, 'earnings'):
+                for earning in self.earnings:
+                    if earning.salary_component == "Gaji Pokok":
+                        base_salary += earning.amount
+            
+            # Log the base salary used
+            self.add_payroll_note(f"Base salary for BPJS: {base_salary}")
+            
+            return base_salary
+        except Exception as e:
+            # Non-critical error - log and return 0
+            frappe.log_error(
+                "Error calculating base salary for BPJS in {0}: {1}".format(
+                    self.name if hasattr(self, 'name') else 'New', str(e)
+                ),
+                "Base Salary Calculation Error"
+            )
+            frappe.msgprint(
+                _("Warning: Could not determine base salary for BPJS calculation. Using 0."),
+                indicator="orange"
+            )
+            return 0
     
     def _verify_ter_settings(self):
         """
         Verify TER settings are correctly applied if using TER method.
         """
-        if getattr(self, "is_using_ter", 0):
-            # Verify TER category is set
-            if not getattr(self, "ter_category", ""):
-                self.add_payroll_note("WARNING: Using TER but no category set")
-                
-            # Verify TER rate is set
-            if not getattr(self, "ter_rate", 0):
-                self.add_payroll_note("WARNING: Using TER but no rate set")
+        try:
+            if getattr(self, "is_using_ter", 0):
+                # Verify TER category is set - warning only
+                if not getattr(self, "ter_category", ""):
+                    self.add_payroll_note("WARNING: Using TER but no category set")
+                    frappe.msgprint(
+                        _("Warning: Using TER but no category set"),
+                        indicator="orange"
+                    )
+                    
+                # Verify TER rate is set - warning only
+                if not getattr(self, "ter_rate", 0):
+                    self.add_payroll_note("WARNING: Using TER but no rate set")
+                    frappe.msgprint(
+                        _("Warning: Using TER but no rate set"),
+                        indicator="orange"
+                    )
+        except Exception as e:
+            # Non-critical error - log and continue
+            frappe.log_error(
+                "Error verifying TER settings for {0}: {1}".format(
+                    self.name if hasattr(self, 'name') else 'New', str(e)
+                ),
+                "TER Verification Warning"
+            )
+            frappe.msgprint(
+                _("Warning: Could not verify TER settings."),
+                indicator="orange"
+            )
     
     def _generate_tax_id_data(self, employee):
         """
@@ -185,54 +273,60 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         Args:
             employee (frappe.Document): Employee document
         """
-        # Copy NPWP from employee if available
-        if hasattr(employee, "npwp") and employee.npwp:
-            self.npwp = employee.npwp
-            
-        # Copy KTP from employee if available
-        if hasattr(employee, "ktp") and employee.ktp:
-            self.ktp = employee.ktp
+        try:
+            # Copy NPWP from employee if available
+            if hasattr(employee, "npwp") and employee.npwp:
+                self.npwp = employee.npwp
+                
+            # Copy KTP from employee if available
+            if hasattr(employee, "ktp") and employee.ktp:
+                self.ktp = employee.ktp
+        except Exception as e:
+            # Non-critical error - log and continue
+            frappe.log_error(
+                "Error extracting tax IDs from employee {0} for salary slip {1}: {2}".format(
+                    employee.name, self.name if hasattr(self, 'name') else 'New', str(e)
+                ),
+                "Tax ID Extraction Warning"
+            )
+            frappe.msgprint(
+                _("Warning: Could not retrieve tax identification from employee record."),
+                indicator="orange"
+            )
     
     def _check_or_create_fiscal_year(self):
         """
         Check if a fiscal year exists for the salary slip period
         and create one if missing.
         """
-        if hasattr(self, "start_date"):
-            cache_key = f"fiscal_year:{getdate(self.start_date)}"
-            fiscal_year = get_cached_value(cache_key)
-            
-            if fiscal_year is None:
-                fiscal_year = check_fiscal_year_setup(self.start_date)
-                # Cache for 24 hours - fiscal years don't change often
-                cache_value(cache_key, fiscal_year, 86400)
+        try:
+            if hasattr(self, "start_date"):
+                cache_key = f"fiscal_year:{getdate(self.start_date)}"
+                fiscal_year = get_cached_value(cache_key)
                 
-            if fiscal_year.get("status") == "error":
-                # Try to create fiscal year
-                setup_result = setup_fiscal_year_if_missing(self.start_date)
-                self.add_payroll_note(f"Fiscal year setup: {setup_result.get('status', 'unknown')}")
-                # Update cache with new fiscal year
-                cache_value(cache_key, {"status": "ok", "fiscal_year": setup_result.get("fiscal_year")}, 86400)
-    
-    def _handle_validation_error(self, error, employee_info):
-        """
-        Handle validation errors with appropriate logging and user messages.
-        
-        Args:
-            error (Exception): The error that occurred
-            employee_info (str): Employee information for context
-        """
-        # Log detailed error for troubleshooting
-        error_msg = f"Error validating salary slip for {employee_info}: {str(error)}"
-        frappe.log_error(f"{error_msg}\n\nTraceback: {frappe.get_traceback()}", 
-                         "Salary Slip Validation Error")
-                         
-        # Add to payroll notes for user visibility
-        if hasattr(self, "payroll_note"):
-            self.add_payroll_note(f"ERROR: {str(error)}", "Validation Error")
-            
-        # Re-raise for the validation to fail properly
-        raise
+                if fiscal_year is None:
+                    fiscal_year = check_fiscal_year_setup(self.start_date)
+                    # Cache for 24 hours - fiscal years don't change often
+                    cache_value(cache_key, fiscal_year, 86400)
+                    
+                if fiscal_year.get("status") == "error":
+                    # Try to create fiscal year - non-critical operation
+                    setup_result = setup_fiscal_year_if_missing(self.start_date)
+                    self.add_payroll_note(f"Fiscal year setup: {setup_result.get('status', 'unknown')}")
+                    # Update cache with new fiscal year
+                    cache_value(cache_key, {"status": "ok", "fiscal_year": setup_result.get("fiscal_year")}, 86400)
+        except Exception as e:
+            # Non-critical error - log and continue
+            frappe.log_error(
+                "Error checking or creating fiscal year for {0}: {1}".format(
+                    self.start_date if hasattr(self, 'start_date') else 'unknown date', str(e)
+                ),
+                "Fiscal Year Check Warning"
+            )
+            frappe.msgprint(
+                _("Warning: Could not verify or create fiscal year."),
+                indicator="orange"
+            )
     
     def add_payroll_note(self, note, section=None):
         """
@@ -242,37 +336,64 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             note (str): Note text to add
             section (str, optional): Section header for the note
         """
-        if not hasattr(self, 'payroll_note'):
-            self.payroll_note = ""
+        try:
+            if not hasattr(self, 'payroll_note'):
+                self.payroll_note = ""
+            
+            # Add section header if specified
+            if section:
+                formatted_note = f"\n\n=== {section} ===\n{note}"
+            else:
+                formatted_note = note
         
-        # Add section header if specified
-        if section:
-            formatted_note = f"\n\n=== {section} ===\n{note}"
-        else:
-            formatted_note = note
-    
-        # Add new note
-        if self.payroll_note:
-            self.payroll_note += f"\n{formatted_note}"
-        else:
-            self.payroll_note = formatted_note
-        
-        # Use db_set to avoid another full save
-        self.db_set('payroll_note', self.payroll_note, update_modified=False)
+            # Add new note
+            if self.payroll_note:
+                self.payroll_note += f"\n{formatted_note}"
+            else:
+                self.payroll_note = formatted_note
+            
+            # Use db_set to avoid another full save
+            self.db_set('payroll_note', self.payroll_note, update_modified=False)
+        except Exception as e:
+            # Non-critical error - log and continue
+            frappe.log_error(
+                "Error adding payroll note to {0}: {1}".format(
+                    self.name if hasattr(self, 'name') else 'New', str(e)
+                ),
+                "Payroll Note Warning"
+            )
+            # No msgprint here since this is a background operation
         
     def on_submit(self):
         """
         Handle actions when salary slip is submitted.
         Updates related tax and benefit documents.
         """
-        # Call parent handler first
-        super().on_submit()
-        
-        # Verify TER settings before submit
-        self._verify_ter_settings()
-        
-        # Create or update dependent documents
-        self._update_tax_summary()
+        try:
+            # Call parent handler first
+            super().on_submit()
+            
+            # Verify TER settings before submit
+            self._verify_ter_settings()
+            
+            # Create or update dependent documents
+            self._update_tax_summary()
+        except Exception as e:
+            # Handle ValidationError separately
+            if isinstance(e, frappe.exceptions.ValidationError):
+                raise
+                
+            # Critical error during submission - throw
+            frappe.log_error(
+                "Error during salary slip submission for {0}: {1}".format(
+                    self.name if hasattr(self, 'name') else 'New', str(e)
+                ),
+                "Submission Error"
+            )
+            frappe.throw(
+                _("Error during salary slip submission: {0}").format(str(e)),
+                title=_("Submission Failed")
+            )
         
     def _update_tax_summary(self):
         """
@@ -297,11 +418,28 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         Handle actions when salary slip is cancelled.
         Updates or reverts related documents.
         """
-        # Call parent handler first
-        super().on_cancel()
-        
-        # Update or revert dependent documents
-        self._revert_tax_summary()
+        try:
+            # Call parent handler first
+            super().on_cancel()
+            
+            # Update or revert dependent documents
+            self._revert_tax_summary()
+        except Exception as e:
+            # Handle ValidationError separately
+            if isinstance(e, frappe.exceptions.ValidationError):
+                raise
+                
+            # Critical error during cancellation - throw
+            frappe.log_error(
+                "Error during salary slip cancellation for {0}: {1}".format(
+                    self.name, str(e)
+                ),
+                "Cancellation Error"
+            )
+            frappe.throw(
+                _("Error during salary slip cancellation: {0}").format(str(e)),
+                title=_("Cancellation Failed")
+            )
         
     def _revert_tax_summary(self):
         """
@@ -356,10 +494,14 @@ def extend_salary_slip_functionality():
         
         return True
     except Exception as e:
+        # Non-critical error with monkey patching - log but don't throw
         frappe.log_error(
-            f"Error enhancing SalarySlip controller: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error enhancing SalarySlip controller: {0}".format(str(e)),
             "Controller Enhancement Error"
+        )
+        frappe.msgprint(
+            _("Warning: Could not enhance SalarySlip controller. Some Indonesian payroll features may not be available."),
+            indicator="red"
         )
         return False
 
@@ -380,7 +522,20 @@ def _create_enhanced_method(original_method, enhancement_func):
         result = original_method(self, *args, **kwargs)
         
         # Then apply our enhancement
-        enhancement_func(self, *args, **kwargs)
+        try:
+            enhancement_func(self, *args, **kwargs)
+        except Exception as e:
+            # Log error but don't break the original functionality
+            frappe.log_error(
+                "Error in enhancement for {0}: {1}".format(
+                    self.name if hasattr(self, 'name') else 'New Document', str(e)
+                ),
+                "Enhancement Function Error"
+            )
+            frappe.msgprint(
+                _("Warning: Error in salary slip enhancement: {0}").format(str(e)),
+                indicator="orange"
+            )
         
         # Return the original result
         return result
@@ -482,10 +637,16 @@ def _enhance_validate(doc, *args, **kwargs):
             doc.db_set('payroll_note', doc.payroll_note, update_modified=False)
             
     except Exception as e:
+        # Non-critical error in enhancement - log and continue
         frappe.log_error(
-            f"Error in _enhance_validate for {doc.name if hasattr(doc, 'name') else 'New Salary Slip'}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error in _enhance_validate for {0}: {1}".format(
+                doc.name if hasattr(doc, 'name') else 'New Salary Slip', str(e)
+            ),
             "Salary Slip Enhancement Error"
+        )
+        frappe.msgprint(
+            _("Warning: Error enhancing salary slip validation. Some features may not be available."),
+            indicator="orange"
         )
 
 def _enhance_on_submit(doc, *args, **kwargs):
@@ -516,10 +677,16 @@ def _enhance_on_submit(doc, *args, **kwargs):
             doc.db_set('payroll_note', temp.payroll_note, update_modified=False)
             
     except Exception as e:
+        # Non-critical error in enhancement - log and continue
         frappe.log_error(
-            f"Error in _enhance_on_submit for {doc.name}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Salary Slip Enhancement Error"
+            "Error in _enhance_on_submit for {0}: {1}".format(
+                doc.name, str(e)
+            ),
+            "Submit Enhancement Error"
+        )
+        frappe.msgprint(
+            _("Warning: Error enhancing salary slip submission. Some features may not be available."),
+            indicator="orange"
         )
 
 def _enhance_on_cancel(doc, *args, **kwargs):
@@ -547,10 +714,16 @@ def _enhance_on_cancel(doc, *args, **kwargs):
             doc.db_set('payroll_note', temp.payroll_note, update_modified=False)
             
     except Exception as e:
+        # Non-critical error in enhancement - log and continue
         frappe.log_error(
-            f"Error in _enhance_on_cancel for {doc.name}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Salary Slip Enhancement Error"
+            "Error in _enhance_on_cancel for {0}: {1}".format(
+                doc.name, str(e)
+            ),
+            "Cancel Enhancement Error"
+        )
+        frappe.msgprint(
+            _("Warning: Error enhancing salary slip cancellation. Some features may not be available."),
+            indicator="orange"
         )
 
 # Cache management functions
@@ -559,20 +732,28 @@ def clear_salary_slip_caches():
     Clear salary slip related caches to prevent memory bloat.
     Schedules itself to run periodically.
     """
-    # Clear caches using standardized cache_utils
-    prefixes_to_clear = [
-        "employee_doc:",
-        "fiscal_year:",
-        "salary_slip:",
-        "ytd_tax:"
-    ]
-    
-    for prefix in prefixes_to_clear:
-        clear_cache(prefix)
-    
-    # Schedule next cleanup in 30 minutes
-    frappe.enqueue(clear_salary_slip_caches, queue='long', job_name='clear_payroll_caches', is_async=True, now=False, 
-                  enqueue_after=add_to_date(now_datetime(), minutes=30))
+    try:
+        # Clear caches using standardized cache_utils
+        prefixes_to_clear = [
+            "employee_doc:",
+            "fiscal_year:",
+            "salary_slip:",
+            "ytd_tax:"
+        ]
+        
+        for prefix in prefixes_to_clear:
+            clear_cache(prefix)
+        
+        # Schedule next cleanup in 30 minutes
+        frappe.enqueue(clear_salary_slip_caches, queue='long', job_name='clear_payroll_caches', 
+                      is_async=True, now=False, enqueue_after=add_to_date(now_datetime(), minutes=30))
+    except Exception as e:
+        # Non-critical error - log and continue
+        frappe.log_error(
+            "Error clearing salary slip caches: {0}".format(str(e)),
+            "Cache Clearing Error"
+        )
+        # No msgprint here since this runs as a background job
 
 # Helper function for fiscal year management
 def check_fiscal_year_setup(date_str=None):
@@ -619,11 +800,17 @@ def check_fiscal_year_setup(date_str=None):
         cache_value(cache_key, result, 86400)
         return result
     except Exception as e:
-        result = {
+        # Non-critical error - return error status
+        frappe.log_error(
+            "Error checking fiscal year setup for date {0}: {1}".format(
+                date_str if date_str else 'current date', str(e)
+            ),
+            "Fiscal Year Check Error"
+        )
+        return {
             "status": "error",
             "message": str(e)
         }
-        return result
 
 @frappe.whitelist()
 def setup_fiscal_year_if_missing(date_str=None):
@@ -700,22 +887,34 @@ def setup_fiscal_year_if_missing(date_str=None):
         return result
         
     except Exception as e:
+        # This is a critical operation for payroll - throw if user invoked
+        # but just return error if called programmatically
         frappe.log_error(
-            f"Error setting up fiscal year: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error setting up fiscal year: {0}".format(str(e)),
             "Fiscal Year Setup Error"
         )
-        result = {
+        if frappe.local.form_dict.cmd == "payroll_indonesia.override.salary_slip.setup_fiscal_year_if_missing":
+            frappe.throw(
+                _("Failed to set up fiscal year: {0}").format(str(e)),
+                title=_("Fiscal Year Setup Failed")
+            )
+        return {
             "status": "error",
             "message": str(e)
         }
-        return result
 
 # Hook to apply our extensions when the module is loaded
 def setup_hooks():
     """Set up our hooks and monkey patches when the module is loaded"""
-    extend_salary_slip_functionality()
-    clear_salary_slip_caches()  # Start cache clearing process
+    try:
+        extend_salary_slip_functionality()
+        clear_salary_slip_caches()  # Start cache clearing process
+    except Exception as e:
+        # Non-critical error during setup - log but continue
+        frappe.log_error(
+            "Error setting up hooks for salary slip: {0}".format(str(e)),
+            "Hook Setup Error"
+        )
 
 # Apply extensions
 setup_hooks()
