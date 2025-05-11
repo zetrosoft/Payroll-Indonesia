@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 09:07:44 by dannyaudian
+# Last modified: 2025-05-11 09:42:21 by dannyaudian
 
 import frappe
 from frappe import _
@@ -19,6 +19,12 @@ from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_
 
 # Import standardized cache utilities
 from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+
+# Import constants
+from payroll_indonesia.constants import (
+    CACHE_MEDIUM, CACHE_LONG, MONTHS_PER_YEAR, MAX_DATE_DIFF, 
+    VALID_TAX_STATUS, THIRTY_MIN
+)
 
 # Define exports for proper importing by other modules
 __all__ = [
@@ -127,7 +133,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                     
                 # Check if the posting date is too far from the period
                 days_diff = min(date_diff(posting_date, start_date), date_diff(end_date, posting_date))
-                if days_diff > 31:  # More than a month difference
+                if days_diff > MAX_DATE_DIFF:  # Using constant instead of 31
                     frappe.throw(
                         _("Posting date {0} is too far from the payroll period ({1} to {2})").format(
                             posting_date, start_date, end_date
@@ -180,11 +186,10 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 )
                 
             # Check if status_pajak is valid
-            valid_status = ["TK0", "TK1", "TK2", "TK3", "K0", "K1", "K2", "K3", "HB0", "HB1", "HB2", "HB3"]
-            if status_pajak not in valid_status:
+            if status_pajak not in VALID_TAX_STATUS:
                 frappe.throw(
                     _("Invalid tax status: {0}. Should be one of: {1}").format(
-                        status_pajak, ", ".join(valid_status)
+                        status_pajak, ", ".join(VALID_TAX_STATUS)
                     ),
                     title=_("Invalid Tax Status")
                 )
@@ -253,7 +258,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             if employee_doc is None:
                 employee_doc = frappe.get_doc("Employee", self.employee)
                 # Cache for 1 hour
-                cache_value(cache_key, employee_doc, 3600)
+                cache_value(cache_key, employee_doc, CACHE_MEDIUM)
                 
             return employee_doc
         except Exception as e:
@@ -407,14 +412,14 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 if fiscal_year is None:
                     fiscal_year = check_fiscal_year_setup(self.start_date)
                     # Cache for 24 hours - fiscal years don't change often
-                    cache_value(cache_key, fiscal_year, 86400)
+                    cache_value(cache_key, fiscal_year, CACHE_LONG)
                     
                 if fiscal_year.get("status") == "error":
                     # Try to create fiscal year - non-critical operation
                     setup_result = setup_fiscal_year_if_missing(self.start_date)
                     self.add_payroll_note(f"Fiscal year setup: {setup_result.get('status', 'unknown')}")
                     # Update cache with new fiscal year
-                    cache_value(cache_key, {"status": "ok", "fiscal_year": setup_result.get("fiscal_year")}, 86400)
+                    cache_value(cache_key, {"status": "ok", "fiscal_year": setup_result.get("fiscal_year")}, CACHE_LONG)
         except Exception as e:
             # Non-critical error - log and continue
             frappe.log_error(
@@ -694,7 +699,7 @@ def _validate_input_data_standalone(doc):
                 
             # Check if the posting date is too far from the period
             days_diff = min(date_diff(posting_date, start_date), date_diff(end_date, posting_date))
-            if days_diff > 31:  # More than a month difference
+            if days_diff > MAX_DATE_DIFF:
                 frappe.throw(
                     _("Posting date {0} is too far from the payroll period ({1} to {2})").format(
                         posting_date, start_date, end_date
@@ -730,7 +735,7 @@ def _get_employee_doc_standalone(doc):
             if employee_doc is None:
                 employee_doc = frappe.get_doc("Employee", doc.employee)
                 # Cache for 1 hour
-                cache_value(cache_key, employee_doc, 3600)
+                cache_value(cache_key, employee_doc, CACHE_MEDIUM)
                 
             return employee_doc
         except Exception as e:
@@ -777,11 +782,10 @@ def _validate_tax_fields_standalone(doc, employee):
             )
             
         # Check if status_pajak is valid
-        valid_status = ["TK0", "TK1", "TK2", "TK3", "K0", "K1", "K2", "K3", "HB0", "HB1", "HB2", "HB3"]
-        if status_pajak not in valid_status:
+        if status_pajak not in VALID_TAX_STATUS:
             frappe.throw(
                 _("Invalid tax status: {0}. Should be one of: {1}").format(
-                    status_pajak, ", ".join(valid_status)
+                    status_pajak, ", ".join(VALID_TAX_STATUS)
                 ),
                 title=_("Invalid Tax Status")
             )
@@ -1023,7 +1027,7 @@ def check_fiscal_year_setup(date_str=None):
                 "solution": "Create a Fiscal Year that includes this date in Company settings"
             }
             # Cache negative result for 1 hour
-            cache_value(cache_key, result, 3600)
+            cache_value(cache_key, result, CACHE_MEDIUM)
             return result
         
         result = {
@@ -1031,7 +1035,7 @@ def check_fiscal_year_setup(date_str=None):
             "fiscal_year": fiscal_year
         }
         # Cache positive result for 24 hours
-        cache_value(cache_key, result, 86400)
+        cache_value(cache_key, result, CACHE_LONG)
         return result
     except Exception as e:
         # Non-critical error - return error status
@@ -1080,7 +1084,7 @@ def setup_fiscal_year_if_missing(date_str=None):
                 "fiscal_year": fiscal_year
             }
             # Cache result for 24 hours
-            cache_value(cache_key, result, 86400)
+            cache_value(cache_key, result, CACHE_LONG)
             return result
         
         # Create a new fiscal year
@@ -1117,7 +1121,7 @@ def setup_fiscal_year_if_missing(date_str=None):
         }
         
         # Cache result for 24 hours
-        cache_value(cache_key, result, 86400)
+        cache_value(cache_key, result, CACHE_LONG)
         return result
         
     except Exception as e:
