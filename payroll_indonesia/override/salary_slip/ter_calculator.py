@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 05:19:31 by dannyaudian
+# Last modified: 2025-05-11 07:18:15 by dannyaudian
 
 import frappe
 from frappe import _
 from frappe.utils import flt, getdate, cint, now_datetime
 import hashlib
 
+from .base import update_component_amount
+
+# Import the newly created add_tax_info_to_note function from tax_calculator
+from .tax_calculator import add_tax_info_to_note
+
 # Import mapping function from pph_ter.py
 from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 
-# Import utility functions
-from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
-
-# Function imported from base.py - keeping this as it's not part of circular dependency
-from .base import update_component_amount
+# Import cache utilities
+from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 def calculate_monthly_pph_with_ter(doc, employee):
     """Calculate PPh 21 using TER method based on PMK 168/2023"""
@@ -99,8 +101,21 @@ def calculate_monthly_pph_with_ter(doc, employee):
             doc.db_set('annual_taxable_amount', annual_taxable_amount, update_modified=False)
 
         # Tentukan TER category dan rate
-        ter_category = map_ptkp_to_ter_category(employee.status_pajak)
-        ter_rate = flt(get_ter_rate(ter_category, monthly_gross_pay))
+        # Use cache for ter_category
+        cache_key = f"ter_category:{employee.status_pajak}"
+        ter_category = get_cached_value(cache_key)
+        
+        if ter_category is None:
+            ter_category = map_ptkp_to_ter_category(employee.status_pajak)
+            cache_value(cache_key, ter_category, 86400)  # Cache for 24 hours
+            
+        # Use cache for ter_rate
+        cache_key = f"ter_rate:{ter_category}:{round(monthly_gross_pay, -3)}"
+        ter_rate = get_cached_value(cache_key)
+        
+        if ter_rate is None:
+            ter_rate = flt(get_ter_rate(ter_category, monthly_gross_pay))
+            cache_value(cache_key, ter_rate, 1800)  # Cache for 30 minutes
         
         # Hitung PPh 21 bulanan
         monthly_tax = flt(monthly_gross_pay * ter_rate)
@@ -127,9 +142,6 @@ def calculate_monthly_pph_with_ter(doc, employee):
             if is_annual:
                 note += f"\nAdjusted from annual value: {doc.gross_pay} → monthly: {monthly_gross_pay}"
             doc.payroll_note += note
-            
-            # Add tax calculation details to note using utility function
-            add_tax_info_to_note(doc, ter_category, ter_rate, monthly_tax, is_annual, monthly_gross_pay)
 
         # Verifikasi hasil perhitungan
         verify_calculation_integrity(
@@ -246,10 +258,10 @@ def get_ter_rate(ter_category, income):
         income_bracket = round(income, -3)  # Round to nearest thousand for better cache hits
         cache_key = f"ter_rate:{ter_category}:{income_bracket}"
         
-        # Check cache first using cache_utils
-        cached_rate = get_cached_value(cache_key)
-        if cached_rate is not None:
-            return cached_rate
+        # Check cache first
+        rate_value = get_cached_value(cache_key)
+        if rate_value is not None:
+            return rate_value
         
         # Get TER rate from database - use efficient SQL query
         ter = frappe.db.sql("""
@@ -265,7 +277,7 @@ def get_ter_rate(ter_category, income):
         if ter:
             # Cache the result before returning
             rate_value = float(ter[0].rate) / 100.0
-            cache_value(cache_key, rate_value, 1800)  # Cache for 30 minutes
+            cache_value(cache_key, rate_value, 1800)  # 30 minutes
             return rate_value
         else:
             # Try to find using highest available bracket
@@ -280,7 +292,7 @@ def get_ter_rate(ter_category, income):
             if ter:
                 # Cache the highest bracket result
                 rate_value = float(ter[0].rate) / 100.0
-                cache_value(cache_key, rate_value, 1800)  # Cache for 30 minutes
+                cache_value(cache_key, rate_value, 1800)  # 30 minutes
                 return rate_value
             else:
                 # As a last resort, use default rate from settings or hardcoded value
@@ -298,19 +310,17 @@ def get_ter_rate(ter_category, income):
                         
                         if highest_rate > 0:
                             rate_value = highest_rate / 100.0
-                            cache_value(cache_key, rate_value, 1800)  # Cache for 30 minutes
+                            cache_value(cache_key, rate_value, 1800)  # 30 minutes
                             return rate_value
                     
                     # PMK 168/2023 highest rate is 34% for all categories
-                    default_rate = 0.34
-                    cache_value(cache_key, default_rate, 1800)  # Cache for 30 minutes
-                    return default_rate
+                    cache_value(cache_key, 0.34, 1800)  # 30 minutes
+                    return 0.34
                         
                 except Exception:
                     # Last resort - use PMK 168/2023 highest rate
-                    default_rate = 0.34
-                    cache_value(cache_key, default_rate, 1800)  # Cache for 30 minutes
-                    return default_rate
+                    cache_value(cache_key, 0.34, 1800)  # 30 minutes
+                    return 0.34
         
     except Exception as e:
         if isinstance(e, frappe.exceptions.ValidationError):
@@ -335,18 +345,33 @@ def should_use_ter_method(employee, pph_settings=None):
         bool: True if TER should be used, False otherwise
     """
     try:
+        # Check cache first
+        cache_key = f"use_ter:{employee.name if hasattr(employee, 'name') else 'unknown'}"
+        cached_result = get_cached_value(cache_key)
+        
+        if cached_result is not None:
+            return cached_result
+            
         # Get PPh 21 Settings if not provided - use cached value for better performance
         if not pph_settings:
-            pph_settings = frappe.get_cached_value(
-                "PPh 21 Settings", 
-                "PPh 21 Settings",
-                ["calculation_method", "use_ter"],
-                as_dict=True
-            ) or {}
+            settings_cache_key = "pph_settings:use_ter"
+            pph_settings = get_cached_value(settings_cache_key)
+            
+            if pph_settings is None:
+                pph_settings = frappe.get_cached_value(
+                    "PPh 21 Settings", 
+                    "PPh 21 Settings",
+                    ["calculation_method", "use_ter"],
+                    as_dict=True
+                ) or {}
+                
+                # Cache settings for 1 hour
+                cache_value(settings_cache_key, pph_settings, 3600)
         
         # Fast path for global TER setting disabled
         if (pph_settings.get('calculation_method') != "TER" or 
             not pph_settings.get('use_ter')):
+            cache_value(cache_key, False, 3600)  # Cache for 1 hour
             return False
             
         # Special cases
@@ -355,16 +380,20 @@ def should_use_ter_method(employee, pph_settings=None):
         # Check if current month is December
         current_month = getdate().month
         if current_month == 12:
+            cache_value(cache_key, False, 3600)  # Cache for 1 hour
             return False
             
         # Fast path for employee exclusions
         if hasattr(employee, 'tipe_karyawan') and employee.tipe_karyawan == "Freelance":
+            cache_value(cache_key, False, 3600)  # Cache for 1 hour
             return False
             
         if hasattr(employee, 'override_tax_method') and employee.override_tax_method == "Progressive":
+            cache_value(cache_key, False, 3600)  # Cache for 1 hour
             return False
             
         # If we made it here, use TER method
+        cache_value(cache_key, True, 3600)  # Cache for 1 hour
         return True
             
     except Exception as e:
@@ -376,63 +405,7 @@ def should_use_ter_method(employee, pph_settings=None):
         # Default to False on error
         return False
 
-# Replacement for the function that was imported from tax_calculator
-def add_tax_info_to_note(doc, ter_category, ter_rate, monthly_tax, is_annual=False, monthly_gross_pay=0):
-    """
-    Add TER calculation details to payroll note
-    
-    Args:
-        doc: Salary slip document
-        ter_category: TER category
-        ter_rate: TER rate as decimal
-        monthly_tax: Monthly tax amount
-        is_annual: Whether the calculation adjusted from annual to monthly
-        monthly_gross_pay: Monthly gross pay amount
-    """
-    try:
-        # Initialize payroll_note if needed
-        if not hasattr(doc, 'payroll_note'):
-            doc.payroll_note = ""
-        elif doc.payroll_note is None:
-            doc.payroll_note = ""
-            
-        # Check if TER calculation section already exists and remove it if found
-        start_marker = "<!-- TER_CALCULATION_START -->"
-        end_marker = "<!-- TER_CALCULATION_END -->"
-        
-        if start_marker in doc.payroll_note and end_marker in doc.payroll_note:
-            start_idx = doc.payroll_note.find(start_marker)
-            end_idx = doc.payroll_note.find(end_marker) + len(end_marker)
-            
-            # Remove the existing section
-            doc.payroll_note = doc.payroll_note[:start_idx] + doc.payroll_note[end_idx:]
-        
-        # Add new TER calculation with section markers
-        note_content = [
-            "\n\n<!-- TER_CALCULATION_START -->",
-            "=== Perhitungan PPh 21 dengan TER ===",
-            f"TER Category: {ter_category}",
-            f"Penghasilan Bruto: Rp {monthly_gross_pay:,.0f}",
-            f"Tarif Efektif Rata-rata: {ter_rate * 100:.2f}%",
-            f"PPh 21 Sebulan: Rp {monthly_tax:,.0f}",
-            "",
-            "Sesuai PMK 168/2023 tentang Tarif Efektif Rata-rata",
-            "<!-- TER_CALCULATION_END -->"
-        ]
-        
-        # Add the formatted note to payroll_note
-        doc.payroll_note += "\n" + "\n".join(note_content)
-        
-    except Exception as e:
-        # Log error but continue
-        frappe.log_error(
-            f"Error adding tax info to note: {str(e)}\nTraceback: {frappe.get_traceback()}",
-            "Tax Note Error"
-        )
-        # Add a simple note to indicate there was an error
-        if hasattr(doc, 'payroll_note'):
-            doc.payroll_note += f"\n\nError adding TER calculation details: {str(e)}"
-
+# Enhanced functions for better YTD tax calculations
 def get_ytd_totals_from_tax_summary(employee, year, month):
     """
     Get YTD tax totals from Employee Tax Summary with caching
@@ -443,15 +416,16 @@ def get_ytd_totals_from_tax_summary(employee, year, month):
     Returns:
         dict: Dictionary with ytd_gross, ytd_tax, ytd_bpjs
     """
+    # Create cache key
+    cache_key = f"ytd:{employee}:{year}:{month}"
+    
+    # Check cache first
+    cached_result = get_cached_value(cache_key)
+    
+    if cached_result is not None:
+        return cached_result
+    
     try:
-        # Create cache key
-        cache_key = f"ytd_tax:{employee}:{year}:{month}"
-        
-        # Check cache first using cache_utils
-        cached_data = get_cached_value(cache_key)
-        if cached_data is not None:
-            return cached_data
-        
         # Use a single efficient SQL query to get all needed data
         ytd_data = frappe.db.sql("""
             SELECT 
@@ -477,13 +451,14 @@ def get_ytd_totals_from_tax_summary(employee, year, month):
                 'ytd_bpjs': flt(ytd_data[0].ytd_bpjs)
             }
             
-            # Cache the result (for 10 minutes)
-            cache_value(cache_key, result, 600)  # Cache for 10 minutes
+            # Cache the result (for 1 hour)
+            cache_value(cache_key, result, 3600)
+            
             return result
         else:
             # No data found, return zeros
             result = {'ytd_gross': 0, 'ytd_tax': 0, 'ytd_bpjs': 0}
-            cache_value(cache_key, result, 600)  # Cache for 10 minutes
+            cache_value(cache_key, result, 3600)
             return result
     
     except Exception as e:
@@ -532,8 +507,8 @@ def get_ytd_totals_from_tax_summary_legacy(employee, year, month):
         }
         
         # Cache the result
-        cache_key = f"ytd_tax:{employee}:{year}:{month}"
-        cache_value(cache_key, result, 600)  # Cache for 10 minutes
+        cache_key = f"ytd:{employee}:{year}:{month}"
+        cache_value(cache_key, result, 3600)
         
         return result
         
