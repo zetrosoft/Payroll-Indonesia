@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-08 08:54:46 by dannyaudian
+# Last modified: 2025-05-11 07:05:59 by dannyaudian
 
 import frappe
 from frappe import _
@@ -13,6 +13,8 @@ from typing import Dict, Optional, Union, List, Any
 from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 # Import tax calculation logic from the centralized ter_logic module
 from payroll_indonesia.payroll_indonesia.tax.ter_logic import hitung_pph_tahunan
+# Import cache utilities
+from payroll_indonesia.payroll_indonesia.utils.cache_utils import get_cached_value, cache_value, clear_cache
 
 
 def prepare_tax_report(year: Optional[int] = None, company: Optional[str] = None) -> Dict[str, Any]:
@@ -214,16 +216,22 @@ def create_annual_tax_report(employee: str, year: int, tax_data: Dict[str, Any])
         Generated report document name
     """
     try:
-        # Check if Annual Tax Report DocType exists
-        if not frappe.db.exists("DocType", "Annual Tax Report"):
-            frappe.log_error(
-                f"Annual Tax Report DocType does not exist. Cannot create report for {employee}",
-                "Annual Tax Report Error"
-            )
-            return None
-            
-        # Get employee details
-        emp_doc = frappe.get_doc("Employee", employee)
+        # Use cache for employee details
+        cache_key = f"employee_details:{employee}"
+        emp_doc = get_cached_value(cache_key)
+        
+        if emp_doc is None:
+            # Check if Annual Tax Report DocType exists
+            if not frappe.db.exists("DocType", "Annual Tax Report"):
+                frappe.log_error(
+                    f"Annual Tax Report DocType does not exist. Cannot create report for {employee}",
+                    "Annual Tax Report Error"
+                )
+                return None
+                
+            # Get employee details and cache them
+            emp_doc = frappe.get_doc("Employee", employee)
+            cache_value(cache_key, emp_doc, 3600)  # Cache for 1 hour
         
         # Create report
         report_doc = frappe.new_doc("Annual Tax Report")
@@ -250,8 +258,14 @@ def create_annual_tax_report(employee: str, year: int, tax_data: Dict[str, Any])
             # Add TER information if field exists and TER is used
             if hasattr(report_doc, 'ter_category') and tax_data.get('ter_used'):
                 try:
-                    # Map PTKP status to TER category using pph_ter directly
-                    ter_category = map_ptkp_to_ter_category(emp_doc.get("status_pajak", "TK0"))
+                    # Map PTKP status to TER category using cached value if available
+                    cache_key = f"ter_category:{emp_doc.get('status_pajak', 'TK0')}"
+                    ter_category = get_cached_value(cache_key)
+                    
+                    if ter_category is None:
+                        ter_category = map_ptkp_to_ter_category(emp_doc.get("status_pajak", "TK0"))
+                        cache_value(cache_key, ter_category, 86400)  # Cache for 24 hours
+                        
                     report_doc.ter_category = ter_category
                 except Exception:
                     # Fallback to simpler mapping if function not available
@@ -291,7 +305,7 @@ def update_existing_tax_report(report_name: str, year: int) -> bool:
         # Get the report document
         report_doc = frappe.get_doc("Annual Tax Report", report_name)
         
-        # Recalculate tax data using ter_logic instead of annual_calculation
+        # Recalculate tax data using ter_logic
         tax_data = hitung_pph_tahunan(report_doc.employee, year)
         
         # Update report with latest values
@@ -308,11 +322,22 @@ def update_existing_tax_report(report_name: str, year: int) -> bool:
             # Update TER information if field exists and TER is used
             if hasattr(report_doc, 'ter_category') and tax_data.get('ter_used'):
                 try:
-                    # Get employee document
-                    emp_doc = frappe.get_doc("Employee", report_doc.employee)
+                    # Get employee document using cache
+                    cache_key = f"employee_details:{report_doc.employee}"
+                    emp_doc = get_cached_value(cache_key)
                     
-                    # Map PTKP status to TER category using pph_ter directly
-                    ter_category = map_ptkp_to_ter_category(emp_doc.get("status_pajak", "TK0"))
+                    if emp_doc is None:
+                        emp_doc = frappe.get_doc("Employee", report_doc.employee)
+                        cache_value(cache_key, emp_doc, 3600)  # Cache for 1 hour
+                    
+                    # Map PTKP status to TER category using cached value if available
+                    cache_key = f"ter_category:{emp_doc.get('status_pajak', 'TK0')}"
+                    ter_category = get_cached_value(cache_key)
+                    
+                    if ter_category is None:
+                        ter_category = map_ptkp_to_ter_category(emp_doc.get("status_pajak", "TK0"))
+                        cache_value(cache_key, ter_category, 86400)  # Cache for 24 hours
+                        
                     report_doc.ter_category = ter_category
                 except Exception:
                     # Silently ignore TER category update if it fails
@@ -380,8 +405,13 @@ def generate_form_1721_a1(employee: Optional[str] = None, year: Optional[int] = 
         
         for emp in employees:
             try:
-                # Map PTKP status to TER category for reference - using pph_ter directly
-                ter_category = map_ptkp_to_ter_category(emp.get("status_pajak", "TK0"))
+                # Map PTKP status to TER category for reference using cache
+                cache_key = f"ter_category:{emp.get('status_pajak', 'TK0')}"
+                ter_category = get_cached_value(cache_key)
+                
+                if ter_category is None:
+                    ter_category = map_ptkp_to_ter_category(emp.get("status_pajak", "TK0"))
+                    cache_value(cache_key, ter_category, 86400)  # Cache for 24 hours
                     
                 result = create_1721_a1_form(emp.name, year)
                 summary["success"] += 1
