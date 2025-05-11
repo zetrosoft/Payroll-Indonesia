@@ -120,6 +120,7 @@ def debug_log(message, title=None, max_length=500, trace=False):
 
 # New centralized YTD data retrieval functions
 
+# Employee details function
 def get_employee_details(employee_id=None, salary_slip=None):
     """
     Get employee details from either employee ID or salary slip
@@ -187,6 +188,7 @@ def get_employee_details(employee_id=None, salary_slip=None):
         )
         return None
 
+# YTD data functions
 def get_ytd_totals(employee, year, month, include_current=False):
     """
     Get YTD tax and other totals for an employee with caching
@@ -2710,3 +2712,6 @@ def get_ytd_tax_info(employee, date=None):
             "is_using_ter": 0,
             "ter_rate": 0
         }
+                    #
+        }
+                    #

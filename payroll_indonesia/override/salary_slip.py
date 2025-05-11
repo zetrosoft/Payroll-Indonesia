@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 09:42:21 by dannyaudian
+# Last modified: 2025-05-11 10:37:34 by dannyaudian
 
 import frappe
 from frappe import _
@@ -398,7 +398,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 _("Warning: Could not retrieve tax identification from employee record."),
                 indicator="orange"
             )
-    
+
     def _check_or_create_fiscal_year(self):
         """
         Check if a fiscal year exists for the salary slip period
@@ -432,7 +432,8 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 _("Warning: Could not verify or create fiscal year."),
                 indicator="orange"
             )
-    
+
+
     def add_payroll_note(self, note, section=None):
         """
         Add note to payroll_note field with optional section header.
@@ -1141,12 +1142,74 @@ def setup_fiscal_year_if_missing(date_str=None):
             "message": str(e)
         }
 
+# Cache management functions - REWRITTEN to avoid race conditions
+def clear_salary_slip_caches():
+    """
+    Clear salary slip related caches to prevent memory bloat.
+    
+    This function is designed to be called by the scheduler (daily or cron) only.
+    It does NOT schedule itself to avoid race conditions.
+    
+    If you need to call this function manually, use:
+    
+        frappe.enqueue(method="payroll_indonesia.override.salary_slip.clear_salary_slip_caches",
+                      queue='long', job_name='clear_payroll_caches')
+    
+    The function is configured in hooks.py to run automatically at scheduled intervals.
+    """
+    try:
+        # Clear caches using standardized cache_utils
+        prefixes_to_clear = [
+            "employee_doc:",
+            "fiscal_year:",
+            "salary_slip:",
+            "ytd_tax:",
+            "ter_category:",
+            "ter_rate:"
+        ]
+        
+        # Log the start of cache clearing operation
+        frappe.log_error(
+            f"Starting cache clearing operation for prefixes: {', '.join(prefixes_to_clear)}",
+            "Salary Slip Cache Clearing"
+        )
+        
+        cleared_count = 0
+        for prefix in prefixes_to_clear:
+            count = clear_cache(prefix)
+            cleared_count += count or 0
+        
+        # Log completion
+        frappe.log_error(
+            f"Cleared {cleared_count} cached items from salary slip caches",
+            "Salary Slip Cache Clearing Complete"
+        )
+        
+        return {
+            "status": "success",
+            "cleared_count": cleared_count,
+            "prefixes": prefixes_to_clear
+        }
+        
+    except Exception as e:
+        # Non-critical error - log and continue
+        frappe.log_error(
+            "Error clearing salary slip caches: {0}".format(str(e)),
+            "Cache Clearing Error"
+        )
+        
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
 # Hook to apply our extensions when the module is loaded
 def setup_hooks():
     """Set up our hooks and monkey patches when the module is loaded"""
     try:
         extend_salary_slip_functionality()
-        clear_salary_slip_caches()  # Start cache clearing process
+        # NOTE: We no longer call clear_salary_slip_caches() here
+        # It's now managed by the scheduler in hooks.py
     except Exception as e:
         # Non-critical error during setup - log but continue
         frappe.log_error(

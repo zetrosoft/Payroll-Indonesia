@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 09:12:59 by dannyaudian
+# Last modified: 2025-05-11 10:19:22 by dannyaudianllanjutkan
 
 import frappe
 from frappe import _
@@ -9,12 +9,20 @@ from frappe.utils import getdate, nowdate, flt, add_days
 from datetime import datetime
 from typing import Dict, Optional, Union, List, Any
 
+# Import constants
+from payroll_indonesia.constants import (
+    CACHE_MEDIUM, CACHE_SHORT, CACHE_LONG, MONTHS_PER_YEAR,
+    TER_CATEGORY_A, TER_CATEGORY_B, TER_CATEGORY_C, TER_CATEGORIES
+)
+
 # Import from pph_ter directly rather than ter_calculator
 from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 # Import tax calculation logic from the centralized ter_logic module
 from payroll_indonesia.payroll_indonesia.tax.ter_logic import hitung_pph_tahunan
 # Import cache utilities
 from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+# Import shared YTD functions
+from payroll_indonesia.payroll_indonesia.utils import get_ytd_totals, get_employee_details
 
 
 def prepare_tax_report(year: Optional[int] = None, company: Optional[str] = None) -> Dict[str, Any]:
@@ -60,30 +68,29 @@ def prepare_tax_report(year: Optional[int] = None, company: Optional[str] = None
             "details": []
         }
             
-        # Get list of employees with salary slips in the specified period
-        employees_filter = {
-            "posting_date": ["between", [start_date, end_date]],
-            "docstatus": 1
-        }
+        # Get list of employees with salary slips in the specified period - using caching for efficiency
+        cache_key = f"tax_report_employees:{year}:{company or 'all'}"
+        employee_list = get_cached_value(cache_key)
         
-        if company:
-            employees_filter["company"] = company
+        if employee_list is None:
+            # Use parameterized query for better security and performance
+            query = """
+                SELECT DISTINCT employee, employee_name
+                FROM `tabSalary Slip`
+                WHERE posting_date BETWEEN %s AND %s
+                AND docstatus = 1
+            """
+            params = [start_date, end_date]
             
-        # Get unique employees from salary slips - using parameterized query
-        query = """
-            SELECT DISTINCT employee, employee_name
-            FROM `tabSalary Slip`
-            WHERE posting_date BETWEEN %s AND %s
-            AND docstatus = 1
-        """
-        params = [start_date, end_date]
-        
-        # Add company filter if provided - using parameterized approach
-        if company:
-            query += " AND company = %s"
-            params.append(company)
+            # Add company filter if provided
+            if company:
+                query += " AND company = %s"
+                params.append(company)
+                
+            employee_list = frappe.db.sql(query, params, as_dict=1)
             
-        employee_list = frappe.db.sql(query, params, as_dict=1)
+            # Cache result for efficiency
+            cache_value(cache_key, employee_list or [], CACHE_MEDIUM)
         
         if not employee_list:
             frappe.msgprint(_("No employees found with salary slips in {0}").format(year))
@@ -91,11 +98,12 @@ def prepare_tax_report(year: Optional[int] = None, company: Optional[str] = None
             
         summary["total_employees"] = len(employee_list)
         
-        # Process each employee
+        # Process each employee - optionally do this in chunks for large datasets
         for emp in employee_list:
             try:
-                # Check if employee still exists
-                if not frappe.db.exists("Employee", emp.employee):
+                # Check if employee still exists - using centralized function
+                employee_details = get_employee_details(emp.employee)
+                if not employee_details:
                     frappe.log_error(
                         "Employee {0} ({1}) no longer exists in the system".format(
                             emp.employee, emp.employee_name
@@ -111,21 +119,28 @@ def prepare_tax_report(year: Optional[int] = None, company: Optional[str] = None
                     })
                     continue
                 
-                # Check if employee tax summary exists
-                tax_summary = frappe.db.get_value(
-                    "Employee Tax Summary",
-                    {"employee": emp.employee, "year": year},
-                    "name"
-                )
+                # Check if employee tax summary exists - using cache
+                cache_key = f"tax_summary:{emp.employee}:{year}"
+                tax_summary_name = get_cached_value(cache_key)
                 
-                if not tax_summary:
-                    # Try to create tax summary if it doesn't exist
+                if tax_summary_name is None:
+                    tax_summary_name = frappe.db.get_value(
+                        "Employee Tax Summary",
+                        {"employee": emp.employee, "year": year},
+                        "name"
+                    )
+                    # Cache result
+                    cache_value(cache_key, tax_summary_name or False, CACHE_MEDIUM)
+                
+                if not tax_summary_name:
+                    # Try to create tax summary if it doesn't exist - use cached results
                     try:
-                        # Calculate tax summary using ter_logic instead of annual_calculation
-                        tax_data = hitung_pph_tahunan(emp.employee, year)
+                        # Calculate tax summary using ter_logic
+                        # Pass employee_details to avoid re-fetching
+                        tax_data = hitung_pph_tahunan(emp.employee, year, employee_details)
                         
                         # Create tax report document
-                        create_annual_tax_report(emp.employee, year, tax_data)
+                        create_annual_tax_report(emp.employee, year, tax_data, employee_details)
                         
                         summary["processed"] += 1
                         summary["details"].append({
@@ -152,7 +167,7 @@ def prepare_tax_report(year: Optional[int] = None, company: Optional[str] = None
                 else:
                     # Update existing tax summary
                     try:
-                        update_existing_tax_report(tax_summary, year)
+                        update_existing_tax_report(tax_summary_name, year, emp.employee, employee_details)
                         
                         summary["processed"] += 1
                         summary["details"].append({
@@ -218,7 +233,8 @@ def prepare_tax_report(year: Optional[int] = None, company: Optional[str] = None
         frappe.throw(_("Error preparing tax reports: {0}").format(str(e)))
 
 
-def create_annual_tax_report(employee: str, year: int, tax_data: Dict[str, Any]) -> Optional[str]:
+def create_annual_tax_report(employee: str, year: int, tax_data: Dict[str, Any], 
+                           employee_details: Optional[Dict[str, Any]] = None) -> Optional[str]:
     """
     Create annual tax report document for an employee
     
@@ -226,16 +242,16 @@ def create_annual_tax_report(employee: str, year: int, tax_data: Dict[str, Any])
         employee: Employee ID
         year: Tax year
         tax_data: Tax calculation data
+        employee_details: Pre-fetched employee details (optional)
         
     Returns:
         Generated report document name
     """
     try:
-        # Use cache for employee details
-        cache_key = f"employee_details:{employee}"
-        emp_doc = get_cached_value(cache_key)
+        # Get employee details if not provided - use centralized function with caching
+        emp_doc = employee_details or get_employee_details(employee)
         
-        if emp_doc is None:
+        if not emp_doc:
             # Check if Annual Tax Report DocType exists
             if not frappe.db.exists("DocType", "Annual Tax Report"):
                 frappe.log_error(
@@ -244,16 +260,22 @@ def create_annual_tax_report(employee: str, year: int, tax_data: Dict[str, Any])
                 )
                 return None
                 
-            # Get employee details and cache them
-            emp_doc = frappe.get_doc("Employee", employee)
-            cache_value(cache_key, emp_doc, 3600)  # Cache for 1 hour
+            # Get employee details
+            emp_doc = get_employee_details(employee)
+            
+            if not emp_doc:
+                frappe.log_error(
+                    "Employee {0} not found".format(employee),
+                    "Annual Tax Report Error"
+                )
+                return None
         
         # Create report
         report_doc = frappe.new_doc("Annual Tax Report")
         report_doc.employee = employee
-        report_doc.employee_name = emp_doc.employee_name
+        report_doc.employee_name = emp_doc.get("employee_name", "")
         report_doc.year = year
-        report_doc.company = emp_doc.company
+        report_doc.company = emp_doc.get("company", "")
         
         # Add tax information from tax_data
         if tax_data:
@@ -273,21 +295,21 @@ def create_annual_tax_report(employee: str, year: int, tax_data: Dict[str, Any])
             # Add TER information if field exists and TER is used
             if hasattr(report_doc, 'ter_category') and tax_data.get('ter_used'):
                 try:
-                    # Map PTKP status to TER category using cached value if available
+                    # Map PTKP status to TER category using cached value
                     cache_key = f"ter_category:{emp_doc.get('status_pajak', 'TK0')}"
                     ter_category = get_cached_value(cache_key)
                     
                     if ter_category is None:
                         ter_category = map_ptkp_to_ter_category(emp_doc.get("status_pajak", "TK0"))
-                        cache_value(cache_key, ter_category, 86400)  # Cache for 24 hours
+                        cache_value(cache_key, ter_category, CACHE_LONG)
                         
                     report_doc.ter_category = ter_category
                 except Exception:
                     # Fallback to simpler mapping if function not available
                     if emp_doc.get("status_pajak") == "TK0":
-                        report_doc.ter_category = "TER A"
+                        report_doc.ter_category = TER_CATEGORY_A
                     else:
-                        report_doc.ter_category = "TER B"
+                        report_doc.ter_category = TER_CATEGORY_B
             
         # Insert document
         report_doc.insert(ignore_permissions=True)
@@ -295,7 +317,7 @@ def create_annual_tax_report(employee: str, year: int, tax_data: Dict[str, Any])
         # Log success
         frappe.log_error(
             "Annual Tax Report created for {0} ({1}) - {2}".format(
-                employee, emp_doc.employee_name, year
+                employee, emp_doc.get("employee_name", ""), year
             ),
             "Annual Tax Report Creation"
         )
@@ -312,13 +334,16 @@ def create_annual_tax_report(employee: str, year: int, tax_data: Dict[str, Any])
         raise
 
 
-def update_existing_tax_report(report_name: str, year: int) -> bool:
+def update_existing_tax_report(report_name: str, year: int, employee: Optional[str] = None,
+                             employee_details: Optional[Dict[str, Any]] = None) -> bool:
     """
     Update an existing tax report with latest data
     
     Args:
         report_name: The name of the tax report document
         year: Tax year
+        employee: Employee ID (optional if report has it)
+        employee_details: Pre-fetched employee details (optional)
         
     Returns:
         True if updated successfully
@@ -327,8 +352,14 @@ def update_existing_tax_report(report_name: str, year: int) -> bool:
         # Get the report document
         report_doc = frappe.get_doc("Annual Tax Report", report_name)
         
+        # Get employee ID from report if not provided
+        employee = employee or report_doc.employee
+        
+        # Get employee details if not provided - use centralized function with caching
+        emp_doc = employee_details or get_employee_details(employee)
+        
         # Recalculate tax data using ter_logic
-        tax_data = hitung_pph_tahunan(report_doc.employee, year)
+        tax_data = hitung_pph_tahunan(employee, year, emp_doc)
         
         # Update report with latest values
         if tax_data:
@@ -343,27 +374,20 @@ def update_existing_tax_report(report_name: str, year: int) -> bool:
             
             # Update TER information if field exists and TER is used
             if hasattr(report_doc, 'ter_category') and tax_data.get('ter_used'):
-                try:
-                    # Get employee document using cache
-                    cache_key = f"employee_details:{report_doc.employee}"
-                    emp_doc = get_cached_value(cache_key)
-                    
-                    if emp_doc is None:
-                        emp_doc = frappe.get_doc("Employee", report_doc.employee)
-                        cache_value(cache_key, emp_doc, 3600)  # Cache for 1 hour
-                    
-                    # Map PTKP status to TER category using cached value if available
-                    cache_key = f"ter_category:{emp_doc.get('status_pajak', 'TK0')}"
-                    ter_category = get_cached_value(cache_key)
-                    
-                    if ter_category is None:
-                        ter_category = map_ptkp_to_ter_category(emp_doc.get("status_pajak", "TK0"))
-                        cache_value(cache_key, ter_category, 86400)  # Cache for 24 hours
+                if emp_doc:
+                    try:
+                        # Map PTKP status to TER category using cached value
+                        cache_key = f"ter_category:{emp_doc.get('status_pajak', 'TK0')}"
+                        ter_category = get_cached_value(cache_key)
                         
-                    report_doc.ter_category = ter_category
-                except Exception:
-                    # Silently ignore TER category update if it fails
-                    pass
+                        if ter_category is None:
+                            ter_category = map_ptkp_to_ter_category(emp_doc.get("status_pajak", "TK0"))
+                            cache_value(cache_key, ter_category, CACHE_LONG)
+                            
+                        report_doc.ter_category = ter_category
+                    except Exception:
+                        # Silently ignore TER category update if it fails
+                        pass
             
             # Update modification timestamps
             report_doc.modified = nowdate()
@@ -374,7 +398,7 @@ def update_existing_tax_report(report_name: str, year: int) -> bool:
         # Log success
         frappe.log_error(
             "Annual Tax Report updated for {0} ({1}) - {2}".format(
-                report_doc.employee, report_doc.employee_name, year
+                employee, report_doc.employee_name, year
             ),
             "Annual Tax Report Update"
         )
@@ -409,18 +433,28 @@ def generate_form_1721_a1(employee: Optional[str] = None, year: Optional[int] = 
         
         # Process single employee if specified
         if employee:
-            if not frappe.db.exists("Employee", employee):
+            # Use centralized function to validate employee
+            employee_details = get_employee_details(employee)
+            if not employee_details:
                 frappe.throw(_("Employee {0} not found").format(employee))
                 
-            # Generate form for one employee
-            return create_1721_a1_form(employee, year)
+            # Generate form for one employee - pass pre-fetched employee details
+            return create_1721_a1_form(employee, year, employee_details)
         
-        # Process all active employees
-        employees = frappe.get_all(
-            "Employee",
-            filters={"status": "Active"},
-            fields=["name", "employee_name", "status_pajak"]
-        )
+        # Get employee list from cache
+        cache_key = f"active_employees:{year}"
+        employees = get_cached_value(cache_key)
+        
+        if employees is None:
+            # Process all active employees - fetch relevant fields only
+            employees = frappe.get_all(
+                "Employee",
+                filters={"status": "Active"},
+                fields=["name", "employee_name", "status_pajak"]
+            )
+            
+            # Cache result for efficiency
+            cache_value(cache_key, employees, CACHE_MEDIUM)
         
         summary = {
             "year": year,
@@ -438,9 +472,12 @@ def generate_form_1721_a1(employee: Optional[str] = None, year: Optional[int] = 
                 
                 if ter_category is None:
                     ter_category = map_ptkp_to_ter_category(emp.get("status_pajak", "TK0"))
-                    cache_value(cache_key, ter_category, 86400)  # Cache for 24 hours
+                    cache_value(cache_key, ter_category, CACHE_LONG)
+                
+                # Get full employee details for form creation
+                emp_details = get_employee_details(emp.name)
                     
-                result = create_1721_a1_form(emp.name, year)
+                result = create_1721_a1_form(emp.name, year, emp_details)
                 summary["success"] += 1
                 summary["details"].append({
                     "employee": emp.name,
@@ -487,13 +524,15 @@ def generate_form_1721_a1(employee: Optional[str] = None, year: Optional[int] = 
         frappe.throw(_("Error generating Form 1721-A1: {0}").format(str(e)))
         
 
-def create_1721_a1_form(employee: str, year: int) -> Optional[str]:
+def create_1721_a1_form(employee: str, year: int, 
+                      employee_details: Optional[Dict[str, Any]] = None) -> Optional[str]:
     """
     Create Form 1721-A1 for a specific employee
     
     Args:
         employee: Employee ID
         year: Tax year
+        employee_details: Pre-fetched employee details (optional)
         
     Returns:
         Generated form document name or None if not implemented yet
