@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 06:54:30 by dannyaudian
+# Last modified: 2025-05-11 08:55:02 by dannyaudian
 
 import frappe
 from frappe import _
@@ -23,8 +23,27 @@ def hitung_pph_tahunan(employee, year):
         dict: Tax calculation data
     """
     try:
+        # Validate parameters
+        if not employee:
+            frappe.throw(
+                _("Employee ID is required for annual PPh calculation"),
+                title=_("Missing Parameter")
+            )
+            
+        if not year:
+            frappe.throw(
+                _("Tax year is required for annual PPh calculation"),
+                title=_("Missing Parameter")
+            )
+            
         # Get employee document
-        emp_doc = frappe.get_doc("Employee", employee)
+        try:
+            emp_doc = frappe.get_doc("Employee", employee)
+        except Exception as e:
+            frappe.throw(
+                _("Error retrieving employee {0}: {1}").format(employee, str(e)),
+                title=_("Employee Not Found")
+            )
         
         # Get all salary slips for the year
         salary_slips = frappe.db.get_all(
@@ -101,12 +120,21 @@ def hitung_pph_tahunan(employee, year):
         }
         
     except Exception as e:
+        # Handle ValidationError separately
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise
+            
+        # For other errors, log and re-raise with clear message
         frappe.log_error(
-            f"Error calculating annual PPh for {employee}, year {year}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error calculating annual PPh for {0}, year {1}: {2}".format(
+                employee, year, str(e)
+            ),
             "Annual PPh Calculation Error"
         )
-        raise
+        frappe.throw(
+            _("Error calculating annual tax: {0}").format(str(e)),
+            title=_("Tax Calculation Failed")
+        )
 
 def get_ptkp_amount(status_pajak):
     """
@@ -119,6 +147,14 @@ def get_ptkp_amount(status_pajak):
         float: PTKP amount
     """
     try:
+        # Validate input
+        if not status_pajak:
+            frappe.log_error(
+                "Empty tax status provided, using TK0 as default",
+                "PTKP Warning"
+            )
+            status_pajak = "TK0"
+            
         # Check if PPh 21 Settings exists
         if frappe.db.exists("DocType", "PPh 21 Settings"):
             pph_settings = frappe.get_cached_doc("PPh 21 Settings")
@@ -161,16 +197,30 @@ def get_ptkp_amount(status_pajak):
         prefix = status_pajak[:2] if len(status_pajak) >= 2 else status_pajak
         for key, value in default_ptkp.items():
             if prefix.startswith(key):
+                frappe.log_error(
+                    "PTKP not found in settings for {0}, using default value {1}".format(
+                        status_pajak, value
+                    ),
+                    "PTKP Fallback Warning"
+                )
                 return value
                 
         # Last resort - TK0
+        frappe.log_error(
+            "No PTKP match found for {0}, using TK0 default (54,000,000)".format(status_pajak),
+            "PTKP Default Warning"
+        )
         return 54000000  # Default for TK0
     
     except Exception as e:
+        # Non-critical error - log and return default
         frappe.log_error(
-            f"Error getting PTKP amount for {status_pajak}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error getting PTKP amount for {0}: {1}".format(status_pajak, str(e)),
             "PTKP Calculation Error"
+        )
+        frappe.msgprint(
+            _("Error retrieving PTKP value for tax status {0}. Using default.").format(status_pajak),
+            indicator="orange"
         )
         # Return default PTKP for TK0
         return 54000000
@@ -188,14 +238,14 @@ def calculate_tax_already_paid(salary_slips):
     # Initialize total
     total_tax = 0
     
-    # Get slip names for efficient querying
-    slip_names = [slip.name for slip in salary_slips]
-    
-    if not slip_names:
-        return 0
-        
-    # Get PPh 21 component amounts in bulk
     try:
+        # Get slip names for efficient querying
+        slip_names = [slip.name for slip in salary_slips]
+        
+        if not slip_names:
+            return 0
+            
+        # Get PPh 21 component amounts in bulk
         tax_components = frappe.db.sql("""
             SELECT parent, amount
             FROM `tabSalary Detail`
@@ -210,10 +260,14 @@ def calculate_tax_already_paid(salary_slips):
             total_tax += flt(comp.amount)
             
     except Exception as e:
+        # Non-critical error - log, show warning and return 0
         frappe.log_error(
-            f"Error calculating already paid tax: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Tax Calculation Error"
+            "Error calculating already paid tax: {0}".format(str(e)),
+            "Tax Calculation Warning"
+        )
+        frappe.msgprint(
+            _("Error retrieving previously paid tax amounts. Using 0 as fallback."),
+            indicator="orange"
         )
     
     return total_tax
@@ -230,11 +284,23 @@ def calculate_progressive_tax(pkp, pph_settings=None):
         tuple: (total_tax, tax_details)
     """
     try:
+        # Validate input
+        if pkp < 0:
+            frappe.log_error(
+                "Negative PKP value {0} provided, using 0 instead".format(pkp),
+                "PKP Validation Warning"
+            )
+            pkp = 0
+
+        # Get settings
         if not pph_settings and frappe.db.exists("DocType", "PPh 21 Settings"):
             try:
                 pph_settings = frappe.get_cached_doc("PPh 21 Settings")
-            except Exception as e:
-                frappe.log_error(f"Error retrieving PPh 21 Settings: {str(e)}", "Settings Error")
+            except Exception as settings_error:
+                frappe.log_error(
+                    "Error retrieving PPh 21 Settings: {0}".format(str(settings_error)),
+                    "Settings Retrieval Warning"
+                )
                 pph_settings = None
 
         # First check if bracket_table is directly available as attribute
@@ -253,6 +319,12 @@ def calculate_progressive_tax(pkp, pph_settings=None):
 
         # If still not found, use default values
         if not bracket_table:
+            # Log warning about missing brackets
+            frappe.log_error(
+                "No tax brackets found in settings, using default values",
+                "Tax Bracket Warning"
+            )
+            
             # Default bracket values if not found - based on PMK 101/2016 and UU HPP 2021
             bracket_table = [
                 {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
@@ -295,9 +367,13 @@ def calculate_progressive_tax(pkp, pph_settings=None):
         return total_tax, tax_details
         
     except Exception as e:
+        # Non-critical error - log and return default values
         frappe.log_error(
-            f"Progressive Tax Calculation Error for PKP {pkp}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error calculating progressive tax for PKP {0}: {1}".format(pkp, str(e)),
             "Tax Bracket Calculation Error"
+        )
+        frappe.msgprint(
+            _("Error calculating tax using progressive rates. Please check the error log."),
+            indicator="orange"
         )
         return 0, []
