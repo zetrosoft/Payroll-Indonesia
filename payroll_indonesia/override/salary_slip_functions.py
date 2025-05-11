@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 05:48:47 by dannyaudian
+# Last modified: 2025-05-11 05:51:22 by dannyaudian
 
 import frappe
 from frappe import _
@@ -11,7 +11,7 @@ import traceback
 from payroll_indonesia.override.salary_slip import IndonesiaPayrollSalarySlip
 
 # Import centralized cache utilities
-from payroll_indonesia.utils.cache_utils import clear_all_caches, schedule_cache_clearing
+from payroll_indonesia.utilities.cache_utils import clear_all_caches, schedule_cache_clearing
 
 __all__ = [
     'validate_salary_slip',
