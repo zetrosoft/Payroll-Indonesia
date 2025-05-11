@@ -11,7 +11,7 @@ import hashlib
 from .base import update_component_amount
 
 # Import cache utilities
-from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 # Import constants
 from payroll_indonesia.constants import (

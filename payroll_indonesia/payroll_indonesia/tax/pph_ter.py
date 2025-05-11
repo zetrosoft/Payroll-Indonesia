@@ -20,7 +20,7 @@ import json
 from typing import Dict, Any, Optional, List, Tuple, Union
 
 # Import the cache utilities
-from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 def map_ptkp_to_ter_category(status_pajak: str) -> str:
     """

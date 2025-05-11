@@ -22,7 +22,7 @@ from frappe import _
 from frappe.utils import flt, getdate, cint
 
 # Import cache utilities
-from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
 
 # Import constants
 from payroll_indonesia.constants import (

@@ -28,7 +28,7 @@ from .base import update_component_amount, get_component_amount
 from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter
 
 # Import standardized cache utilities
-from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 # Import constants
 from payroll_indonesia.constants import (
