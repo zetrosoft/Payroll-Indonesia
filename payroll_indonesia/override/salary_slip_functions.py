@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 04:14:53 by dannyaudian
+# Last modified: 2025-05-11 04:55:25 by dannyaudian
 
 import frappe
 from frappe import _
@@ -46,66 +46,56 @@ def raise_user_error(message):
 def validate_salary_slip(doc, method=None):
     """
     Event hook for validating Salary Slip.
-    Delegates to validate() method of the document
+    Since we're using monkey-patching, this function is a lightweight wrapper
+    that delegates to the SalarySlip's validate method which has been enhanced.
     
     Args:
         doc: The Salary Slip document
         method: Method name (not used)
     """
     try:
-        # Call validate method
-        doc.validate()
+        # The validate method itself has been monkey-patched, so just call it
+        # The monkey-patching in extend_salary_slip_functionality will handle the rest
+        if hasattr(doc, 'validate'):
+            doc.validate()
     except Exception as e:
-        # Log technical error details
-        log_error(
-            f"Salary Slip Validation Error: {doc.name if hasattr(doc, 'name') else 'New'}",
-            e
-        )
-        # Raise user-friendly message
+        log_error(f"Salary Slip Validation Error: {doc.name if hasattr(doc, 'name') else 'New'}", e)
         raise_user_error(f"Could not validate salary slip: {str(e)}")
 
 def on_submit_salary_slip(doc, method=None):
     """
     Event hook for Salary Slip submission.
-    Delegates to on_submit() method of the document
+    Since we're using monkey-patching, this is a lightweight wrapper.
     
     Args:
         doc: The Salary Slip document
         method: Method name (not used)
     """
     try:
-        # Check if method exists
+        # The on_submit method has been monkey-patched, so just call it
+        # The monkey-patching in extend_salary_slip_functionality will handle the rest
         if hasattr(doc, 'on_submit'):
             doc.on_submit()
     except Exception as e:
-        # Log technical error details
-        log_error(
-            f"Salary Slip Submit Error: {doc.name}",
-            e
-        )
-        # Raise user-friendly message
+        log_error(f"Salary Slip Submit Error: {doc.name}", e)
         raise_user_error(f"Error processing salary slip submission: {str(e)}")
 
 def on_cancel_salary_slip(doc, method=None):
     """
     Event hook for Salary Slip cancellation.
-    Delegates to on_cancel() method of the document
+    Since we're using monkey-patching, this is a lightweight wrapper.
     
     Args:
         doc: The Salary Slip document
         method: Method name (not used)
     """
     try:
-        # Check if method exists
+        # The on_cancel method has been monkey-patched, so just call it
+        # The monkey-patching in extend_salary_slip_functionality will handle the rest
         if hasattr(doc, 'on_cancel'):
             doc.on_cancel()
     except Exception as e:
-        # Log technical error details
-        log_error(
-            f"Salary Slip Cancel Error: {doc.name}",
-            e
-        )
-        # Raise user-friendly message
+        log_error(f"Salary Slip Cancel Error: {doc.name}", e)
         raise_user_error(f"Error processing salary slip cancellation: {str(e)}")
 
 def after_insert_salary_slip(doc, method=None):
@@ -119,54 +109,15 @@ def after_insert_salary_slip(doc, method=None):
     """
     try:
         # Handle initialization only for Salary Slip documents
-        if not hasattr(doc, 'doctype') or doc.doctype != "Salary Slip":
+        if doc.doctype != "Salary Slip":
             return
         
-        # Initialize custom fields for Indonesian payroll
-        initialize_indonesian_payroll_fields(doc)
-        
-        # Set tax ID fields from employee
+        # Initialize tax ID fields - minimal initialization since monkey patching handles the rest
         set_tax_ids_from_employee(doc)
             
     except Exception as e:
-        # Log technical error details but don't block slip creation
-        log_error(
-            f"Salary Slip Post-Creation Error: {doc.name if hasattr(doc, 'name') else 'New'}",
-            e
-        )
-        # Show warning instead of blocking error
+        log_error(f"Salary Slip Post-Creation Error: {doc.name if hasattr(doc, 'name') else 'New'}", e)
         frappe.msgprint(_("Warning: Error in post-creation processing: {0}").format(str(e)))
-
-def initialize_indonesian_payroll_fields(doc):
-    """
-    Initialize custom Indonesian payroll fields on the document
-    
-    Args:
-        doc: The Salary Slip document
-    """
-    # Define default fields
-    default_fields = {
-        'is_final_gabung_suami': 0,
-        'koreksi_pph21': 0,
-        'payroll_note': "",
-        'biaya_jabatan': 0,
-        'netto': 0,
-        'total_bpjs': 0,
-        'is_using_ter': 0,
-        'ter_rate': 0,
-        'ter_category': ""
-    }
-    
-    # Set default values for fields if they don't exist
-    for field, default_value in default_fields.items():
-        if not hasattr(doc, field) or getattr(doc, field) is None:
-            setattr(doc, field, default_value)
-            # Update the database
-            try:
-                doc.db_set(field, default_value, update_modified=False)
-            except Exception:
-                # Some fields might not be in the database schema, ignore those errors
-                pass
 
 def set_tax_ids_from_employee(doc):
     """
