@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 18:30:15 by dannyaudian
+# Last modified: 2025-05-11 13:01:12 by dannyaudian
 
 from __future__ import unicode_literals
 import frappe
@@ -12,6 +12,7 @@ from frappe.utils import flt, getdate, now_datetime
 
 # Import utility functions from central utils module
 from payroll_indonesia.payroll_indonesia.utils import (
+    get_settings,
     get_default_config,
     debug_log,
     find_parent_account,
@@ -77,9 +78,6 @@ def on_update(doc, method=None):
         )
 
 
-# No longer need to define retry_bpjs_mapping here, will use the central utility function directly
-
-
 class BPJSSettings(Document):
     def validate(self):
         """Validate BPJS settings"""
@@ -91,14 +89,75 @@ class BPJSSettings(Document):
         self.validate_max_salary()
         self.validate_account_types()
 
+        # Sync with Payroll Indonesia Settings
+        self.sync_from_payroll_settings()
+
+    def sync_from_payroll_settings(self):
+        """Load settings from Payroll Indonesia Settings if they exist"""
+        try:
+            # Get central settings
+            pi_settings = get_settings()
+
+            # Only proceed if we have valid settings
+            if not pi_settings:
+                return
+
+            # Fields to sync from Payroll Indonesia Settings
+            fields_to_sync = [
+                "kesehatan_employee_percent",
+                "kesehatan_employer_percent",
+                "kesehatan_max_salary",
+                "jht_employee_percent",
+                "jht_employer_percent",
+                "jp_employee_percent",
+                "jp_employer_percent",
+                "jp_max_salary",
+                "jkk_percent",
+                "jkm_percent",
+            ]
+
+            # Check if we're coming from fresh install or should overwrite
+            is_new_doc = self.is_new()
+
+            # Only update values if:
+            # 1. This is a new document (first install)
+            # 2. The document hasn't been manually edited (last_modified is older than PI settings)
+            pi_last_updated = getattr(pi_settings, "app_last_updated", None)
+
+            if is_new_doc or (pi_last_updated and pi_last_updated > self.modified):
+                for field in fields_to_sync:
+                    if hasattr(pi_settings, field) and hasattr(self, field):
+                        self.set(field, pi_settings.get(field))
+                debug_log(
+                    "BPJS Settings synchronized from Payroll Indonesia Settings", "BPJS Settings"
+                )
+        except Exception as e:
+            debug_log(
+                f"Error syncing from Payroll Indonesia Settings: {str(e)}",
+                "BPJS Settings Error",
+                trace=True,
+            )
+
     def validate_data_types(self):
         """Validate that all numeric fields contain valid numbers"""
-        # Get numeric fields from config
-        config = get_default_config()
+        # Get central settings for validation rules
+        pi_settings = get_settings()
 
         # Combine fields from percentage validations and salary thresholds
         numeric_fields = []
-        validation_rules = config.get("bpjs_settings", {}).get("validation_rules", {})
+
+        # Try to get validation rules from settings
+        bpjs_settings_data = {}
+        try:
+            if hasattr(pi_settings, "bpjs_settings") and pi_settings.bpjs_settings:
+                if isinstance(pi_settings.bpjs_settings, str):
+                    bpjs_settings_data = frappe.parse_json(pi_settings.bpjs_settings)
+                else:
+                    bpjs_settings_data = pi_settings.bpjs_settings
+        except (ValueError, AttributeError):
+            debug_log("Error parsing BPJS settings, using defaults", "BPJS Settings")
+
+        validation_rules = bpjs_settings_data.get("validation_rules", {})
 
         for rule in validation_rules.get("percentage_ranges", []):
             if "field" in rule and rule["field"] not in numeric_fields:
@@ -132,14 +191,26 @@ class BPJSSettings(Document):
                 frappe.throw(_(f"Value of {field} must be a number"))
 
     def validate_percentages(self):
-        """Validate BPJS percentage ranges using config"""
-        # Get validation rules from config
-        config = get_default_config()
-        validation_rules = config.get("bpjs_settings", {}).get("validation_rules", {})
+        """Validate BPJS percentage ranges using settings"""
+        # Get validation rules from settings
+        pi_settings = get_settings()
+
+        # Try to get validation rules from settings
+        bpjs_settings_data = {}
+        try:
+            if hasattr(pi_settings, "bpjs_settings") and pi_settings.bpjs_settings:
+                if isinstance(pi_settings.bpjs_settings, str):
+                    bpjs_settings_data = frappe.parse_json(pi_settings.bpjs_settings)
+                else:
+                    bpjs_settings_data = pi_settings.bpjs_settings
+        except (ValueError, AttributeError):
+            debug_log("Error parsing BPJS settings, using defaults", "BPJS Settings")
+
+        validation_rules = bpjs_settings_data.get("validation_rules", {})
         percentage_rules = validation_rules.get("percentage_ranges", [])
 
         if percentage_rules:
-            # Use rules from config
+            # Use rules from settings
             for rule in percentage_rules:
                 field = rule.get("field")
                 min_val = rule.get("min", 0)
@@ -154,7 +225,24 @@ class BPJSSettings(Document):
                         frappe.throw(_(error_msg))
         else:
             # Fallback to hardcoded validations
-            bpjs_defaults = get_default_config("bpjs")
+            # Get BPJS defaults from central settings
+            bpjs_defaults = {}
+            if pi_settings:
+                bpjs_defaults = {
+                    "kesehatan_employee_percent": getattr(
+                        pi_settings, "kesehatan_employee_percent", 1.0
+                    ),
+                    "kesehatan_employer_percent": getattr(
+                        pi_settings, "kesehatan_employer_percent", 4.0
+                    ),
+                    "jht_employee_percent": getattr(pi_settings, "jht_employee_percent", 2.0),
+                    "jht_employer_percent": getattr(pi_settings, "jht_employer_percent", 3.7),
+                    "jp_employee_percent": getattr(pi_settings, "jp_employee_percent", 1.0),
+                    "jp_employer_percent": getattr(pi_settings, "jp_employer_percent", 2.0),
+                    "jkk_percent": getattr(pi_settings, "jkk_percent", 0.24),
+                    "jkm_percent": getattr(pi_settings, "jkm_percent", 0.3),
+                }
+
             validations = [
                 (
                     "kesehatan_employee_percent",
@@ -187,14 +275,26 @@ class BPJSSettings(Document):
                     frappe.throw(_(message))
 
     def validate_max_salary(self):
-        """Validate maximum salary thresholds using config"""
-        # Get validation rules from config
-        config = get_default_config()
-        validation_rules = config.get("bpjs_settings", {}).get("validation_rules", {})
+        """Validate maximum salary thresholds using settings"""
+        # Get validation rules from settings
+        pi_settings = get_settings()
+
+        # Try to get validation rules from settings
+        bpjs_settings_data = {}
+        try:
+            if hasattr(pi_settings, "bpjs_settings") and pi_settings.bpjs_settings:
+                if isinstance(pi_settings.bpjs_settings, str):
+                    bpjs_settings_data = frappe.parse_json(pi_settings.bpjs_settings)
+                else:
+                    bpjs_settings_data = pi_settings.bpjs_settings
+        except (ValueError, AttributeError):
+            debug_log("Error parsing BPJS settings for validation rules", "BPJS Settings")
+
+        validation_rules = bpjs_settings_data.get("validation_rules", {})
         salary_rules = validation_rules.get("salary_thresholds", [])
 
         if salary_rules:
-            # Use rules from config
+            # Use rules from settings
             for rule in salary_rules:
                 field = rule.get("field")
                 min_val = rule.get("min", 0)
@@ -206,8 +306,7 @@ class BPJSSettings(Document):
                         frappe.throw(_(error_msg))
         else:
             # Fallback to hardcoded validations
-            bpjs_config = get_default_config("bpjs")
-
+            # Get BPJS defaults from central settings
             for field, label in [
                 ("kesehatan_max_salary", "BPJS Kesehatan maximum salary"),
                 ("jp_max_salary", "JP maximum salary"),
@@ -218,9 +317,21 @@ class BPJSSettings(Document):
 
     def validate_account_types(self):
         """Validate that BPJS accounts are of the correct type"""
-        # Get account fields from config
-        config = get_default_config()
-        account_fields = config.get("bpjs_settings", {}).get("account_fields", [])
+        # Get account fields from central settings
+        pi_settings = get_settings()
+
+        # Try to get account fields from settings
+        bpjs_settings_data = {}
+        try:
+            if hasattr(pi_settings, "bpjs_settings") and pi_settings.bpjs_settings:
+                if isinstance(pi_settings.bpjs_settings, str):
+                    bpjs_settings_data = frappe.parse_json(pi_settings.bpjs_settings)
+                else:
+                    bpjs_settings_data = pi_settings.bpjs_settings
+        except (ValueError, AttributeError):
+            debug_log("Error parsing BPJS settings for account fields", "BPJS Settings")
+
+        account_fields = bpjs_settings_data.get("account_fields", [])
 
         # Fallback to hardcoded fields
         if not account_fields:
@@ -279,8 +390,8 @@ class BPJSSettings(Document):
             # Track results for summary
             results = {"success": [], "failed": [], "skipped": []}
 
-            # Get configuration
-            config = get_default_config()
+            # Get configuration from Payroll Indonesia Settings
+            pi_settings = get_settings()
 
             # Loop through companies and create accounts
             for company in companies:
@@ -318,16 +429,25 @@ class BPJSSettings(Document):
                     debug_log(f"  - Liability parent: {liability_parent}", "BPJS Setup")
                     debug_log(f"  - Expense parent: {expense_parent}", "BPJS Setup")
 
-                    # Define BPJS liability accounts with standardized names from config
-                    bpjs_payable_accounts = config.get("gl_accounts", {}).get(
-                        "bpjs_payable_accounts", {}
-                    )
+                    # Define BPJS liability accounts with standardized names from settings
+                    bpjs_payable_accounts = {}
+
+                    # Try to get GL accounts data from settings
+                    gl_accounts_data = {}
+                    try:
+                        if hasattr(pi_settings, "gl_accounts") and pi_settings.gl_accounts:
+                            if isinstance(pi_settings.gl_accounts, str):
+                                gl_accounts_data = frappe.parse_json(pi_settings.gl_accounts)
+                            else:
+                                gl_accounts_data = pi_settings.gl_accounts
+                    except (ValueError, AttributeError):
+                        debug_log("Error parsing GL accounts data from settings", "BPJS Setup")
+
+                    bpjs_payable_accounts = gl_accounts_data.get("bpjs_payable_accounts", {})
 
                     # If no config found, use defaults from accounts defined in config parent_accounts
                     if not bpjs_payable_accounts:
-                        parent_accounts_config = config.get("gl_accounts", {}).get(
-                            "parent_accounts", {}
-                        )
+                        parent_accounts_config = gl_accounts_data.get("parent_accounts", {})
                         if "bpjs_payable" in parent_accounts_config:
                             # Build from parent account config if available
                             bpjs_liability_accounts = {
@@ -431,7 +551,7 @@ class BPJSSettings(Document):
                     # Define expense accounts with standardized names from config
                     if expense_parent:
                         bpjs_expense_accounts = {}
-                        expense_accounts_from_config = config.get("gl_accounts", {}).get(
+                        expense_accounts_from_config = gl_accounts_data.get(
                             "bpjs_expense_accounts", {}
                         )
 
@@ -571,9 +691,21 @@ class BPJSSettings(Document):
                     )
                     return None
 
-                # Get account mapping config
-                config = get_default_config()
-                account_mapping = config.get("gl_accounts", {}).get("bpjs_account_mapping", {})
+                # Get account mapping config from Payroll Indonesia Settings
+                pi_settings = get_settings()
+
+                # Try to get GL accounts data from settings
+                gl_accounts_data = {}
+                try:
+                    if hasattr(pi_settings, "gl_accounts") and pi_settings.gl_accounts:
+                        if isinstance(pi_settings.gl_accounts, str):
+                            gl_accounts_data = frappe.parse_json(pi_settings.gl_accounts)
+                        else:
+                            gl_accounts_data = pi_settings.gl_accounts
+                except (ValueError, AttributeError):
+                    debug_log("Error parsing GL accounts data from settings", "BPJS Setup")
+
+                account_mapping = gl_accounts_data.get("bpjs_account_mapping", {})
 
                 debug_log(f"Creating new BPJS Account Mapping for {company}", "BPJS Mapping")
                 mapping_name = create_default_mapping(company, account_mapping)
@@ -611,7 +743,7 @@ class BPJSSettings(Document):
 
     def on_update(self, method=None):
         """Update related documents when settings change"""
-        debug_log("Starting on_update processing", "BPJS Settings")
+        debug_log("Starting BPJS Settings on_update processing", "BPJS Settings")
 
         try:
             # Update salary structure assignments if needed
@@ -619,6 +751,9 @@ class BPJSSettings(Document):
 
             # Ensure all companies have BPJS mapping
             self.ensure_bpjs_mapping_for_all_companies()
+
+            # Sync changes back to Payroll Indonesia Settings
+            self.sync_to_payroll_settings()
         except Exception as e:
             frappe.log_error(
                 f"Error in BPJSSettings.on_update: {str(e)}\n\n"
@@ -626,6 +761,52 @@ class BPJSSettings(Document):
                 "BPJS Settings Update Error",
             )
             debug_log(f"Error in on_update: {str(e)}", "BPJS Settings Update Error", trace=True)
+
+    def sync_to_payroll_settings(self):
+        """Sync changes to Payroll Indonesia Settings"""
+        try:
+            # Get central settings
+            pi_settings = get_settings()
+
+            # Update Payroll Indonesia Settings with BPJS values
+            fields_to_update = [
+                "kesehatan_employee_percent",
+                "kesehatan_employer_percent",
+                "kesehatan_max_salary",
+                "jht_employee_percent",
+                "jht_employer_percent",
+                "jp_employee_percent",
+                "jp_employer_percent",
+                "jp_max_salary",
+                "jkk_percent",
+                "jkm_percent",
+            ]
+
+            needs_update = False
+            for field in fields_to_update:
+                if (
+                    hasattr(pi_settings, field)
+                    and hasattr(self, field)
+                    and pi_settings.get(field) != self.get(field)
+                ):
+                    pi_settings.set(field, self.get(field))
+                    needs_update = True
+
+            if needs_update:
+                pi_settings.app_last_updated = "2025-05-11 13:01:12"
+                pi_settings.app_updated_by = "dannyaudian"
+                pi_settings.flags.ignore_validate = True
+                pi_settings.flags.ignore_permissions = True
+                pi_settings.save(ignore_permissions=True)
+                debug_log(
+                    "Payroll Indonesia Settings updated with BPJS values", "BPJS Settings Sync"
+                )
+        except Exception as e:
+            debug_log(
+                f"Error syncing to Payroll Indonesia Settings: {str(e)}",
+                "BPJS Settings Sync Error",
+                trace=True,
+            )
 
     def update_salary_structures(self):
         """
@@ -649,49 +830,40 @@ class BPJSSettings(Document):
             # Log for debug
             debug_log(f"Found {len(salary_structures)} active salary structures", "BPJS Settings")
 
-            # Get list of BPJS components to update from config
-            config = get_default_config()
-            bpjs_components_map = config.get("bpjs_settings", {}).get("bpjs_components", {})
+            # Get BPJS components to update from Payroll Indonesia Settings
+            pi_settings = get_settings()
 
-            # Use config to build components or fallback
+            # Try to get BPJS settings data from settings
+            bpjs_settings_data = {}
+            try:
+                if hasattr(pi_settings, "bpjs_settings") and pi_settings.bpjs_settings:
+                    if isinstance(pi_settings.bpjs_settings, str):
+                        bpjs_settings_data = frappe.parse_json(pi_settings.bpjs_settings)
+                    else:
+                        bpjs_settings_data = pi_settings.bpjs_settings
+            except (ValueError, AttributeError):
+                debug_log("Error parsing BPJS settings data", "BPJS Settings")
+
+            bpjs_components_map = bpjs_settings_data.get("bpjs_components", {})
+
+            # Use central settings to build components
             if bpjs_components_map:
                 # Build components from config mapping
                 bpjs_components = {}
                 for component_name, field_name in bpjs_components_map.items():
-                    if hasattr(self, field_name):
-                        bpjs_components[component_name] = self.get(field_name)
+                    bpjs_components[component_name] = self.get(field_name)
             else:
-                # Fallback to using BPJS config for field names
-                bpjs_config = get_default_config("bpjs")
-                if bpjs_config:
-                    # Map component names to config field names
-                    component_fields = {
-                        "BPJS Kesehatan Employee": "kesehatan_employee_percent",
-                        "BPJS Kesehatan Employer": "kesehatan_employer_percent",
-                        "BPJS JHT Employee": "jht_employee_percent",
-                        "BPJS JHT Employer": "jht_employer_percent",
-                        "BPJS JP Employee": "jp_employee_percent",
-                        "BPJS JP Employer": "jp_employer_percent",
-                        "BPJS JKK": "jkk_percent",
-                        "BPJS JKM": "jkm_percent",
-                    }
-
-                    # Build components
-                    bpjs_components = {}
-                    for component_name, field_name in component_fields.items():
-                        bpjs_components[component_name] = self.get(field_name)
-                else:
-                    # Ultimate fallback to direct properties
-                    bpjs_components = {
-                        "BPJS Kesehatan Employee": self.kesehatan_employee_percent,
-                        "BPJS Kesehatan Employer": self.kesehatan_employer_percent,
-                        "BPJS JHT Employee": self.jht_employee_percent,
-                        "BPJS JHT Employer": self.jht_employer_percent,
-                        "BPJS JP Employee": self.jp_employee_percent,
-                        "BPJS JP Employer": self.jp_employer_percent,
-                        "BPJS JKK": self.jkk_percent,
-                        "BPJS JKM": self.jkm_percent,
-                    }
+                # Fallback to direct mapping
+                bpjs_components = {
+                    "BPJS Kesehatan Employee": self.kesehatan_employee_percent,
+                    "BPJS Kesehatan Employer": self.kesehatan_employer_percent,
+                    "BPJS JHT Employee": self.jht_employee_percent,
+                    "BPJS JHT Employer": self.jht_employer_percent,
+                    "BPJS JP Employee": self.jp_employee_percent,
+                    "BPJS JP Employer": self.jp_employer_percent,
+                    "BPJS JKK": self.jkk_percent,
+                    "BPJS JKM": self.jkm_percent,
+                }
 
             # Count statistics
             updated_count = 0
@@ -889,28 +1061,29 @@ class BPJSSettings(Document):
         Returns:
             dict: Dictionary of exportable settings
         """
-        # Get app info from config
-        config = get_default_config()
-        app_info = config.get("app_info", {"version": "1.0.0"})
+        # Get app info from Payroll Indonesia Settings
+        pi_settings = get_settings()
+        app_info = {
+            "version": getattr(pi_settings, "app_version", "1.0.0"),
+            "last_updated": getattr(
+                pi_settings, "app_last_updated", now_datetime().strftime("%Y-%m-%d %H:%M:%S")
+            ),
+            "updated_by": getattr(pi_settings, "app_updated_by", "dannyaudian"),
+        }
 
-        # Get fields to export from config or use defaults
-        bpjs_config = get_default_config("bpjs")
-        fields_to_export = (
-            list(bpjs_config.keys())
-            if bpjs_config
-            else [
-                "kesehatan_employee_percent",
-                "kesehatan_employer_percent",
-                "kesehatan_max_salary",
-                "jht_employee_percent",
-                "jht_employer_percent",
-                "jp_employee_percent",
-                "jp_employer_percent",
-                "jp_max_salary",
-                "jkk_percent",
-                "jkm_percent",
-            ]
-        )
+        # Fields to export
+        fields_to_export = [
+            "kesehatan_employee_percent",
+            "kesehatan_employer_percent",
+            "kesehatan_max_salary",
+            "jht_employee_percent",
+            "jht_employer_percent",
+            "jp_employee_percent",
+            "jp_employer_percent",
+            "jp_max_salary",
+            "jkk_percent",
+            "jkm_percent",
+        ]
 
         result = {
             "app_info": app_info,

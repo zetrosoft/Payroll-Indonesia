@@ -230,9 +230,7 @@ def update_salary_structures():
 
     except Exception as e:
         frappe.db.rollback()
-        frappe.log_error(
-            f"Critical error updating salary structures: {str(e)}", "Tax Slab Error"
-        )
+        frappe.log_error(f"Critical error updating salary structures: {str(e)}", "Tax Slab Error")
         return 0
 
 
@@ -260,9 +258,7 @@ def update_existing_assignments():
             fields=["name", "salary_structure"],
         )
 
-        debug_log(
-            f"Found {len(assignments)} salary structure assignments to update", "Tax Slab"
-        )
+        debug_log(f"Found {len(assignments)} salary structure assignments to update", "Tax Slab")
 
         # Find structures with PPh 21 component - using parameterized query
         tax_structures = []
@@ -318,7 +314,5 @@ def update_existing_assignments():
 
     except Exception as e:
         frappe.db.rollback()
-        frappe.log_error(
-            f"Error updating salary structure assignments: {str(e)}", "Tax Slab Error"
-        )
+        frappe.log_error(f"Error updating salary structure assignments: {str(e)}", "Tax Slab Error")
         return 0
