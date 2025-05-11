@@ -9,8 +9,8 @@ from frappe.utils import getdate, get_first_day, get_last_day, add_months, add_d
 from datetime import datetime
 from collections import Counter
 
-# Import TER functions for consistency
-from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
+# Import from pph_ter.py instead of ter_calculator.py
+from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 
 def update_tax_summaries(month=None, year=None, company=None):
     """
@@ -485,6 +485,7 @@ def calculate_monthly_totals(slip_names):
                         status_pajak = getattr(emp_doc, "status_pajak", "")
                         
                         if status_pajak:
+                            # Use map_ptkp_to_ter_category imported from pph_ter.py
                             result["ter_category"] = map_ptkp_to_ter_category(status_pajak)
                 except Exception as emp_error:
                     frappe.log_error(

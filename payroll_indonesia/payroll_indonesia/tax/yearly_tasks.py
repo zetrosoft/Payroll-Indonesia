@@ -9,6 +9,11 @@ from frappe.utils import getdate, nowdate, flt, add_days
 from datetime import datetime
 from typing import Dict, Optional, Union, List, Any
 
+# Import from pph_ter directly rather than ter_calculator
+from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
+# Import tax calculation logic from the centralized ter_logic module
+from payroll_indonesia.payroll_indonesia.tax.ter_logic import hitung_pph_tahunan
+
 
 def prepare_tax_report(year: Optional[int] = None, company: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -107,9 +112,7 @@ def prepare_tax_report(year: Optional[int] = None, company: Optional[str] = None
                 if not tax_summary:
                     # Try to create tax summary if it doesn't exist
                     try:
-                        from payroll_indonesia.payroll_indonesia.tax.annual_calculation import hitung_pph_tahunan
-                        
-                        # Calculate tax summary
+                        # Calculate tax summary using ter_logic instead of annual_calculation
                         tax_data = hitung_pph_tahunan(emp.employee, year)
                         
                         # Create tax report document
@@ -247,11 +250,10 @@ def create_annual_tax_report(employee: str, year: int, tax_data: Dict[str, Any])
             # Add TER information if field exists and TER is used
             if hasattr(report_doc, 'ter_category') and tax_data.get('ter_used'):
                 try:
-                    # Map PTKP status to TER category
-                    from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
+                    # Map PTKP status to TER category using pph_ter directly
                     ter_category = map_ptkp_to_ter_category(emp_doc.get("status_pajak", "TK0"))
                     report_doc.ter_category = ter_category
-                except ImportError:
+                except Exception:
                     # Fallback to simpler mapping if function not available
                     if emp_doc.get("status_pajak") == "TK0":
                         report_doc.ter_category = "TER A"
@@ -289,8 +291,7 @@ def update_existing_tax_report(report_name: str, year: int) -> bool:
         # Get the report document
         report_doc = frappe.get_doc("Annual Tax Report", report_name)
         
-        # Recalculate tax data
-        from payroll_indonesia.payroll_indonesia.tax.annual_calculation import hitung_pph_tahunan
+        # Recalculate tax data using ter_logic instead of annual_calculation
         tax_data = hitung_pph_tahunan(report_doc.employee, year)
         
         # Update report with latest values
@@ -310,8 +311,7 @@ def update_existing_tax_report(report_name: str, year: int) -> bool:
                     # Get employee document
                     emp_doc = frappe.get_doc("Employee", report_doc.employee)
                     
-                    # Map PTKP status to TER category
-                    from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
+                    # Map PTKP status to TER category using pph_ter directly
                     ter_category = map_ptkp_to_ter_category(emp_doc.get("status_pajak", "TK0"))
                     report_doc.ter_category = ter_category
                 except Exception:
@@ -380,13 +380,8 @@ def generate_form_1721_a1(employee: Optional[str] = None, year: Optional[int] = 
         
         for emp in employees:
             try:
-                # Map PTKP status to TER category for reference
-                ter_category = ""
-                try:
-                    from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category
-                    ter_category = map_ptkp_to_ter_category(emp.get("status_pajak", "TK0"))
-                except ImportError:
-                    pass
+                # Map PTKP status to TER category for reference - using pph_ter directly
+                ter_category = map_ptkp_to_ter_category(emp.get("status_pajak", "TK0"))
                     
                 result = create_1721_a1_form(emp.name, year)
                 summary["success"] += 1
@@ -404,7 +399,7 @@ def generate_form_1721_a1(employee: Optional[str] = None, year: Optional[int] = 
                     "employee": emp.name,
                     "employee_name": emp.employee_name,
                     "status_pajak": emp.get("status_pajak", "TK0"),
-                    "ter_category": ter_category,
+                    "ter_category": ter_category if 'ter_category' in locals() else "",
                     "status": "Failed",
                     "message": str(e)[:100]
                 })
