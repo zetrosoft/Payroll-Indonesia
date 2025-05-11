@@ -6,7 +6,8 @@ import unittest
 import frappe
 from frappe.utils import getdate, add_months, get_first_day, get_last_day, flt
 from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
-from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter
+
+# from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter
 from payroll_indonesia.override.salary_slip.gl_entry_override import make_gl_entries
 
 

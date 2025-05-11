@@ -4,7 +4,6 @@
 
 import frappe
 from frappe import _
-import json
 from frappe.model.document import Document
 
 

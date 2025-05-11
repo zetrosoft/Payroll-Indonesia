@@ -8,7 +8,6 @@ module < 500 LOC. It is hooked via **after_migrate** in hooks.py.
 from __future__ import unicode_literals
 
 import frappe
-from frappe import _
 from frappe.utils import flt
 
 # ---------------------------------------------------------------------------

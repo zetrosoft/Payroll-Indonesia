@@ -27,13 +27,8 @@ from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_valu
 # Import constants
 from payroll_indonesia.constants import (
     MONTHS_PER_YEAR,
-    CACHE_SHORT,
     CACHE_LONG,
     CACHE_MEDIUM,
-    TER_CATEGORY_A,
-    TER_CATEGORY_B,
-    TER_CATEGORY_C,
-    CURRENCY_PRECISION,
     BIAYA_JABATAN_PERCENT,
     BIAYA_JABATAN_MAX,
     TAX_DETECTION_THRESHOLD,
@@ -365,7 +360,11 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
     """
     try:
         # Get translation function early to avoid F823
-        translate = frappe._
+        # Replace this line:
+        # translate = frappe._
+
+        # With this:
+        translate = frappe.get_attr("frappe._")
 
         # Validate parameters
         if not employee:

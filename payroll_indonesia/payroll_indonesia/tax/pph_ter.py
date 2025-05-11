@@ -26,7 +26,6 @@ from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_valu
 
 # Import constants
 from payroll_indonesia.constants import (
-    CACHE_MEDIUM,
     CACHE_SHORT,
     CACHE_LONG,
     TER_CATEGORY_A,

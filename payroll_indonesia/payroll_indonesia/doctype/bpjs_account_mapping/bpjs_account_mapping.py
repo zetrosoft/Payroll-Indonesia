@@ -162,7 +162,8 @@ def create_default_mapping(company):
             bpjs_settings = frappe.get_cached_doc("BPJS Settings")
 
         # Get account mapping configuration from defaults.json
-        config = get_default_config()
+        # Remove or comment out the unused config variable:
+        # config = get_default_config()
 
         # Create new mapping with ignore_validate flag
         debug_log(f"Creating new BPJS Account Mapping for company {company}", "BPJS Mapping")

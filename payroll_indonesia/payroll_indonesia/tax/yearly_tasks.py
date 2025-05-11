@@ -10,14 +10,7 @@ from datetime import datetime
 from typing import Dict, Optional, Any
 
 # Import constants
-from payroll_indonesia.constants import (
-    CACHE_MEDIUM,
-    CACHE_SHORT,
-    CACHE_LONG,
-    TER_CATEGORY_A,
-    TER_CATEGORY_B,
-    TER_CATEGORY_C,
-)
+from payroll_indonesia.constants import CACHE_MEDIUM, CACHE_LONG, TER_CATEGORY_A, TER_CATEGORY_B
 
 # Import from pph_ter directly rather than ter_calculator
 from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category

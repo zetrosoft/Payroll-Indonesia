@@ -8,7 +8,6 @@ This module is a compatibility layer that forwards utility functions
 from the central utils module to maintain backward compatibility.
 """
 
-from frappe import _
 from payroll_indonesia.payroll_indonesia.utils import (
     get_settings,
     get_default_config,

@@ -223,6 +223,7 @@ class BPJSPaymentSummary(Document):
         company_abbr = getattr(self, "_company_abbr", None) or frappe.get_cached_value(
             "Company", self.company, "abbr"
         )
+        self._company_abbr = company_abbr  # Store for later use instead of letting it go unused
 
         # Clear existing account_details
         self.account_details = []

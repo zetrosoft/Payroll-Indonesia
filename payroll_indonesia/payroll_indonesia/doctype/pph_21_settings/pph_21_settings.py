@@ -12,9 +12,7 @@ from frappe.utils import flt, cint, now_datetime
 # Import from central utilities
 from payroll_indonesia.payroll_indonesia.utils import (
     get_settings,
-    get_default_config,
     debug_log,
-    get_ptkp_settings,
     get_pph21_brackets,
 )
 
@@ -528,7 +526,7 @@ class PPh21Settings(Document):
                                 )
                             needs_update = True
                             debug_log(
-                                f"Updated PTKP values in Payroll Indonesia Settings",
+                                "Updated PTKP values in Payroll Indonesia Settings",
                                 "PPh 21 Settings",
                             )
 
@@ -569,7 +567,7 @@ class PPh21Settings(Document):
                                 )
                             needs_update = True
                             debug_log(
-                                f"Updated tax brackets in Payroll Indonesia Settings",
+                                "Updated tax brackets in Payroll Indonesia Settings",
                                 "PPh 21 Settings",
                             )
 

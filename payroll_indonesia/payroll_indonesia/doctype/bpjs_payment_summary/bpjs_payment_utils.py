@@ -5,7 +5,9 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt, fmt_money, now_datetime, getdate, add_months, date_diff
+from frappe.utils import flt, fmt_money, now_datetime
+
+# Removed unused imports: getdate, add_months, date_diff
 
 
 def debug_log(message, module_name="BPJS Payment Summary"):

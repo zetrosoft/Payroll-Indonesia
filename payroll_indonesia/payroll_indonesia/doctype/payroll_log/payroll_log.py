@@ -4,7 +4,6 @@
 # Last modified: 2025-04-23 11:45:37 by dannyaudian
 
 from __future__ import unicode_literals
-import frappe
 from frappe.model.document import Document
 from frappe.utils import now
 
