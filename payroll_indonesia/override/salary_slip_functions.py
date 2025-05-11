@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 06:07:21 by dannyaudian
+# Last modified: 2025-05-11 07:59:27 by dannyaudian
 
 import frappe
 from frappe import _
@@ -10,7 +10,7 @@ from frappe import _
 from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
 
 # Import standardized error logging and cache utilities
-from payroll_indonesia.utilities.cache_utils import clear_all_caches, schedule_cache_clearing
+from payroll_indonesia.utilities.cache_utils import clear_all_caches
 from payroll_indonesia.utils import log_error
 
 __all__ = [
@@ -33,21 +33,27 @@ def validate_salary_slip(doc, method=None):
     try:
         # Initialize default fields if needed
         _initialize_payroll_fields(doc)
-        
+
         # Get employee document
         employee = _get_employee_doc(doc)
-        
+
         # Calculate tax components using centralized function
         calculate_tax_components(doc, employee)
-        
+
+    except frappe.ValidationError:
+        # Re-raise Frappe Validation Errors to prevent masking
+        raise
+
     except Exception as e:
+        error_message = _("Could not validate salary slip: {0}").format(str(e))
         log_error(
-            "Salary Slip Validation Error", 
-            str(e), 
-            doc.name if hasattr(doc, 'name') else 'New', 
+            "Salary Slip Validation Error",
+            error_message,
+            doc.name if hasattr(doc, 'name') else 'New',
             with_traceback=True
         )
-        frappe.throw(_("Could not validate salary slip: {0}").format(str(e)))
+        frappe.throw(error_message)
+
 
 def on_submit_salary_slip(doc, method=None):
     """
@@ -58,28 +64,35 @@ def on_submit_salary_slip(doc, method=None):
         doc: The Salary Slip document
         method: Method name (not used)
     """
+    # Konsistensi: gunakan string literal untuk nama komponen
+    BPJS_COMPONENTS = ["BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee"]
+
     try:
         # Verify settings for TER if using TER method
-        if getattr(doc, "is_using_ter", 0):
-            # Verify TER category is set
-            if not getattr(doc, "ter_category", ""):
+        if doc.is_using_ter:  # Gunakan akses properti langsung
+            if not doc.ter_category: # Gunakan akses properti langsung
                 frappe.msgprint(_("Warning: Using TER but no category set"), indicator="yellow")
-                
-            # Verify TER rate is set
-            if not getattr(doc, "ter_rate", 0):
+
+            if not doc.ter_rate: # Gunakan akses properti langsung
                 frappe.msgprint(_("Warning: Using TER but no rate set"), indicator="yellow")
-        
+
         # Update tax summary document if needed
         # This functionality can be expanded as needed
-        
+
+    except frappe.ValidationError:
+        # Biarkan validasi error dari Frappe naik
+        raise
+
     except Exception as e:
+        error_message = _("Error processing salary slip submission: {0}").format(str(e))
         log_error(
-            "Salary Slip Submit Error", 
-            str(e), 
-            doc.name, 
+            "Salary Slip Submit Error",
+            error_message,
+            doc.name,
             with_traceback=True
         )
-        frappe.throw(_("Error processing salary slip submission: {0}").format(str(e)))
+        frappe.throw(error_message)
+
 
 def on_cancel_salary_slip(doc, method=None):
     """
@@ -93,15 +106,21 @@ def on_cancel_salary_slip(doc, method=None):
     try:
         # Revert changes to tax summary if needed
         # This functionality can be expanded as needed
-        
+
+    except frappe.ValidationError:
+        # Biarkan validasi error dari Frappe naik
+        raise
+
     except Exception as e:
+        error_message = _("Error processing salary slip cancellation: {0}").format(str(e))
         log_error(
-            "Salary Slip Cancel Error", 
-            str(e), 
-            doc.name, 
+            "Salary Slip Cancel Error",
+            error_message,
+            doc.name,
             with_traceback=True
         )
-        frappe.throw(_("Error processing salary slip cancellation: {0}").format(str(e)))
+        frappe.throw(error_message)
+
 
 def after_insert_salary_slip(doc, method=None):
     """
@@ -116,18 +135,24 @@ def after_insert_salary_slip(doc, method=None):
         # Handle initialization only for Salary Slip documents
         if doc.doctype != "Salary Slip":
             return
-        
+
         # Initialize tax ID fields
         set_tax_ids_from_employee(doc)
-            
+
+    except frappe.ValidationError:
+        # Biarkan validasi error dari Frappe naik
+        raise
+
     except Exception as e:
+        error_message = _("Error in post-creation processing: {0}").format(str(e))
         log_error(
-            "Salary Slip Post-Creation Error", 
-            str(e), 
-            doc.name if hasattr(doc, 'name') else 'New', 
+            "Salary Slip Post-Creation Error",
+            error_message,
+            doc.name if hasattr(doc, 'name') else 'New',
             with_traceback=True
         )
-        frappe.msgprint(_("Warning: Error in post-creation processing: {0}").format(str(e)))
+        frappe.msgprint(_("Warning: {0}").format(error_message))
+
 
 def _initialize_payroll_fields(doc):
     """
@@ -149,12 +174,15 @@ def _initialize_payroll_fields(doc):
         'npwp': "",
         'ktp': "",
         'is_final_gabung_suami': 0,
+        'monthly_gross_for_ter': 0,
+        'annual_taxable_amount': 0
     }
-    
+
     # Set defaults for fields that don't exist or are None
     for field, default in defaults.items():
         if not hasattr(doc, field) or getattr(doc, field) is None:
-            setattr(doc, field, default)
+            doc.set(field, default)
+
 
 def _get_employee_doc(doc):
     """
@@ -169,13 +197,16 @@ def _get_employee_doc(doc):
     Raises:
         frappe.ValidationError: If employee cannot be found or retrieved
     """
-    if not hasattr(doc, 'employee') or not doc.employee:
+    if not doc.employee:  # Simplified condition
         frappe.throw(_("Salary Slip must have an employee assigned"))
-        
+
     try:
         return frappe.get_doc("Employee", doc.employee)
+    except frappe.DoesNotExistError:
+        frappe.throw(_("Employee {0} not found").format(doc.employee))
     except Exception as e:
         frappe.throw(_("Could not retrieve Employee {0}: {1}").format(doc.employee, str(e)))
+
 
 def set_tax_ids_from_employee(doc):
     """
@@ -184,19 +215,17 @@ def set_tax_ids_from_employee(doc):
     Args:
         doc: The Salary Slip document
     """
-    if not hasattr(doc, 'employee') or not doc.employee:
+    if not doc.employee:  # Simplified condition
         return
-        
-    # Get NPWP and KTP from employee if they're not already set
+
+    employee = frappe.get_doc("Employee", doc.employee) # Load employee doc
+
+    # Set NPWP and KTP from employee if they're not already set
     if hasattr(doc, 'npwp') and not doc.npwp:
-        employee_npwp = frappe.db.get_value("Employee", doc.employee, "npwp")
-        if employee_npwp:
-            doc.db_set('npwp', employee_npwp, update_modified=False)
-            
+        doc.npwp = employee.npwp if hasattr(employee, "npwp") else ""
+        
     if hasattr(doc, 'ktp') and not doc.ktp:
-        employee_ktp = frappe.db.get_value("Employee", doc.employee, "ktp")
-        if employee_ktp:
-            doc.db_set('ktp', employee_ktp, update_modified=False)
+        doc.ktp = employee.ktp if hasattr(employee, "ktp") else ""
 
 def clear_caches():
     """
@@ -206,10 +235,7 @@ def clear_caches():
     try:
         # Use the centralized cache clearing function
         clear_all_caches()
-        
-        # Schedule next cache clear in 30 minutes
-        schedule_cache_clearing(minutes=30)
-        
+
         frappe.logger().info("Salary slip caches cleared successfully")
         return {"status": "success", "message": "All caches cleared successfully"}
     except Exception as e:

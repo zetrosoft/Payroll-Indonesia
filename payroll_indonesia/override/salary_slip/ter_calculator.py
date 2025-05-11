@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 07:18:15 by dannyaudian
+# Last modified: 2025-05-11 07:29:02 by dannyaudian
 
 import frappe
 from frappe import _
@@ -31,8 +31,9 @@ def calculate_monthly_pph_with_ter(doc, employee):
             'ter_category': getattr(doc, 'ter_category', '')
         }
 
-        frappe.logger().debug(f"[TER] Starting calculation for {doc.name}")
-        frappe.logger().debug(f"[TER] Original values: {original_values}")
+        # Use consistent logging format
+        frappe.log_error("[TER] Starting calculation for {0}".format(doc.name), "TER Debug")
+        frappe.log_error("[TER] Original values: {0}".format(original_values), "TER Debug")
 
         # Validate employee status_pajak
         if not hasattr(employee, 'status_pajak') or not employee.status_pajak:
@@ -79,9 +80,12 @@ def calculate_monthly_pph_with_ter(doc, employee):
 
         # Log deteksi nilai tahunan
         if is_annual:
-            frappe.logger().warning(
-                f"[TER] {doc.name}: Detected annual value - {reason}. "
-                f"Adjusted from {doc.gross_pay} to monthly {monthly_gross_pay}"
+            # Replace logger with standard log_error
+            frappe.log_error(
+                "[TER] {0}: Detected annual value - {1}. Adjusted from {2} to monthly {3}".format(
+                    doc.name, reason, doc.gross_pay, monthly_gross_pay
+                ),
+                "TER Annual Value Detection"
             )
             
             if hasattr(doc, 'payroll_note'):
@@ -154,16 +158,16 @@ def calculate_monthly_pph_with_ter(doc, employee):
             monthly_tax=monthly_tax
         )
 
-        frappe.logger().debug(f"[TER] Calculation completed for {doc.name}")
+        frappe.log_error("[TER] Calculation completed for {0}".format(doc.name), "TER Debug")
         return True
 
     except Exception as e:
+        # Standard error handling pattern: log + throw
         frappe.log_error(
-            f"[TER] Error calculating PPh 21 for {doc.name}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error calculating PPh 21 for {0}: {1}".format(doc.name, str(e)),
             "TER Calculation Error"
         )
-        raise
+        frappe.throw(_("Failed to calculate PPh 21 using TER method: {0}").format(str(e)))
 
 def verify_calculation_integrity(doc, original_values, monthly_gross_pay, 
                                annual_taxable_amount, ter_rate, ter_category, monthly_tax):
@@ -215,9 +219,17 @@ def verify_calculation_integrity(doc, original_values, monthly_gross_pay,
 
         # Log semua error yang ditemukan
         if errors:
-            frappe.logger().warning(
-                f"[TER] Integrity check found issues for {doc.name}:\n" +
-                "\n".join(f"- {err}" for err in errors)
+            # This is a non-critical error (we've already fixed the issues), so use log_error + msgprint
+            frappe.log_error(
+                "Integrity check found issues for {0}:\n{1}".format(
+                    doc.name, "\n".join("- {0}".format(err) for err in errors)
+                ),
+                "TER Calculation Integrity"
+            )
+            
+            frappe.msgprint(
+                _("Some TER calculation values were automatically corrected. See the log for details."),
+                indicator="orange"
             )
             
             # Tambahkan ke payroll_note jika tersedia
@@ -230,9 +242,13 @@ def verify_calculation_integrity(doc, original_values, monthly_gross_pay,
         return len(errors) == 0
 
     except Exception as e:
-        frappe.logger().error(
-            f"[TER] Error during calculation verification for {doc.name}: {str(e)}"
+        # Error log only, as this is not fatal to the process
+        frappe.log_error(
+            "Error during TER calculation verification for {0}: {1}".format(doc.name, str(e)),
+            "TER Verification Error"
         )
+        # Don't throw as this is a non-critical function
+        frappe.msgprint(_("Warning: Could not verify TER calculation integrity"), indicator="orange")
         return False
 
 def get_ter_rate(ter_category, income):
@@ -317,21 +333,32 @@ def get_ter_rate(ter_category, income):
                     cache_value(cache_key, 0.34, 1800)  # 30 minutes
                     return 0.34
                         
-                except Exception:
+                except Exception as e:
+                    # This is a validation failure - TER rate is critical to tax calculation
+                    frappe.log_error(
+                        "Failed to determine TER rate for category {0}: {1}".format(
+                            ter_category, str(e)
+                        ),
+                        "TER Rate Error"
+                    )
                     # Last resort - use PMK 168/2023 highest rate
+                    frappe.msgprint(_("Warning: Using default TER rate (34%) due to lookup failure"), indicator="red")
                     cache_value(cache_key, 0.34, 1800)  # 30 minutes
                     return 0.34
         
     except Exception as e:
+        # Handle ValidationError separately
         if isinstance(e, frappe.exceptions.ValidationError):
             raise
+            
+        # This is a critical error - log and throw
         frappe.log_error(
-            f"Error getting TER rate for category {ter_category} and income {income}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error getting TER rate for category {0} and income {1}: {2}".format(
+                ter_category, income, str(e)
+            ),
             "TER Rate Error"
         )
-        # Return PMK 168/2023 highest rate on error (34%)
-        return 0.34
+        frappe.throw(_("Failed to determine TER rate: {0}").format(str(e)))
 
 def should_use_ter_method(employee, pph_settings=None):
     """
@@ -397,12 +424,18 @@ def should_use_ter_method(employee, pph_settings=None):
         return True
             
     except Exception as e:
+        # This is not a validation failure, so log and continue with default behavior
         frappe.log_error(
-            f"Error determining TER eligibility for {getattr(employee, 'name', 'unknown')}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error determining TER eligibility for {0}: {1}".format(
+                getattr(employee, 'name', 'unknown'), str(e)
+            ),
             "TER Eligibility Error"
         )
-        # Default to False on error
+        frappe.msgprint(
+            _("Warning: Could not determine TER eligibility. Using progressive method as fallback."),
+            indicator="orange"
+        )
+        # Default to False on error (use progressive method)
         return False
 
 # Enhanced functions for better YTD tax calculations
@@ -462,10 +495,16 @@ def get_ytd_totals_from_tax_summary(employee, year, month):
             return result
     
     except Exception as e:
+        # This is not a validation failure - we can fall back to legacy method
         frappe.log_error(
-            f"Error getting YTD tax data for {employee}, {year}, {month}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error getting YTD tax data for {0}, {1}, {2}: {3}".format(
+                employee, year, month, str(e)
+            ),
             "YTD Tax Data Error"
+        )
+        frappe.msgprint(
+            _("Warning: Using fallback method to calculate YTD tax data"),
+            indicator="orange"
         )
         
         # Fallback to the older method if SQL fails
@@ -513,9 +552,15 @@ def get_ytd_totals_from_tax_summary_legacy(employee, year, month):
         return result
         
     except Exception as e:
+        # Non-critical error - we can return zeros as a last resort
         frappe.log_error(
-            f"Error getting YTD tax data (legacy) for {employee}, {year}, {month}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error getting YTD tax data (legacy method) for {0}, {1}, {2}: {3}".format(
+                employee, year, month, str(e)
+            ),
             "YTD Tax Legacy Error"
+        )
+        frappe.msgprint(
+            _("Warning: Could not calculate YTD tax data. Using zeros as fallback."),
+            indicator="red"
         )
         return {'ytd_gross': 0, 'ytd_tax': 0, 'ytd_bpjs': 0}
