@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 05:55:54 by dannyaudian
+# Last modified: 2025-05-11 08:51:27 by dannyaudian
 
 import frappe
 from frappe import _
@@ -12,51 +12,115 @@ from payroll_indonesia.utilities.cache_utils import clear_tax_settings_cache
 
 def on_update(doc, method):
     """Handler untuk event on_update pada PPh 21 Settings"""
-    # Clear tax settings cache whenever settings are updated
-    clear_tax_settings_cache()
-    
-    # Validate settings
-    validate_brackets(doc)
-    validate_ptkp_entries(doc)
-    
-    # Perform strict TER table validation if TER method is selected
-    if doc.calculation_method == "TER":
-        validate_ter_table(strict=True)
+    try:
+        # Clear tax settings cache whenever settings are updated
+        clear_tax_settings_cache()
+        
+        # Validate settings
+        validate_brackets(doc)
+        validate_ptkp_entries(doc)
+        
+        # Perform strict TER table validation if TER method is selected
+        if doc.calculation_method == "TER":
+            validate_ter_table(strict=True)
+            
+    except Exception as e:
+        # Handle ValidationError separately - those should be shown to the user
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise
+            
+        # For other errors, log and re-raise with a clearer message
+        frappe.log_error(
+            "Error updating PPh 21 Settings: {0}".format(str(e)),
+            "PPh 21 Settings Update Error"
+        )
+        frappe.throw(
+            _("Error updating PPh 21 Settings: {0}").format(str(e)),
+            title=_("Settings Update Failed")
+        )
         
 def validate_brackets(doc):
     """Ensure tax brackets are continuous and non-overlapping"""
-    if not doc.bracket_table:
-        frappe.msgprint(_("At least one tax bracket should be defined"))
-        return
-    
-    # Sort by income_from
-    sorted_brackets = sorted(doc.bracket_table, key=lambda x: x.income_from)
-    
-    # Check for gaps or overlaps
-    for i in range(len(sorted_brackets) - 1):
-        current = sorted_brackets[i]
-        next_bracket = sorted_brackets[i + 1]
+    try:
+        if not doc.bracket_table:
+            # Non-critical warning - continue processing
+            frappe.msgprint(
+                _("At least one tax bracket should be defined"),
+                indicator="orange"
+            )
+            return
         
-        if current.income_to != next_bracket.income_from:
-            frappe.msgprint(_(f"Warning: Tax brackets should be continuous. Gap found between {current.income_to} and {next_bracket.income_from}"))
+        # Sort by income_from
+        sorted_brackets = sorted(doc.bracket_table, key=lambda x: x.income_from)
+        
+        # Check for gaps or overlaps
+        for i in range(len(sorted_brackets) - 1):
+            current = sorted_brackets[i]
+            next_bracket = sorted_brackets[i + 1]
+            
+            if current.income_to != next_bracket.income_from:
+                # Non-critical warning - continue processing
+                frappe.msgprint(
+                    _("Warning: Tax brackets should be continuous. Gap found between {0} and {1}").format(
+                        current.income_to, next_bracket.income_from
+                    ),
+                    indicator="orange"
+                )
+    
+    except Exception as e:
+        # Non-critical error - log and continue
+        frappe.log_error(
+            "Error validating tax brackets: {0}".format(str(e)),
+            "Bracket Validation Error"
+        )
+        frappe.msgprint(
+            _("Error validating tax brackets. Please check your bracket configuration."),
+            indicator="orange"
+        )
 
 def validate_ptkp_entries(doc):
     """Validate PTKP entries against required values"""
-    required_status = ["TK0", "K0", "K1", "K2", "K3"]
+    try:
+        required_status = ["TK0", "K0", "K1", "K2", "K3"]
+        
+        if not doc.ptkp_table:
+            # Critical validation failure - throw error
+            frappe.throw(
+                _("PTKP values must be defined for tax calculation"),
+                title=_("Missing PTKP Values")
+            )
+            return
+        
+        defined_status = [p.status_pajak for p in doc.ptkp_table]
+        
+        missing_status = []
+        for status in required_status:
+            if status not in defined_status:
+                missing_status.append(status)
+        
+        if missing_status:
+            # Non-critical warning - continue processing
+            frappe.msgprint(
+                _("Warning: Missing PTKP definition for status: {0}").format(
+                    ", ".join(missing_status)
+                ),
+                indicator="orange"
+            )
     
-    if not doc.ptkp_table:
-        frappe.throw(_("PTKP values must be defined for tax calculation"))
-        return
-    
-    defined_status = [p.status_pajak for p in doc.ptkp_table]
-    
-    missing_status = []
-    for status in required_status:
-        if status not in defined_status:
-            missing_status.append(status)
-    
-    if missing_status:
-        frappe.msgprint(_(f"Warning: Missing PTKP definition for status: {', '.join(missing_status)}"))
+    except Exception as e:
+        # Handle ValidationError separately
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise
+            
+        # For other errors, log and continue
+        frappe.log_error(
+            "Error validating PTKP entries: {0}".format(str(e)),
+            "PTKP Validation Error"
+        )
+        frappe.msgprint(
+            _("Error validating PTKP entries. Please check your PTKP configuration."),
+            indicator="orange"
+        )
 
 def validate_ter_table(strict=False):
     """
@@ -66,30 +130,57 @@ def validate_ter_table(strict=False):
         strict (bool): If True, throws an error when TER table is empty
                        If False, only shows a warning message
     """
-    count = frappe.db.count("PPh 21 TER Table")
-    
-    if count == 0:
-        message = _("Tarif Efektif Rata-rata (TER) table is empty. TER table is required for TER calculation method.")
+    try:
+        count = frappe.db.count("PPh 21 TER Table")
         
-        if strict:
-            # Enforce strict validation - throw error instead of warning
-            frappe.throw(
-                message + " " + _("Please add entries to the TER table before using this method."),
-                title=_("TER Table Required")
+        if count == 0:
+            message = _("Tarif Efektif Rata-rata (TER) table is empty. TER table is required for TER calculation method.")
+            
+            if strict:
+                # Enforce strict validation - throw error
+                frappe.throw(
+                    message + " " + _("Please add entries to the TER table before using this method."),
+                    title=_("TER Table Required")
+                )
+            else:
+                # Show warning only
+                frappe.msgprint(
+                    message + " " + _("Please fill in the TER table for accurate tax calculations."),
+                    indicator="orange"
+                )
+        elif count < 3:
+            # Even with some entries, warn if there are too few
+            frappe.msgprint(
+                _("TER table has very few entries ({0}). For proper TER calculation, " 
+                  "ensure all income brackets and TER categories are covered.").format(count),
+                indicator="orange"
+            )
+    
+    except Exception as e:
+        # Handle ValidationError separately
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise
+            
+        # For non-critical errors when strict=False, log and continue
+        if not strict:
+            frappe.log_error(
+                "Error validating TER table: {0}".format(str(e)),
+                "TER Table Validation Error"
+            )
+            frappe.msgprint(
+                _("Error validating TER table configuration. TER calculations may not work correctly."),
+                indicator="orange"
             )
         else:
-            # Show warning only
-            frappe.msgprint(
-                message + " " + _("Please fill in the TER table for accurate tax calculations."),
-                indicator="yellow"
+            # For strict mode, log and re-throw
+            frappe.log_error(
+                "Error validating TER table (strict mode): {0}".format(str(e)),
+                "TER Table Validation Error"
             )
-    elif count < 3:
-        # Even with some entries, warn if there are too few
-        frappe.msgprint(
-            _("TER table has very few entries ({0}). For proper TER calculation, " 
-              "ensure all income brackets and TER categories are covered.").format(count),
-            indicator="yellow"
-        )
+            frappe.throw(
+                _("Error validating TER table: {0}").format(str(e)),
+                title=_("TER Validation Failed")
+            )
 
 @frappe.whitelist()
 def check_ter_configuration():
@@ -139,7 +230,11 @@ def check_ter_configuration():
         }
         
     except Exception as e:
-        frappe.log_error(f"Error checking TER configuration: {str(e)}", "TER Configuration Check Error")
+        # Non-critical error in check function - log and return error status
+        frappe.log_error(
+            "Error checking TER configuration: {0}".format(str(e)),
+            "TER Configuration Check Error"
+        )
         return {
             "status": "error",
             "message": _("Error checking TER configuration: {0}").format(str(e))
@@ -157,7 +252,11 @@ def setup_default_ter_table():
         # Check if TER table is already populated
         existing_count = frappe.db.count("PPh 21 TER Table")
         if existing_count > 0:
-            frappe.msgprint(_("TER table already has {0} entries. Default setup skipped.").format(existing_count))
+            # Non-critical info - log and return
+            frappe.msgprint(
+                _("TER table already has {0} entries. Default setup skipped.").format(existing_count),
+                indicator="blue"
+            )
             return 0
         
         # Default TER rates based on PMK 168/2023
@@ -188,44 +287,81 @@ def setup_default_ter_table():
         ]
         
         # Create TER table entries
+        created_entries = 0
+        
         for rate_data in default_ter_rates:
-            description = ""
-            
-            # Generate sensible description
-            if rate_data["is_highest_bracket"]:
-                description = f"{rate_data['status_pajak']} > {rate_data['income_from']:,.0f}"
-            else:
-                description = f"{rate_data['status_pajak']} {rate_data['income_from']:,.0f} - {rate_data['income_to']:,.0f}"
-            
-            ter_entry = frappe.get_doc({
-                "doctype": "PPh 21 TER Table",
-                "status_pajak": rate_data["status_pajak"],
-                "income_from": rate_data["income_from"],
-                "income_to": rate_data["income_to"],
-                "rate": rate_data["rate"],
-                "is_highest_bracket": rate_data["is_highest_bracket"],
-                "description": description
-            })
-            
-            # Link to parent document if appropriate
-            if frappe.db.exists("DocType", "PPh 21 Settings"):
-                doc_list = frappe.db.get_all("PPh 21 Settings")
-                if doc_list:
-                    ter_entry.parent = "PPh 21 Settings"
-                    ter_entry.parentfield = "ter_rates"
-                    ter_entry.parenttype = "PPh 21 Settings"
-            
-            # Insert with permission bypass
-            ter_entry.flags.ignore_permissions = True
-            ter_entry.insert(ignore_permissions=True)
+            try:
+                description = ""
+                
+                # Generate sensible description
+                if rate_data["is_highest_bracket"]:
+                    description = "{0} > {1:,.0f}".format(
+                        rate_data['status_pajak'], rate_data['income_from']
+                    )
+                else:
+                    description = "{0} {1:,.0f} - {2:,.0f}".format(
+                        rate_data['status_pajak'], 
+                        rate_data['income_from'],
+                        rate_data['income_to']
+                    )
+                
+                ter_entry = frappe.get_doc({
+                    "doctype": "PPh 21 TER Table",
+                    "status_pajak": rate_data["status_pajak"],
+                    "income_from": rate_data["income_from"],
+                    "income_to": rate_data["income_to"],
+                    "rate": rate_data["rate"],
+                    "is_highest_bracket": rate_data["is_highest_bracket"],
+                    "description": description
+                })
+                
+                # Link to parent document if appropriate
+                if frappe.db.exists("DocType", "PPh 21 Settings"):
+                    doc_list = frappe.db.get_all("PPh 21 Settings")
+                    if doc_list:
+                        ter_entry.parent = "PPh 21 Settings"
+                        ter_entry.parentfield = "ter_rates"
+                        ter_entry.parenttype = "PPh 21 Settings"
+                
+                # Insert with permission bypass
+                ter_entry.flags.ignore_permissions = True
+                ter_entry.insert(ignore_permissions=True)
+                created_entries += 1
+                
+            except Exception as entry_error:
+                # Non-critical error for individual entry - log and continue with others
+                frappe.log_error(
+                    "Error creating TER table entry for {0}: {1}".format(
+                        rate_data['status_pajak'], str(entry_error)
+                    ),
+                    "TER Entry Creation Error"
+                )
+                continue
         
         frappe.db.commit()
-        frappe.msgprint(_("Default TER table has been set up with {0} entries based on PMK 168/2023").format(len(default_ter_rates)))
         
-        return len(default_ter_rates)
+        if created_entries > 0:
+            frappe.msgprint(
+                _("Default TER table has been set up with {0} entries based on PMK 168/2023").format(created_entries),
+                indicator="green"
+            )
+        else:
+            frappe.msgprint(
+                _("No TER entries were created. Please check the error log."),
+                indicator="red"
+            )
+        
+        return created_entries
         
     except Exception as e:
-        frappe.log_error(f"Error setting up default TER table: {str(e)}", "TER Setup Error")
+        # Critical error in setup - rollback and throw
+        frappe.log_error(
+            "Error setting up default TER table: {0}".format(str(e)),
+            "TER Setup Error"
+        )
         frappe.db.rollback()
-        frappe.throw(_("Error setting up default TER table: {0}").format(str(e)))
+        frappe.throw(
+            _("Error setting up default TER table: {0}").format(str(e)),
+            title=_("TER Setup Failed")
+        )
         return 0

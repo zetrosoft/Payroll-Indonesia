@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 07:08:48 by dannyaudian
+# Last modified: 2025-05-11 08:46:21 by dannyaudian
 
 import frappe
 from frappe import _
@@ -51,30 +51,43 @@ def update_tax_summaries(month=None, year=None, company=None):
             month = int(month)
             year = int(year)
         except (ValueError, TypeError):
-            frappe.throw(_("Month and year must be valid numbers"))
+            frappe.throw(
+                _("Month and year must be valid numbers"),
+                title=_("Invalid Parameters")
+            )
             
         # Validate month and year
         if month < 1 or month > 12:
-            frappe.throw(_("Invalid month: {0}. Must be between 1 and 12").format(month))
+            frappe.throw(
+                _("Invalid month: {0}. Must be between 1 and 12").format(month),
+                title=_("Invalid Month")
+            )
             
         if year < 2000 or year > current_date.year + 1:
-            frappe.throw(_("Invalid year: {0}. Must be between 2000 and {1}").format(
-                year, current_date.year + 1
-            ))
+            frappe.throw(
+                _("Invalid year: {0}. Must be between 2000 and {1}").format(
+                    year, current_date.year + 1
+                ),
+                title=_("Invalid Year")
+            )
             
         # Check if company exists if provided
         if company and not frappe.db.exists("Company", company):
-            frappe.throw(_("Company {0} not found").format(company))
+            frappe.throw(
+                _("Company {0} not found").format(company),
+                title=_("Invalid Company")
+            )
             
         # Calculate date range for the month
         start_date = get_first_day(datetime(year, month, 1))
         end_date = get_last_day(datetime(year, month, 1))
         
         # Log the update
-        frappe.logger().info(
-            f"Tax summary update started for {month:02d}-{year}, "
-            f"range: {start_date} to {end_date}, "
-            f"company: {company or 'All'}"
+        frappe.log_error(
+            "Tax summary update started for {0:02d}-{1}, range: {2} to {3}, company: {4}".format(
+                month, year, start_date, end_date, company or 'All'
+            ),
+            "Tax Summary Update"
         )
         
         # Statistics
@@ -112,7 +125,10 @@ def update_tax_summaries(month=None, year=None, company=None):
             cache_value(cache_key, salary_slips, 3600)
         
         if not salary_slips:
-            frappe.msgprint(_("No approved salary slips found for {0}-{1}").format(month, year))
+            frappe.msgprint(
+                _("No approved salary slips found for {0}-{1}").format(month, year),
+                indicator="orange"
+            )
             return summary
             
         # Get unique employees
@@ -134,7 +150,10 @@ def update_tax_summaries(month=None, year=None, company=None):
             try:
                 # Check if Employee Tax Summary DocType exists
                 if not frappe.db.exists("DocType", "Employee Tax Summary"):
-                    frappe.throw(_("Employee Tax Summary DocType not found. Cannot update tax information."))
+                    frappe.throw(
+                        _("Employee Tax Summary DocType not found. Cannot update tax information."),
+                        title=_("Missing DocType")
+                    )
                 
                 # Check if employee tax summary already exists for this year
                 cache_key = f"tax_summary:{emp_id}:{year}"
@@ -159,7 +178,7 @@ def update_tax_summaries(month=None, year=None, company=None):
                             "employee": emp_id,
                             "employee_name": emp_data["employee_name"],
                             "status": "Updated",
-                            "message": f"Updated with {len(emp_data['slips'])} slips"
+                            "message": "Updated with {0} slips".format(len(emp_data['slips']))
                         })
                 else:
                     # Create new summary
@@ -174,13 +193,13 @@ def update_tax_summaries(month=None, year=None, company=None):
                             "employee": emp_id,
                             "employee_name": emp_data["employee_name"],
                             "status": "Created",
-                            "message": f"Created with {len(emp_data['slips'])} slips"
+                            "message": "Created with {0} slips".format(len(emp_data['slips']))
                         })
                         
             except Exception as e:
+                # Non-critical error - can continue with other employees
                 frappe.log_error(
-                    f"Error updating tax summary for employee {emp_id}: {str(e)}\n"
-                    f"Traceback: {frappe.get_traceback()}",
+                    "Error updating tax summary for employee {0}: {1}".format(emp_id, str(e)),
                     "Monthly Tax Update Error"
                 )
                 summary["errors"] += 1
@@ -194,26 +213,37 @@ def update_tax_summaries(month=None, year=None, company=None):
         
         # Log summary
         log_message = (
-            f"Tax summary update completed for {month:02d}-{year}. "
-            f"Updated: {summary['updated']}, Created: {summary['created']}, "
-            f"Errors: {summary['errors']}, Total: {summary['total_employees']}"
+            "Tax summary update completed for {0:02d}-{1}. "
+            "Updated: {2}, Created: {3}, "
+            "Errors: {4}, Total: {5}".format(
+                month, year, summary['updated'], summary['created'],
+                summary['errors'], summary['total_employees']
+            )
         )
         
         if summary["errors"] > 0:
             frappe.log_error(log_message, "Monthly Tax Update Summary")
+            frappe.msgprint(log_message, indicator="orange")
         else:
-            frappe.logger().info(log_message)
+            frappe.log_error(log_message, "Monthly Tax Update Success")
+            frappe.msgprint(log_message, indicator="green")
             
-        frappe.msgprint(log_message)
         return summary
         
     except Exception as e:
+        # Handle ValidationError separately
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise
+            
+        # Critical error - log and throw
         frappe.log_error(
-            f"Error updating tax summaries: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error updating tax summaries: {0}".format(str(e)),
             "Monthly Tax Update Error"
         )
-        frappe.throw(_("Error updating tax summaries: {0}").format(str(e)))
+        frappe.throw(
+            _("Error updating tax summaries: {0}").format(str(e)),
+            title=_("Update Failed")
+        )
 
 def update_existing_summary(summary_name, employee, month, year, slip_names):
     """
@@ -242,7 +272,10 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
         
         # Check for monthly_details table
         if not hasattr(summary, 'monthly_details'):
-            frappe.throw(_("Employee Tax Summary structure is invalid: missing monthly_details child table"))
+            frappe.throw(
+                _("Employee Tax Summary structure is invalid: missing monthly_details child table"),
+                title=_("Invalid Document Structure")
+            )
         
         # Filter out existing monthly detail for this month if it exists
         # This approach avoids issues with directly modifying child tables
@@ -258,7 +291,10 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
         monthly_data = calculate_monthly_totals(slip_names)
         
         if not monthly_data:
-            frappe.throw(_("Failed to calculate totals from salary slips"))
+            frappe.throw(
+                _("Failed to calculate totals from salary slips"),
+                title=_("Calculation Failed")
+            )
         
         # Add new monthly detail - using standard append pattern
         try:
@@ -275,12 +311,15 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
             if monthly_data["ter_category"] and hasattr(row, 'ter_category'):
                 row.ter_category = monthly_data["ter_category"]
         except Exception as e:
+            # Critical error - cannot update without details
             frappe.log_error(
-                f"Error adding monthly detail row: {str(e)}\n"
-                f"Traceback: {frappe.get_traceback()}",
+                "Error adding monthly detail row: {0}".format(str(e)),
                 "Monthly Detail Error"
             )
-            frappe.throw(_("Error adding monthly detail: {0}").format(str(e)))
+            frappe.throw(
+                _("Error adding monthly detail: {0}").format(str(e)),
+                title=_("Detail Update Failed")
+            )
             
         # Update TER information on parent if applicable
         if monthly_data["is_using_ter"]:
@@ -311,9 +350,15 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
         return True
         
     except Exception as e:
+        # Handle ValidationError separately
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise
+            
+        # Critical error - log and re-raise
         frappe.log_error(
-            f"Error updating tax summary {summary_name} for employee {employee}: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error updating tax summary {0} for employee {1}: {2}".format(
+                summary_name, employee, str(e)
+            ),
             "Summary Update Error"
         )
         raise
@@ -337,9 +382,19 @@ def create_new_summary(employee, employee_name, year, month, slip_names):
         monthly_data = calculate_monthly_totals(slip_names)
         
         if not monthly_data:
-            frappe.msgprint(_("No valid salary data found for employee {0} in {1}-{2}").format(
-                employee, month, year
-            ))
+            # Non-critical error - log and return None
+            frappe.log_error(
+                "No valid salary data found for employee {0} in {1}-{2}".format(
+                    employee, month, year
+                ),
+                "Summary Creation Info"
+            )
+            frappe.msgprint(
+                _("No valid salary data found for employee {0} in {1}-{2}").format(
+                    employee, month, year
+                ),
+                indicator="orange"
+            )
             return None
             
         # Create new summary document
@@ -352,7 +407,7 @@ def create_new_summary(employee, employee_name, year, month, slip_names):
         
         # Set title if field exists
         if hasattr(summary, 'title'):
-            summary.title = f"{employee_name} - {year}"
+            summary.title = "{0} - {1}".format(employee_name, year)
             
         # Set initial tax amount
         if hasattr(summary, 'ytd_tax'):
@@ -384,12 +439,15 @@ def create_new_summary(employee, employee_name, year, month, slip_names):
             if monthly_data["ter_category"] and hasattr(row, 'ter_category'):
                 row.ter_category = monthly_data["ter_category"]
         except Exception as e:
+            # Critical error - cannot create without details
             frappe.log_error(
-                f"Error adding monthly detail row for new summary: {str(e)}\n"
-                f"Traceback: {frappe.get_traceback()}",
+                "Error adding monthly detail row for new summary: {0}".format(str(e)),
                 "New Summary Error"
             )
-            frappe.throw(_("Error adding monthly detail to new summary: {0}").format(str(e)))
+            frappe.throw(
+                _("Error adding monthly detail to new summary: {0}").format(str(e)),
+                title=_("Summary Creation Failed")
+            )
             
         # Insert the document
         summary.insert(ignore_permissions=True)
@@ -397,9 +455,15 @@ def create_new_summary(employee, employee_name, year, month, slip_names):
         return summary.name
         
     except Exception as e:
+        # Handle ValidationError separately
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise
+            
+        # Critical error - log and re-raise
         frappe.log_error(
-            f"Error creating tax summary for {employee} ({employee_name}): {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error creating tax summary for {0} ({1}): {2}".format(
+                employee, employee_name, str(e)
+            ),
             "Summary Creation Error"
         )
         raise
@@ -437,7 +501,10 @@ def calculate_monthly_totals(slip_names):
         
         # Check if we have valid slip names
         if not result["latest_slip"]:
-            frappe.throw(_("No valid salary slip names provided"))
+            frappe.throw(
+                _("No valid salary slip names provided"),
+                title=_("Missing Data")
+            )
         
         # Track which TER category to use
         ter_categories_found = []
@@ -455,9 +522,12 @@ def calculate_monthly_totals(slip_names):
                         # Cache for 1 hour
                         cache_value(slip_cache_key, slip, 3600)
                     except Exception as doc_error:
+                        # Non-critical error - can continue with other slips
                         frappe.log_error(
-                            f"Error retrieving salary slip {slip_name}: {str(doc_error)}",
-                            "Slip Retrieval Error"
+                            "Error retrieving salary slip {0}: {1}".format(
+                                slip_name, str(doc_error)
+                            ),
+                            "Slip Retrieval Warning"
                         )
                         continue
                 
@@ -510,10 +580,10 @@ def calculate_monthly_totals(slip_names):
                         result["latest_slip"] = slip_name
                 
             except Exception as e:
+                # Non-critical error - can continue with other slips
                 frappe.log_error(
-                    f"Error processing salary slip {slip_name}: {str(e)}\n"
-                    f"Traceback: {frappe.get_traceback()}",
-                    "Slip Processing Error"
+                    "Error processing salary slip {0}: {1}".format(slip_name, str(e)),
+                    "Slip Processing Warning"
                 )
                 continue
         
@@ -559,10 +629,10 @@ def calculate_monthly_totals(slip_names):
                             
                             result["ter_category"] = ter_category
                 except Exception as emp_error:
+                    # Non-critical error - can continue without category
                     frappe.log_error(
-                        f"Error getting TER category from employee: {str(emp_error)}\n"
-                        f"Traceback: {frappe.get_traceback()}",
-                        "TER Category Error"
+                        "Error getting TER category from employee: {0}".format(str(emp_error)),
+                        "TER Category Warning"
                     )
                     # If error, leave category empty
                     pass
@@ -573,9 +643,13 @@ def calculate_monthly_totals(slip_names):
         return result
         
     except Exception as e:
+        # Handle ValidationError separately
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise
+            
+        # Critical error - log and re-raise
         frappe.log_error(
-            f"Error calculating monthly totals: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error calculating monthly totals: {0}".format(str(e)),
             "Monthly Totals Error"
         )
         raise
@@ -618,7 +692,10 @@ def validate_monthly_entries():
             cache_value(cache_key, tax_summaries, 3600)
         
         if not tax_summaries:
-            frappe.msgprint(_("No tax summaries found for {0}").format(current_year))
+            frappe.msgprint(
+                _("No tax summaries found for {0}").format(current_year),
+                indicator="blue"
+            )
             return summary
             
         summary["total_summaries"] = len(tax_summaries)
@@ -640,6 +717,13 @@ def validate_monthly_entries():
                 
                 # Check monthly details
                 if not monthly_details:
+                    # Non-critical error - log and continue
+                    frappe.log_error(
+                        "Missing monthly details for tax summary {0} (Employee: {1})".format(
+                            tax_summary.name, tax_summary.employee
+                        ),
+                        "Monthly Details Warning"
+                    )
                     summary["errors"] += 1
                     summary["details"].append({
                         "employee": tax_summary.employee,
@@ -670,7 +754,7 @@ def validate_monthly_entries():
                         "employee": tax_summary.employee,
                         "employee_name": tax_summary.employee_name,
                         "status": "Fixed",
-                        "message": f"YTD tax updated from {current_ytd} to {calculated_ytd}"
+                        "message": "YTD tax updated from {0} to {1}".format(current_ytd, calculated_ytd)
                     })
                 else:
                     summary["validated"] += 1
@@ -682,10 +766,10 @@ def validate_monthly_entries():
                     })
                     
             except Exception as e:
+                # Non-critical error - can continue with other employees
                 frappe.log_error(
-                    f"Error validating tax summary {tax_summary.name}: {str(e)}\n"
-                    f"Traceback: {frappe.get_traceback()}",
-                    "Tax Summary Validation Error"
+                    "Error validating tax summary {0}: {1}".format(tax_summary.name, str(e)),
+                    "Tax Summary Validation Warning"
                 )
                 summary["errors"] += 1
                 summary["details"].append({
@@ -698,26 +782,37 @@ def validate_monthly_entries():
                 
         # Log summary
         log_message = (
-            f"Tax summary validation completed for {current_year}. "
-            f"Validated: {summary['validated']}, Fixed: {summary['fixed']}, "
-            f"Errors: {summary['errors']}, Total: {summary['total_summaries']}"
+            "Tax summary validation completed for {0}. "
+            "Validated: {1}, Fixed: {2}, "
+            "Errors: {3}, Total: {4}".format(
+                current_year, summary['validated'], summary['fixed'],
+                summary['errors'], summary['total_summaries']
+            )
         )
         
         if summary["errors"] > 0 or summary["fixed"] > 0:
             frappe.log_error(log_message, "Tax Summary Validation Summary")
+            frappe.msgprint(log_message, indicator="orange")
         else:
-            frappe.logger().info(log_message)
+            frappe.log_error(log_message, "Tax Summary Validation Success")
+            frappe.msgprint(log_message, indicator="green")
             
-        frappe.msgprint(log_message)
         return summary
         
     except Exception as e:
+        # Handle ValidationError separately
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise
+            
+        # Critical error - log and throw
         frappe.log_error(
-            f"Error validating monthly entries: {str(e)}\n"
-            f"Traceback: {frappe.get_traceback()}",
+            "Error validating monthly entries: {0}".format(str(e)),
             "Monthly Validation Error"
         )
-        frappe.throw(_("Error validating monthly entries: {0}").format(str(e)))
+        frappe.throw(
+            _("Error validating monthly entries: {0}").format(str(e)),
+            title=_("Validation Failed")
+        )
 
 # Define public exports
 __all__ = ['update_tax_summaries', 'validate_monthly_entries']
