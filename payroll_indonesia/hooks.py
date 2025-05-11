@@ -44,9 +44,7 @@ doc_events = {
         "on_update": "payroll_indonesia.override.employee.on_update"
     },
     "Payroll Entry": {
-        "before_validate": "payroll_indonesia.override.payroll_entry_functions.before_validate",
-        "validate": "payroll_indonesia.override.payroll_entry_functions.validate_payroll_entry",
-        "on_submit": "payroll_indonesia.override.payroll_entry_functions.on_submit"
+        "before_validate": "payroll_indonesia.override.payroll_entry_functions.before_validate"
     },
     "Salary Slip": {
         "validate": "payroll_indonesia.override.salary_slip_functions.validate_salary_slip", 
