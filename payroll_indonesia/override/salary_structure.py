@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 11:44:36 by dannyaudian
+# Last modified: 2025-05-11 08:16:21 by dannyaudian
 
 import frappe
 from frappe import _
@@ -11,20 +11,39 @@ from payroll_indonesia.utilities.tax_slab import get_default_tax_slab, create_in
 class CustomSalaryStructure(SalaryStructure):
     def validate(self):
         """Override validasi Salary Structure untuk mengizinkan company='%'"""
-        # Simpan nilai company original
-        original_company = self.company
-        
-        # Jika company adalah wildcard '%', gunakan company default untuk validasi saja
-        if self.company == "%":
-            default_company = frappe.defaults.get_global_default("company")
-            self.company = default_company
+        try:
+            # Simpan nilai company original
+            original_company = self.company
             
-        # Jalankan validasi standard
-        super().validate()
-        
-        # Kembalikan nilai company ke wildcard jika itu nilai aslinya
-        if original_company == "%":
-            self.company = original_company
+            # Jika company adalah wildcard '%', gunakan company default untuk validasi saja
+            if self.company == "%":
+                default_company = frappe.defaults.get_global_default("company")
+                if not default_company:
+                    frappe.throw(
+                        _("Default company tidak ditemukan. Tidak bisa menggunakan wildcard '%'."),
+                        title=_("Company Not Found")
+                    )
+                self.company = default_company
+                
+            # Jalankan validasi standard
+            super().validate()
+            
+            # Kembalikan nilai company ke wildcard jika itu nilai aslinya
+            if original_company == "%":
+                self.company = original_company
+        except Exception as e:
+            # Handle ValidationError separately
+            if isinstance(e, frappe.exceptions.ValidationError):
+                raise
+                
+            # Log and re-raise other errors
+            frappe.log_error(
+                "Error validating Salary Structure {0}: {1}".format(
+                    self.name if hasattr(self, 'name') else 'New', str(e)
+                ),
+                "Salary Structure Validation Error"
+            )
+            frappe.throw(_("Error validating salary structure: {0}").format(str(e)))
     
     def on_update(self):
         """On update yang minimal tanpa mengakses field yang mungkin tidak ada"""
@@ -49,12 +68,21 @@ class CustomSalaryStructure(SalaryStructure):
                     tax_slab_value = frappe.db.get_value("Salary Structure", self.name, "income_tax_slab")
                     if tax_slab_value is not None:
                         field_exists = True
-            except Exception:
+            except Exception as field_check_error:
+                # Non-critical error during field check
+                frappe.log_error(
+                    "Error checking income_tax_slab field in {0}: {1}".format(
+                        self.name, str(field_check_error)
+                    ),
+                    "Field Check Error"
+                )
                 field_exists = False
                     
             # Jika ada komponen PPh 21 dan field income_tax_slab ada, tapi nilainya kosong
             if has_tax_component and field_exists:
-                tax_slab_value = getattr(self, 'income_tax_slab', None) or frappe.db.get_value("Salary Structure", self.name, "income_tax_slab")
+                tax_slab_value = getattr(self, 'income_tax_slab', None) or frappe.db.get_value(
+                    "Salary Structure", self.name, "income_tax_slab"
+                )
                 
                 if not tax_slab_value:
                     # Dapatkan tax slab default
@@ -71,11 +99,30 @@ class CustomSalaryStructure(SalaryStructure):
                                 
                             frappe.db.set_value("Salary Structure", self.name, update_dict)
                             frappe.db.commit()
-                        except Exception as e:
-                            # Log error tapi jangan crash
-                            frappe.log_error(f"Failed to update income_tax_slab: {str(e)}", "CustomSalaryStructure")
-        except:
-            pass
+                        except Exception as update_error:
+                            # Non-critical error during update - log but continue
+                            frappe.log_error(
+                                "Error updating income_tax_slab for {0}: {1}".format(
+                                    self.name, str(update_error)
+                                ),
+                                "Tax Slab Update Error"
+                            )
+                            frappe.msgprint(
+                                _("Warning: Could not set income tax slab automatically."),
+                                indicator="orange"
+                            )
+        except Exception as e:
+            # Non-critical error in on_update - log but continue since this is a hook
+            frappe.log_error(
+                "Error in on_update for Salary Structure {0}: {1}".format(
+                    self.name, str(e)
+                ),
+                "Salary Structure Hook Error"
+            )
+            frappe.msgprint(
+                _("Warning: Error during salary structure update. Some operations may not complete."),
+                indicator="orange"
+            )
 
 # Fungsi untuk membuat/memperbarui Salary Structure default
 def create_default_salary_structure():
@@ -230,15 +277,24 @@ def create_default_salary_structure():
                 ss.tax_calculation_method = "Manual"
                 if default_tax_slab and hasattr(ss, 'income_tax_slab'):
                     ss.income_tax_slab = default_tax_slab
-            except:
-                pass
+            except Exception as field_error:
+                # Non-critical field error
+                frappe.log_error(
+                    "Error setting tax fields on salary structure {0}: {1}".format(
+                        structure_name, str(field_error)
+                    ),
+                    "Tax Field Error"
+                )
                 
             # Save dengan ignore_permissions
             ss.flags.ignore_permissions = True
             ss.save()
             
             frappe.db.commit()
-            print(f"Updated Salary Structure: {structure_name}")
+            frappe.log_error(
+                "Updated Salary Structure: {0}".format(structure_name),
+                "Salary Structure Update"
+            )
             
         else:
             # Buat struktur baru
@@ -264,14 +320,23 @@ def create_default_salary_structure():
                 ss.tax_calculation_method = "Manual"
                 if default_tax_slab and hasattr(ss, 'income_tax_slab'):
                     ss.income_tax_slab = default_tax_slab
-            except:
-                pass
+            except Exception as field_error:
+                # Non-critical field error
+                frappe.log_error(
+                    "Error setting tax fields on new salary structure {0}: {1}".format(
+                        structure_name, str(field_error)
+                    ),
+                    "Tax Field Error"
+                )
                 
             # Insert dengan ignore_permissions
             ss.insert(ignore_permissions=True)
             
             frappe.db.commit()
-            print(f"Created Salary Structure: {structure_name}")
+            frappe.log_error(
+                "Created Salary Structure: {0}".format(structure_name),
+                "Salary Structure Creation"
+            )
             
         # Setelah membuat struktur, update assignment jika perlu
         if default_tax_slab:
@@ -281,7 +346,11 @@ def create_default_salary_structure():
         return True
         
     except Exception as e:
-        frappe.log_error(f"Error creating/updating Salary Structure: {str(e)}", "Salary Structure Setup")
+        # Non-critical function for setup - log error and return False
+        frappe.log_error(
+            "Error creating/updating Salary Structure: {0}".format(str(e)),
+            "Salary Structure Setup Error"
+        )
         return False
 
 # Fungsi untuk memastikan komponen salary tersedia
@@ -321,11 +390,19 @@ def create_salary_components():
                         doc.set(key, value)
                 doc.insert(ignore_permissions=True)
                 frappe.db.commit()
-                print(f"Created Salary Component: {name}")
+                frappe.log_error(
+                    "Created Salary Component: {0}".format(name),
+                    "Component Creation"
+                )
                 
         return True
+        
     except Exception as e:
-        frappe.log_error(f"Error creating salary components: {str(e)}", "Setup")
+        # Non-critical function for setup - log error and return False
+        frappe.log_error(
+            "Error creating salary components: {0}".format(str(e)),
+            "Component Setup Error"
+        )
         return False
 
 
@@ -343,6 +420,11 @@ def update_salary_structures():
         create_default_salary_structure()
         
         return "Updated salary structures successfully"
+        
     except Exception as e:
-        frappe.log_error(f"Failed to update salary structures: {str(e)}", "Scheduled Task")
-        return f"Error: {str(e)}"
+        # Non-critical scheduled task - log error and return error message
+        frappe.log_error(
+            "Failed to update salary structures: {0}".format(str(e)),
+            "Scheduled Task Error"
+        )
+        return "Error: {0}".format(str(e))
