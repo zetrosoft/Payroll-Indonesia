@@ -15,9 +15,9 @@ app_version = "0.1.0"
 required_apps = ["erpnext", "hrms"]
 
 # Setup functions
-before_install = "payroll_indonesia.fixtures.setup.before_install"
-after_install = "payroll_indonesia.fixtures.setup.after_install"
-after_migrate = ["payroll_indonesia.payroll_indonesia.setup.setup_module.after_sync"]
+before_install = "payroll_indonesia.install.before_install"
+after_install = "payroll_indonesia.install.after_install"
+after_migrate = ["payroll_indonesia.install.after_migrate", "payroll_indonesia.payroll_indonesia.setup.setup_module.after_sync"]
 
 # JS files for doctypes
 doctype_js = {
@@ -165,7 +165,20 @@ fixtures = [
     {
         "doctype": "Jabatan",
         "filters": [["name", "like", "%"]]
-    }
+    },
+    # Add fixtures for new DocTypes
+    {
+        "doctype": "DocType",
+        "filters": [
+            ["name", "in", [
+                "Payroll Indonesia Settings",
+                "PTKP Table Entry",
+                "PTKP TER Mapping Entry",
+                "Tax Bracket Entry",
+                "Tipe Karyawan Entry"
+            ]]
+        ]
+    },
 ]
 
 # Scheduler tasks

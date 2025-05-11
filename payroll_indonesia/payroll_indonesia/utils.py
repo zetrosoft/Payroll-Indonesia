@@ -1,18 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 17:45:10 by dannyaudian
-
-import frappe
-import json
-import os
-from frappe import _
-from frappe.utils import flt, cint, getdate, now_datetime
-
-# -*- coding: utf-8 -*-
-# Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
-# For license information, please see license.txt
-# Last modified: 2025-05-09 12:55:00 by dannyaudian
+# Last modified: 2025-05-11 09:24:57 by dannyaudian
 
 import frappe
 import json
@@ -44,13 +33,14 @@ __all__ = [
 # Config handling functions
 def get_default_config(section=None):
     """
-    Load configuration from defaults.json with caching
+    Load configuration from Payroll Indonesia Settings DocType with caching
+    Falls back to defaults.json if DocType doesn't exist
     
     Args:
         section (str, optional): Specific section to retrieve from config
         
     Returns:
-        dict: Configuration data from defaults.json or empty dict if not found/error
+        dict: Configuration data or empty dict if not found/error
     """
     # Try to get from cache first
     cache_key = "payroll_indonesia_config"
@@ -62,16 +52,10 @@ def get_default_config(section=None):
         return config
         
     try:
-        config_path = frappe.get_app_path("payroll_indonesia", "config", "defaults.json")
-        if not os.path.exists(config_path):
-            frappe.log_error(
-                f"Config file not found at {config_path}",
-                "Config Error"
-            )
-            return {} if section is None else {}
-        
-        with open(config_path) as f:
-            all_config = json.load(f)
+        # Check if the DocType exists and has a record
+        if frappe.db.exists("DocType", "Payroll Indonesia Settings") and frappe.db.exists("Payroll Indonesia Settings"):
+            settings = frappe.get_doc("Payroll Indonesia Settings")
+            all_config = _convert_settings_to_config(settings)
             
             # Cache full config for 24 hours (86400 seconds)
             frappe.cache().set_value("payroll_indonesia_config", all_config, expires_in_sec=86400)
@@ -83,9 +67,222 @@ def get_default_config(section=None):
                 return section_data
                 
             return all_config
+        else:
+            # Fallback to defaults.json if DocType or record doesn't exist
+            config_path = frappe.get_app_path("payroll_indonesia", "config", "defaults.json")
+            if not os.path.exists(config_path):
+                frappe.log_error(
+                    f"Config file not found at {config_path} and Payroll Indonesia Settings not found",
+                    "Config Error"
+                )
+                return {} if section is None else {}
+            
+            with open(config_path) as f:
+                all_config = json.load(f)
+                
+                # Cache full config for 24 hours (86400 seconds)
+                frappe.cache().set_value("payroll_indonesia_config", all_config, expires_in_sec=86400)
+                
+                # Return and cache requested section if specified
+                if section:
+                    section_data = all_config.get(section, {})
+                    frappe.cache().set_value(f"payroll_indonesia_config_{section}", section_data, expires_in_sec=86400)
+                    return section_data
+                    
+                return all_config
     except Exception as e:
         frappe.log_error(f"Error loading configuration: {str(e)}", "Configuration Error")
         return {} if section is None else {}
+
+def _convert_settings_to_config(settings):
+    """
+    Convert Payroll Indonesia Settings DocType record to configuration dictionary
+    
+    Args:
+        settings (Document): Payroll Indonesia Settings document
+        
+    Returns:
+        dict: Configuration dictionary in the same format as defaults.json
+    """
+    try:
+        config = {}
+        
+        # App info
+        config["app_info"] = {
+            "version": settings.app_version,
+            "last_updated": str(settings.app_last_updated),
+            "updated_by": settings.app_updated_by
+        }
+        
+        # BPJS
+        config["bpjs"] = {
+            "kesehatan_employee_percent": flt(settings.kesehatan_employee_percent),
+            "kesehatan_employer_percent": flt(settings.kesehatan_employer_percent),
+            "kesehatan_max_salary": flt(settings.kesehatan_max_salary),
+            "jht_employee_percent": flt(settings.jht_employee_percent),
+            "jht_employer_percent": flt(settings.jht_employer_percent),
+            "jp_employee_percent": flt(settings.jp_employee_percent),
+            "jp_employer_percent": flt(settings.jp_employer_percent),
+            "jp_max_salary": flt(settings.jp_max_salary),
+            "jkk_percent": flt(settings.jkk_percent),
+            "jkm_percent": flt(settings.jkm_percent)
+        }
+        
+        # Tax
+        config["tax"] = {
+            "umr_default": flt(settings.umr_default),
+            "biaya_jabatan_percent": flt(settings.biaya_jabatan_percent),
+            "biaya_jabatan_max": flt(settings.biaya_jabatan_max),
+            "npwp_mandatory": cint(settings.npwp_mandatory),
+            "tax_calculation_method": settings.tax_calculation_method,
+            "use_ter": cint(settings.use_ter),
+            "use_gross_up": cint(settings.use_gross_up)
+        }
+        
+        # PTKP
+        config["ptkp"] = {}
+        if hasattr(settings, "ptkp_table"):
+            for row in settings.ptkp_table:
+                config["ptkp"][row.status_pajak] = flt(row.ptkp_amount)
+        
+        # PTKP to TER mapping
+        config["ptkp_to_ter_mapping"] = {}
+        if hasattr(settings, "ptkp_ter_mapping_table"):
+            for row in settings.ptkp_ter_mapping_table:
+                config["ptkp_to_ter_mapping"][row.ptkp_status] = row.ter_category
+        
+        # Tax brackets
+        config["tax_brackets"] = []
+        if hasattr(settings, "tax_brackets_table"):
+            for row in settings.tax_brackets_table:
+                config["tax_brackets"].append({
+                    "income_from": flt(row.income_from),
+                    "income_to": flt(row.income_to),
+                    "tax_rate": flt(row.tax_rate)
+                })
+        
+        # TER rates - these need to be retrieved from PPh 21 TER Table
+        config["ter_rates"] = _get_ter_rates_from_pph21_settings()
+        
+        # Defaults
+        config["defaults"] = {
+            "currency": settings.default_currency,
+            "attendance_based_on_timesheet": cint(settings.attendance_based_on_timesheet),
+            "payroll_frequency": settings.payroll_frequency,
+            "salary_slip_based_on": settings.salary_slip_based_on,
+            "max_working_days_per_month": cint(settings.max_working_days_per_month),
+            "include_holidays_in_total_working_days": cint(settings.include_holidays_in_total_working_days),
+            "working_hours_per_day": flt(settings.working_hours_per_day)
+        }
+        
+        # Struktur gaji
+        config["struktur_gaji"] = {
+            "basic_salary_percent": flt(settings.basic_salary_percent),
+            "meal_allowance": flt(settings.meal_allowance),
+            "transport_allowance": flt(settings.transport_allowance),
+            "umr_default": flt(settings.struktur_gaji_umr_default),
+            "position_allowance_percent": flt(settings.position_allowance_percent),
+            "hari_kerja_default": cint(settings.hari_kerja_default)
+        }
+        
+        # Tipe karyawan
+        config["tipe_karyawan"] = []
+        if hasattr(settings, "tipe_karyawan"):
+            for row in settings.tipe_karyawan:
+                config["tipe_karyawan"].append(row.tipe_karyawan)
+        
+        # GL accounts and other sections may need to be handled separately or kept in configuration
+        
+        return config
+    except Exception as e:
+        frappe.log_error(f"Error converting settings to config: {str(e)}", "Settings Conversion Error")
+        return {}
+
+def _get_ter_rates_from_pph21_settings():
+    """
+    Get TER rates from PPh 21 TER Table
+    
+    Returns:
+        dict: TER rates by category
+    """
+    try:
+        ter_rates = {
+            "TER A": [],
+            "TER B": [],
+            "TER C": []
+        }
+        
+        if frappe.db.exists("DocType", "PPh 21 TER Table"):
+            # Get all TER entries from the database
+            entries = frappe.get_all(
+                "PPh 21 TER Table",
+                filters={"parenttype": "PPh 21 Settings"},
+                fields=[
+                    "status_pajak", "income_from", "income_to", 
+                    "rate", "is_highest_bracket"
+                ],
+                order_by="status_pajak, income_from"
+            )
+            
+            # Group by status_pajak (TER category)
+            for entry in entries:
+                category = entry.status_pajak
+                if category in ter_rates:
+                    ter_rates[category].append({
+                        "income_from": flt(entry.income_from),
+                        "income_to": flt(entry.income_to),
+                        "rate": flt(entry.rate),
+                        "is_highest_bracket": cint(entry.is_highest_bracket)
+                    })
+                    
+        return ter_rates
+    except Exception as e:
+        frappe.log_error(f"Error getting TER rates from settings: {str(e)}", "TER Rates Error")
+        return {
+            "TER A": [],
+            "TER B": [],
+            "TER C": []
+        }
+
+# Function to map PTKP to TER category
+def map_ptkp_to_ter(status_pajak):
+    """
+    Map PTKP status to TER category
+    
+    Args:
+        status_pajak (str): Tax status code (e.g., 'TK0', 'K1')
+        
+    Returns:
+        str: Corresponding TER category
+    """
+    try:
+        # Get mapping from configuration
+        mapping = get_default_config("ptkp_to_ter_mapping")
+        
+        # Check if status exists in mapping
+        if status_pajak in mapping:
+            return mapping[status_pajak]
+            
+        # Default mapping logic
+        prefix = status_pajak[:2] if len(status_pajak) >= 2 else status_pajak
+        suffix = status_pajak[2:] if len(status_pajak) >= 3 else "0"
+        
+        if status_pajak == "TK0":
+            return "TER A"
+        elif prefix == "TK" and suffix in ["1", "2", "3"]:
+            return "TER B"
+        elif prefix == "K" and suffix == "0":
+            return "TER B"
+        elif prefix == "K" and suffix in ["1", "2", "3"]:
+            return "TER C"
+        elif prefix == "HB":  # Single parent
+            return "TER C"
+        else:
+            # Default to highest category
+            return "TER C"
+    except Exception as e:
+        frappe.log_error(f"Error mapping PTKP to TER: {str(e)}", "PTKP-TER Mapping Error")
+        return "TER C"  # Default to highest category on error
 
 # Logging functions
 def debug_log(message, title=None, max_length=500, trace=False):

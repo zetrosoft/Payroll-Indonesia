@@ -1,0 +1,340 @@
+{
+    "doctype": "DocType",
+    "module": "Payroll Indonesia",
+    "name": "Payroll Indonesia Settings",
+    "issingle": 1,
+    "editable_grid": 1,
+    "custom": 0,
+    "modified": "2025-05-11 09:24:57",
+    "modified_by": "dannyaudian",
+    "owner": "dannyaudian",
+    "creation": "2025-05-11 09:24:57",
+    "idx": 0,
+    "fields": [
+      {
+        "fieldname": "app_info_section",
+        "fieldtype": "Section Break",
+        "label": "App Information"
+      },
+      {
+        "fieldname": "app_version",
+        "fieldtype": "Data",
+        "label": "Version",
+        "default": "1.0.0",
+        "reqd": 1
+      },
+      {
+        "fieldname": "app_last_updated",
+        "fieldtype": "Datetime",
+        "label": "Last Updated",
+        "default": "2025-05-11 09:24:57",
+        "reqd": 1
+      },
+      {
+        "fieldname": "app_updated_by",
+        "fieldtype": "Data",
+        "label": "Updated By",
+        "default": "dannyaudian",
+        "reqd": 1
+      },
+      {
+        "fieldname": "bpjs_section",
+        "fieldtype": "Section Break",
+        "label": "BPJS Settings"
+      },
+      {
+        "fieldname": "kesehatan_employee_percent",
+        "fieldtype": "Float",
+        "label": "BPJS Kesehatan Employee Percentage",
+        "default": 1.0,
+        "precision": 2,
+        "reqd": 1
+      },
+      {
+        "fieldname": "kesehatan_employer_percent",
+        "fieldtype": "Float",
+        "label": "BPJS Kesehatan Employer Percentage",
+        "default": 4.0,
+        "precision": 2,
+        "reqd": 1
+      },
+      {
+        "fieldname": "kesehatan_max_salary",
+        "fieldtype": "Currency",
+        "label": "BPJS Kesehatan Maximum Salary",
+        "default": 12000000.0,
+        "reqd": 1
+      },
+      {
+        "fieldname": "jht_employee_percent",
+        "fieldtype": "Float",
+        "label": "BPJS JHT Employee Percentage",
+        "default": 2.0,
+        "precision": 2,
+        "reqd": 1
+      },
+      {
+        "fieldname": "jht_employer_percent",
+        "fieldtype": "Float",
+        "label": "BPJS JHT Employer Percentage",
+        "default": 3.7,
+        "precision": 2,
+        "reqd": 1
+      },
+      {
+        "fieldname": "jp_employee_percent",
+        "fieldtype": "Float",
+        "label": "BPJS JP Employee Percentage",
+        "default": 1.0,
+        "precision": 2,
+        "reqd": 1
+      },
+      {
+        "fieldname": "jp_employer_percent",
+        "fieldtype": "Float",
+        "label": "BPJS JP Employer Percentage",
+        "default": 2.0,
+        "precision": 2,
+        "reqd": 1
+      },
+      {
+        "fieldname": "jp_max_salary",
+        "fieldtype": "Currency",
+        "label": "BPJS JP Maximum Salary",
+        "default": 9077600.0,
+        "reqd": 1
+      },
+      {
+        "fieldname": "jkk_percent",
+        "fieldtype": "Float",
+        "label": "BPJS JKK Percentage",
+        "default": 0.24,
+        "precision": 2,
+        "reqd": 1
+      },
+      {
+        "fieldname": "jkm_percent",
+        "fieldtype": "Float",
+        "label": "BPJS JKM Percentage",
+        "default": 0.3,
+        "precision": 2,
+        "reqd": 1
+      },
+      {
+        "fieldname": "tax_section",
+        "fieldtype": "Section Break",
+        "label": "Tax Settings"
+      },
+      {
+        "fieldname": "umr_default",
+        "fieldtype": "Currency",
+        "label": "Default UMR",
+        "default": 4900000.0,
+        "reqd": 1
+      },
+      {
+        "fieldname": "biaya_jabatan_percent",
+        "fieldtype": "Float",
+        "label": "Biaya Jabatan Percentage",
+        "default": 5.0,
+        "precision": 2,
+        "reqd": 1
+      },
+      {
+        "fieldname": "biaya_jabatan_max",
+        "fieldtype": "Currency",
+        "label": "Biaya Jabatan Maximum",
+        "default": 500000.0,
+        "reqd": 1
+      },
+      {
+        "fieldname": "npwp_mandatory",
+        "fieldtype": "Check",
+        "label": "NPWP Mandatory",
+        "default": 0
+      },
+      {
+        "fieldname": "tax_calculation_method",
+        "fieldtype": "Select",
+        "label": "Tax Calculation Method",
+        "options": "Progressive\nTER\nGross-up",
+        "default": "TER",
+        "reqd": 1
+      },
+      {
+        "fieldname": "use_ter",
+        "fieldtype": "Check",
+        "label": "Use TER",
+        "default": 1
+      },
+      {
+        "fieldname": "use_gross_up",
+        "fieldtype": "Check",
+        "label": "Use Gross-up",
+        "default": 0
+      },
+      {
+        "fieldname": "ptkp_section",
+        "fieldtype": "Section Break",
+        "label": "PTKP Settings"
+      },
+      {
+        "fieldname": "ptkp_table",
+        "fieldtype": "Table",
+        "label": "PTKP Values",
+        "options": "PTKP Table Entry",
+        "reqd": 1
+      },
+      {
+        "fieldname": "ter_mapping_section",
+        "fieldtype": "Section Break",
+        "label": "PTKP to TER Mapping"
+      },
+      {
+        "fieldname": "ptkp_ter_mapping_table",
+        "fieldtype": "Table",
+        "label": "PTKP to TER Mapping",
+        "options": "PTKP TER Mapping Entry",
+        "reqd": 1
+      },
+      {
+        "fieldname": "tax_brackets_section",
+        "fieldtype": "Section Break",
+        "label": "Tax Brackets"
+      },
+      {
+        "fieldname": "tax_brackets_table",
+        "fieldtype": "Table",
+        "label": "Tax Brackets",
+        "options": "Tax Bracket Entry",
+        "reqd": 1
+      },
+      {
+        "fieldname": "ter_rates_section",
+        "fieldtype": "Section Break",
+        "label": "TER Rates"
+      },
+      {
+        "fieldname": "ter_rates_description",
+        "fieldtype": "HTML",
+        "label": "TER Rates Description",
+        "options": "<p>TER rates are configured separately in PPh 21 TER Table entries for each TER category (TER A, TER B, TER C)</p>"
+      },
+      {
+        "fieldname": "defaults_section",
+        "fieldtype": "Section Break",
+        "label": "Payroll Defaults"
+      },
+      {
+        "fieldname": "default_currency",
+        "fieldtype": "Link",
+        "label": "Default Currency",
+        "options": "Currency",
+        "default": "IDR",
+        "reqd": 1
+      },
+      {
+        "fieldname": "attendance_based_on_timesheet",
+        "fieldtype": "Check",
+        "label": "Attendance Based on Timesheet",
+        "default": 0
+      },
+      {
+        "fieldname": "payroll_frequency",
+        "fieldtype": "Select",
+        "label": "Default Payroll Frequency",
+        "options": "Monthly\nFortnightly\nBimonthly\nWeekly\nDaily",
+        "default": "Monthly",
+        "reqd": 1
+      },
+      {
+        "fieldname": "salary_slip_based_on",
+        "fieldtype": "Select",
+        "label": "Salary Slip Based On",
+        "options": "Leave Policy\nAttendance",
+        "default": "Leave Policy",
+        "reqd": 1
+      },
+      {
+        "fieldname": "max_working_days_per_month",
+        "fieldtype": "Int",
+        "label": "Max Working Days per Month",
+        "default": 22,
+        "reqd": 1
+      },
+      {
+        "fieldname": "include_holidays_in_total_working_days",
+        "fieldtype": "Check",
+        "label": "Include Holidays in Total Working Days",
+        "default": 0
+      },
+      {
+        "fieldname": "working_hours_per_day",
+        "fieldtype": "Float",
+        "label": "Working Hours per Day",
+        "default": 8,
+        "reqd": 1
+      },
+      {
+        "fieldname": "struktur_gaji_section",
+        "fieldtype": "Section Break",
+        "label": "Struktur Gaji Defaults"
+      },
+      {
+        "fieldname": "basic_salary_percent",
+        "fieldtype": "Float",
+        "label": "Basic Salary Percentage",
+        "default": 75,
+        "precision": 2,
+        "reqd": 1
+      },
+      {
+        "fieldname": "meal_allowance",
+        "fieldtype": "Currency",
+        "label": "Default Meal Allowance",
+        "default": 750000.0,
+        "reqd": 1
+      },
+      {
+        "fieldname": "transport_allowance",
+        "fieldtype": "Currency",
+        "label": "Default Transport Allowance",
+        "default": 900000.0,
+        "reqd": 1
+      },
+      {
+        "fieldname": "struktur_gaji_umr_default",
+        "fieldtype": "Currency",
+        "label": "Default UMR (Salary Structure)",
+        "default": 4900000.0,
+        "reqd": 1
+      },
+      {
+        "fieldname": "position_allowance_percent",
+        "fieldtype": "Float",
+        "label": "Position Allowance Percentage",
+        "default": 7.5,
+        "precision": 2,
+        "reqd": 1
+      },
+      {
+        "fieldname": "hari_kerja_default",
+        "fieldtype": "Int",
+        "label": "Default Working Days",
+        "default": 22,
+        "reqd": 1
+      },
+      {
+        "fieldname": "tipe_karyawan_section",
+        "fieldtype": "Section Break",
+        "label": "Employee Types"
+      },
+      {
+        "fieldname": "tipe_karyawan",
+        "fieldtype": "Table",
+        "label": "Employee Types",
+        "options": "Tipe Karyawan Entry",
+        "reqd": 1
+      }
+    ]
+  }

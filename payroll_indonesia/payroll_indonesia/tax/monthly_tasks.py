@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 08:46:21 by dannyaudian
+# Last modified: 2025-05-11 09:16:29 by dannyaudian
 
 import frappe
 from frappe import _
@@ -546,17 +546,24 @@ def calculate_monthly_totals(slip_names):
                     if ter_category:
                         ter_categories_found.append(ter_category)
                     
-                # Get BPJS components and PPh 21 safely
-                deductions = getattr(slip, "deductions", []) or []
-                for deduction in deductions:
-                    salary_component = getattr(deduction, "salary_component", "")
-                    
-                    if salary_component in ["BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee"]:
-                        result["bpjs_deductions"] += flt(getattr(deduction, "amount", 0))
+                # Get BPJS components and PPh 21 by querying the child table with parameterized query
+                # Instead of directly accessing deductions, use a parameterized query
+                components_query = """
+                    SELECT salary_component, amount
+                    FROM `tabSalary Detail`
+                    WHERE parent = %s
+                      AND parentfield = 'deductions'
+                      AND (salary_component IN ('BPJS JHT Employee', 'BPJS JP Employee', 'BPJS Kesehatan Employee', 'PPh 21'))
+                """
+                components = frappe.db.sql(components_query, [slip_name], as_dict=True)
+                
+                for component in components:
+                    if component.salary_component in ["BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee"]:
+                        result["bpjs_deductions"] += flt(component.amount)
                     
                     # Get PPh 21    
-                    if salary_component == "PPh 21":
-                        result["tax_amount"] += flt(getattr(deduction, "amount", 0))
+                    if component.salary_component == "PPh 21":
+                        result["tax_amount"] += flt(component.amount)
                 
                 # Update latest slip based on posting date
                 posting_date = getattr(slip, "posting_date", None)
@@ -596,23 +603,21 @@ def calculate_monthly_totals(slip_names):
             else:
                 # If no category found but TER is used, get from employee status
                 try:
-                    # Get latest slip employee
-                    latest_slip_cache_key = f"salary_slip:{result['latest_slip']}"
-                    latest_slip = get_cached_value(latest_slip_cache_key)
+                    # Get latest slip employee using parameterized query
+                    employee_query = """
+                        SELECT employee
+                        FROM `tabSalary Slip`
+                        WHERE name = %s
+                    """
+                    employee_id = frappe.db.sql(employee_query, [result["latest_slip"]], as_dict=True)
                     
-                    if latest_slip is None:
-                        latest_slip = frappe.get_doc("Salary Slip", result["latest_slip"])
-                        cache_value(latest_slip_cache_key, latest_slip, 3600)
-                    
-                    employee_id = getattr(latest_slip, "employee", None)
-                    
-                    if employee_id:
+                    if employee_id and employee_id[0].employee:
                         # Get employee document
-                        emp_cache_key = f"employee:{employee_id}"
+                        emp_cache_key = f"employee:{employee_id[0].employee}"
                         emp_doc = get_cached_value(emp_cache_key)
                         
                         if emp_doc is None:
-                            emp_doc = frappe.get_doc("Employee", employee_id)
+                            emp_doc = frappe.get_doc("Employee", employee_id[0].employee)
                             cache_value(emp_cache_key, emp_doc, 3600)
                         
                         status_pajak = getattr(emp_doc, "status_pajak", "")

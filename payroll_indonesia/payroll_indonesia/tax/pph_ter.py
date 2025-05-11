@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 08:01:55 by dannyaudianlanjutkan
+# Last modified: 2025-05-11 09:21:51 by dannyaudian
 
 """
 Tax Functions for TER (Tarif Efektif Rata-rata) Method
@@ -212,18 +212,21 @@ def get_ter_rate(income: float, category: str = 'TER C') -> float:
         cached_rate = get_cached_value(cache_key)
         if cached_rate is not None:
             return cached_rate
-            
-        # Query the TER rate from database
-        ter = frappe.db.get_all(
-            "PPh 21 TER Table",
-            filters={
-                "status_pajak": category,
-                "income_from": ["<=", income],
-                "income_to": [">=", income]
-            },
-            fields=["rate"],
-            order_by="income_from desc",
-            limit=1
+
+        # Use parameterized query to find exact bracket match
+        query = """
+            SELECT rate
+            FROM `tabPPh 21 TER Table`
+            WHERE status_pajak = %s
+            AND income_from <= %s
+            AND (income_to >= %s OR income_to = 0)
+            ORDER BY income_from DESC
+            LIMIT 1
+        """
+        ter = frappe.db.sql(
+            query,
+            [category, income, income],
+            as_dict=1
         )
         
         if ter:
@@ -232,16 +235,19 @@ def get_ter_rate(income: float, category: str = 'TER C') -> float:
             cache_value(cache_key, rate, 3600)  # Cache for 1 hour
             return rate
             
-        # If no exact match, try to find the highest bracket
-        ter = frappe.db.get_all(
-            "PPh 21 TER Table",
-            filters={
-                "status_pajak": category,
-                "income_from": ["<=", income],
-                "is_highest_bracket": 1
-            },
-            fields=["rate"],
-            limit=1
+        # If no exact match, try to find the highest bracket using parameterized query
+        query = """
+            SELECT rate
+            FROM `tabPPh 21 TER Table`
+            WHERE status_pajak = %s
+            AND income_from <= %s
+            AND is_highest_bracket = 1
+            LIMIT 1
+        """
+        ter = frappe.db.sql(
+            query,
+            [category, income],
+            as_dict=1
         )
         
         if ter:
@@ -370,15 +376,18 @@ def create_ter_table_entry(
         if rate < 0 or rate > 100:
             frappe.throw(_("Invalid rate. Must be between 0 and 100"))
             
-        # Check if entry already exists
-        existing = frappe.db.get_all(
-            "PPh 21 TER Table",
-            filters={
-                "status_pajak": tax_category,
-                "income_from": income_from,
-                "income_to": income_to
-            },
-            fields=["name"]
+        # Check if entry already exists using parameterized query
+        query = """
+            SELECT name
+            FROM `tabPPh 21 TER Table`
+            WHERE status_pajak = %s
+            AND income_from = %s
+            AND income_to = %s
+        """
+        existing = frappe.db.sql(
+            query,
+            [tax_category, income_from, income_to],
+            as_dict=1
         )
         
         if existing:
