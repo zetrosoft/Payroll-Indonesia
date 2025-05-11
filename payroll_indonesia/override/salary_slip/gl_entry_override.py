@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-08 11:46:04 by dannyaudian
+# Last modified: 2025-05-11 05:50:00 by dannyaudian
 
 import frappe
 from frappe import _
@@ -9,10 +9,12 @@ from frappe.utils import flt, cstr, get_datetime_str, now_datetime
 
 def override_salary_slip_gl_entries(doc, method=None):
     """
-    Override GL entries for BPJS components in Salary Slip
+    Override GL entries for BPJS components and PPh 21 December correction in Salary Slip
     
-    This function modifies GL entries for BPJS employer and employee components
-    to use correct accounts from BPJS Account Mapping with standardized naming.
+    This function modifies GL entries for:
+    1. BPJS employer and employee components to use correct accounts
+    2. PPh 21 December correction entries (koreksi_pph21)
+    3. TER adjustment amounts if present
     
     Args:
         doc (obj): Salary Slip document
@@ -37,7 +39,6 @@ def override_salary_slip_gl_entries(doc, method=None):
         bpjs_mapping = get_bpjs_account_mapping(company)
         if not bpjs_mapping:
             frappe.logger().warning(f"BPJS Account Mapping not found for company {company}. Using default accounts.")
-            return
         
         # Get existing GL entries that will be created
         try:
@@ -82,6 +83,161 @@ def override_salary_slip_gl_entries(doc, method=None):
                 )
                 # Keep original entry if processing fails
                 modified_entries.append(entry)
+        
+        # Check for December PPh 21 correction (koreksi_pph21)
+        # If present, add GL entry from Payroll Payable to Tax Payable
+        koreksi_pph21 = flt(getattr(doc, 'koreksi_pph21', 0))
+        if koreksi_pph21 != 0:
+            # Get accounts for December correction
+            payroll_payable_account = get_default_payable_account(doc)
+            tax_payable_account = get_tax_payable_account(doc, company_abbr)
+            default_cost_center = get_default_cost_center(doc, company)
+            
+            if payroll_payable_account and tax_payable_account:
+                frappe.logger().debug(f"Creating GL entry for PPh 21 December correction: {koreksi_pph21}")
+                
+                # For positive correction (additional tax), debit payroll payable and credit tax payable
+                # For negative correction (tax refund), debit tax payable and credit payroll payable
+                if koreksi_pph21 > 0:
+                    # Additional tax to be paid
+                    modified_entries.append({
+                        'account': payroll_payable_account,
+                        'against': tax_payable_account,
+                        'debit': koreksi_pph21,
+                        'credit': 0,
+                        'cost_center': default_cost_center,
+                        'against_voucher_type': 'Salary Slip',
+                        'against_voucher': doc.name,
+                        'remarks': f"PPh 21 December Correction - {doc.employee_name}"
+                    })
+                    
+                    modified_entries.append({
+                        'account': tax_payable_account,
+                        'against': payroll_payable_account,
+                        'debit': 0,
+                        'credit': koreksi_pph21,
+                        'cost_center': default_cost_center,
+                        'against_voucher_type': 'Salary Slip',
+                        'against_voucher': doc.name,
+                        'remarks': f"PPh 21 December Correction - {doc.employee_name}"
+                    })
+                else:
+                    # Tax refund
+                    modified_entries.append({
+                        'account': tax_payable_account,
+                        'against': payroll_payable_account,
+                        'debit': abs(koreksi_pph21),
+                        'credit': 0,
+                        'cost_center': default_cost_center,
+                        'against_voucher_type': 'Salary Slip',
+                        'against_voucher': doc.name,
+                        'remarks': f"PPh 21 December Correction (Refund) - {doc.employee_name}"
+                    })
+                    
+                    modified_entries.append({
+                        'account': payroll_payable_account,
+                        'against': tax_payable_account,
+                        'debit': 0,
+                        'credit': abs(koreksi_pph21),
+                        'cost_center': default_cost_center,
+                        'against_voucher_type': 'Salary Slip',
+                        'against_voucher': doc.name,
+                        'remarks': f"PPh 21 December Correction (Refund) - {doc.employee_name}"
+                    })
+        
+        # Check for TER adjustment amount if present
+        ter_adjustment_amount = flt(getattr(doc, 'ter_adjustment_amount', 0))
+        if ter_adjustment_amount != 0:
+            # Get accounts for TER adjustment
+            payroll_payable_account = get_default_payable_account(doc)
+            tax_payable_account = get_tax_payable_account(doc, company_abbr)
+            default_cost_center = get_default_cost_center(doc, company)
+            
+            if payroll_payable_account and tax_payable_account:
+                frappe.logger().debug(f"Creating GL entry for TER adjustment: {ter_adjustment_amount}")
+                
+                # For positive adjustment (additional tax), debit payroll payable and credit tax payable
+                # For negative adjustment (tax reduction), debit tax payable and credit payroll payable
+                if ter_adjustment_amount > 0:
+                    # Additional tax
+                    modified_entries.append({
+                        'account': payroll_payable_account,
+                        'against': tax_payable_account,
+                        'debit': ter_adjustment_amount,
+                        'credit': 0,
+                        'cost_center': default_cost_center,
+                        'against_voucher_type': 'Salary Slip',
+                        'against_voucher': doc.name,
+                        'remarks': f"TER Adjustment - {doc.employee_name}"
+                    })
+                    
+                    modified_entries.append({
+                        'account': tax_payable_account,
+                        'against': payroll_payable_account,
+                        'debit': 0,
+                        'credit': ter_adjustment_amount,
+                        'cost_center': default_cost_center,
+                        'against_voucher_type': 'Salary Slip',
+                        'against_voucher': doc.name,
+                        'remarks': f"TER Adjustment - {doc.employee_name}"
+                    })
+                else:
+                    # Tax reduction
+                    modified_entries.append({
+                        'account': tax_payable_account,
+                        'against': payroll_payable_account,
+                        'debit': abs(ter_adjustment_amount),
+                        'credit': 0,
+                        'cost_center': default_cost_center,
+                        'against_voucher_type': 'Salary Slip',
+                        'against_voucher': doc.name,
+                        'remarks': f"TER Adjustment (Reduction) - {doc.employee_name}"
+                    })
+                    
+                    modified_entries.append({
+                        'account': payroll_payable_account,
+                        'against': tax_payable_account,
+                        'debit': 0,
+                        'credit': abs(ter_adjustment_amount),
+                        'cost_center': default_cost_center,
+                        'against_voucher_type': 'Salary Slip',
+                        'against_voucher': doc.name,
+                        'remarks': f"TER Adjustment (Reduction) - {doc.employee_name}"
+                    })
+        
+        # Add Employer BPJS GL entries if total_bpjs_employer exists
+        employer_bpjs_amount = flt(getattr(doc, 'total_bpjs_employer', 0))
+        if employer_bpjs_amount > 0:
+            # Get accounts for employer BPJS
+            expense_account = get_bpjs_employer_expense_account(doc, company_abbr)
+            bpjs_payable_account = get_bpjs_payable_account(doc, company_abbr)
+            default_cost_center = get_default_cost_center(doc, company)
+            
+            if expense_account and bpjs_payable_account:
+                frappe.logger().debug(f"Creating GL entry for Employer BPJS: {employer_bpjs_amount}")
+                
+                # Add GL entries for employer BPJS contributions
+                modified_entries.append({
+                    'account': expense_account,
+                    'against': bpjs_payable_account,
+                    'debit': employer_bpjs_amount,
+                    'credit': 0,
+                    'cost_center': default_cost_center,
+                    'against_voucher_type': 'Salary Slip',
+                    'against_voucher': doc.name,
+                    'remarks': f"Employer BPJS - {doc.employee_name}"
+                })
+                
+                modified_entries.append({
+                    'account': bpjs_payable_account,
+                    'against': expense_account,
+                    'debit': 0,
+                    'credit': employer_bpjs_amount,
+                    'cost_center': default_cost_center,
+                    'against_voucher_type': 'Salary Slip',
+                    'against_voucher': doc.name,
+                    'remarks': f"Employer BPJS - {doc.employee_name}"
+                })
         
         # Replace GL entries with our modified entries
         doc.gl_entries = modified_entries
@@ -385,9 +541,19 @@ def get_bpjs_account_mapping(company):
     
     return None
 
-def get_existing_gl_entries(slip_name):
-    """Get existing GL entries for this Salary Slip to avoid duplicates"""
+def get_existing_gl_entries(doc):
+    """
+    Get existing GL entries for this Salary Slip to avoid duplicates
+    
+    Args:
+        doc: Salary Slip document or document name
+        
+    Returns:
+        list: List of GL entries
+    """
     try:
+        slip_name = doc.name if hasattr(doc, 'name') else doc
+        
         gl_entries = frappe.db.get_all(
             "GL Entry",
             filters={
@@ -439,7 +605,7 @@ def get_existing_gl_entries(slip_name):
         
     except Exception as e:
         frappe.log_error(
-            f"Error in get_existing_gl_entries for {slip_name}: {str(e)}\n\n"
+            f"Error in get_existing_gl_entries for {getattr(doc, 'name', 'Unknown')}: {str(e)}\n\n"
             f"Traceback: {frappe.get_traceback()}",
             "GL Entry Override Error"
         )
@@ -648,6 +814,178 @@ def get_default_payable_account(doc):
         frappe.logger().error(f"Error getting default payable account: {str(e)}")
         return None
 
+def get_tax_payable_account(doc, company_abbr):
+    """
+    Get tax payable account for PPh 21 with multiple fallbacks
+    
+    Args:
+        doc (obj): Salary Slip document
+        company_abbr (str): Company abbreviation
+        
+    Returns:
+        str: Tax payable account
+    """
+    try:
+        company = getattr(doc, 'company', None)
+        if not company:
+            return None
+        
+        # Try from configured account
+        tax_payable_account = get_default_account(company, "default_income_tax_payable_account")
+        
+        # Try specific PPh 21 account if available
+        if not tax_payable_account:
+            tax_payable_account = frappe.db.get_value(
+                "Account",
+                {"account_name": "PPh 21 Payable", "company": company},
+                "name"
+            )
+            
+        # Try general tax payable account
+        if not tax_payable_account:
+            tax_payable_account = frappe.db.get_value(
+                "Account", 
+                {"account_name": "Tax Payable", "company": company},
+                "name"
+            )
+            
+        # Fallback to standardized naming
+        if not tax_payable_account:
+            tax_payable_account = f"PPh 21 Payable - {company_abbr}"
+            
+            # If doesn't exist, try Tax Payable
+            if not frappe.db.exists("Account", tax_payable_account):
+                tax_payable_account = f"Tax Payable - {company_abbr}"
+                
+        return tax_payable_account
+    except Exception as e:
+        frappe.logger().error(f"Error getting tax payable account: {str(e)}")
+        return None
+
+def get_bpjs_employer_expense_account(doc, company_abbr):
+    """
+    Get BPJS employer expense account with multiple fallbacks
+    
+    Args:
+        doc (obj): Salary Slip document
+        company_abbr (str): Company abbreviation
+        
+    Returns:
+        str: BPJS employer expense account
+    """
+    try:
+        company = getattr(doc, 'company', None)
+        if not company:
+            return None
+            
+        # Try configured account
+        expense_account = get_default_account(company, "default_bpjs_employer_expense_account")
+        
+        # Try from database
+        if not expense_account:
+            expense_account = frappe.db.get_value(
+                "Account",
+                {"account_name": "BPJS Employer Expense", "company": company},
+                "name"
+            )
+            
+        # Fallback to standardized naming
+        if not expense_account:
+            expense_account = f"BPJS Employer Expense - {company_abbr}"
+            
+            # If doesn't exist, try general Employee Benefits Expense
+            if not frappe.db.exists("Account", expense_account):
+                expense_account = f"Employee Benefits Expense - {company_abbr}"
+                
+        return expense_account
+    except Exception as e:
+        frappe.logger().error(f"Error getting BPJS employer expense account: {str(e)}")
+        return None
+
+def get_bpjs_payable_account(doc, company_abbr):
+    """
+    Get BPJS payable account with multiple fallbacks
+    
+    Args:
+        doc (obj): Salary Slip document
+        company_abbr (str): Company abbreviation
+        
+    Returns:
+        str: BPJS payable account
+    """
+    try:
+        company = getattr(doc, 'company', None)
+        if not company:
+            return None
+            
+        # Try configured account
+        payable_account = get_default_account(company, "default_bpjs_payable_account")
+        
+        # Try from database
+        if not payable_account:
+            payable_account = frappe.db.get_value(
+                "Account",
+                {"account_name": "BPJS Payable", "company": company},
+                "name"
+            )
+            
+        # Fallback to standardized naming
+        if not payable_account:
+            payable_account = f"BPJS Payable - {company_abbr}"
+            
+            # If doesn't exist, try Statutory Payable
+            if not frappe.db.exists("Account", payable_account):
+                payable_account = f"Statutory Payable - {company_abbr}"
+                
+        return payable_account
+    except Exception as e:
+        frappe.logger().error(f"Error getting BPJS payable account: {str(e)}")
+        return None
+
+def get_default_cost_center(doc, company):
+    """
+    Get default cost center with multiple fallbacks
+    
+    Args:
+        doc (obj): Salary Slip document
+        company (str): Company name
+        
+    Returns:
+        str: Default cost center
+    """
+    try:
+        # Try department's cost center
+        if hasattr(doc, 'department') and doc.department:
+            if frappe.db.has_column('Department', 'cost_center'):
+                cost_center = frappe.db.get_value('Department', doc.department, 'cost_center')
+                if cost_center:
+                    return cost_center
+        
+        # Try employee's cost center
+        if hasattr(doc, 'employee') and doc.employee:
+            if frappe.db.has_column('Employee', 'cost_center'):
+                cost_center = frappe.db.get_value('Employee', doc.employee, 'cost_center')
+                if cost_center:
+                    return cost_center
+        
+        # Try payroll entry's cost center
+        if hasattr(doc, 'payroll_entry') and doc.payroll_entry:
+            cost_center = frappe.db.get_value('Payroll Entry', doc.payroll_entry, 'cost_center')
+            if cost_center:
+                return cost_center
+                
+        # Try company's cost center
+        cost_center = frappe.get_cached_value('Company', company, 'cost_center')
+        if cost_center:
+            return cost_center
+            
+        # Ultimate fallback
+        company_abbr = frappe.get_cached_value('Company', company, 'abbr')
+        return f"Main - {company_abbr}"
+    except Exception as e:
+        frappe.logger().error(f"Error getting default cost center: {str(e)}")
+        return None
+
 def get_default_account(company, account_type=None):
     """
     Get default account for company based on account type
@@ -691,6 +1029,7 @@ def diagnose_gl_entries(document_name, document_type="Salary Slip"):
             "gl_entries_count": 0,
             "bpjs_entries": [],
             "bpjs_components": [],
+            "pph21_entries": [],
             "accounts_used": []
         }
         
@@ -699,53 +1038,61 @@ def diagnose_gl_entries(document_name, document_type="Salary Slip"):
             result["has_gl_entries"] = True
             result["gl_entries_count"] = len(doc.gl_entries)
             
-            # Find BPJS-related entries
+            # Find BPJS and PPh 21 related entries
             for entry in doc.gl_entries:
                 account = getattr(entry, "account", "")
                 against = getattr(entry, "against", "")
+                remarks = getattr(entry, "remarks", "")
                 
+                # Track all unique accounts
+                if account and account not in result["accounts_used"]:
+                    result["accounts_used"].append(account)
+                
+                # Check for BPJS entries
                 if "BPJS" in account or "BPJS" in against:
                     result["bpjs_entries"].append({
                         "account": account,
                         "against": against,
+                        "remarks": remarks,
                         "debit": getattr(entry, "debit", 0),
                         "credit": getattr(entry, "credit", 0)
                     })
                     
-                    # Add unique accounts
-                    if account not in result["accounts_used"]:
-                        result["accounts_used"].append(account)
+                    # Add unique components
+                    if "BPJS" in against and against not in result["bpjs_components"]:
+                        result["bpjs_components"].append(against)
                 
-                # Check for BPJS components in against field
-                if "BPJS" in against and against not in result["bpjs_components"]:
-                    result["bpjs_components"].append(against)
-                    
-        # Additional checks for Payment Entry
-        if document_type == "Payment Entry":
-            # Check references
-            if hasattr(doc, "references") and doc.references:
-                result["references"] = []
-                for ref in doc.references:
-                    result["references"].append({
-                        "reference_doctype": getattr(ref, "reference_doctype", ""),
-                        "reference_name": getattr(ref, "reference_name", ""),
-                        "allocated_amount": getattr(ref, "allocated_amount", 0)
-                    })
-                    
-        # Additional checks for Journal Entry
-        if document_type == "Journal Entry":
-            # Check accounts
-            if hasattr(doc, "accounts") and doc.accounts:
-                result["journal_accounts"] = []
-                for acc in doc.accounts:
-                    result["journal_accounts"].append({
-                        "account": getattr(acc, "account", ""),
-                        "reference_type": getattr(acc, "reference_type", ""),
-                        "reference_name": getattr(acc, "reference_name", ""),
-                        "debit": getattr(acc, "debit", 0),
-                        "credit": getattr(acc, "credit", 0)
+                # Check for PPh 21 entries
+                if "PPh 21" in account or "PPh 21" in against or "PPh 21" in remarks:
+                    result["pph21_entries"].append({
+                        "account": account,
+                        "against": against,
+                        "remarks": remarks,
+                        "debit": getattr(entry, "debit", 0),
+                        "credit": getattr(entry, "credit", 0)
                     })
         
+        # Check for PPh 21 December correction
+        if hasattr(doc, "koreksi_pph21"):
+            result["has_pph21_correction"] = True
+            result["koreksi_pph21"] = flt(doc.koreksi_pph21)
+        else:
+            result["has_pph21_correction"] = False
+            
+        # Check for TER adjustment
+        if hasattr(doc, "ter_adjustment_amount"):
+            result["has_ter_adjustment"] = True
+            result["ter_adjustment_amount"] = flt(doc.ter_adjustment_amount)
+        else:
+            result["has_ter_adjustment"] = False
+            
+        # Check for employer BPJS
+        if hasattr(doc, "total_bpjs_employer"):
+            result["has_employer_bpjs"] = True
+            result["total_bpjs_employer"] = flt(doc.total_bpjs_employer)
+        else:
+            result["has_employer_bpjs"] = False
+                    
         return result
     except Exception as e:
         return {

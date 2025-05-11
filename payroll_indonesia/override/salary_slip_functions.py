@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 04:55:25 by dannyaudian
+# Last modified: 2025-05-11 05:48:47 by dannyaudian
 
 import frappe
 from frappe import _
@@ -10,13 +10,17 @@ import traceback
 # Import the controller class
 from payroll_indonesia.override.salary_slip import IndonesiaPayrollSalarySlip
 
+# Import centralized cache utilities
+from payroll_indonesia.utils.cache_utils import clear_all_caches, schedule_cache_clearing
+
 __all__ = [
     'validate_salary_slip',
     'on_submit_salary_slip',
     'on_cancel_salary_slip',
     'after_insert_salary_slip',
     'log_error',
-    'raise_user_error'
+    'raise_user_error',
+    'clear_caches'
 ]
 
 # Utility functions for standardized error handling
@@ -139,3 +143,21 @@ def set_tax_ids_from_employee(doc):
         employee_ktp = frappe.db.get_value("Employee", doc.employee, "ktp")
         if employee_ktp:
             doc.db_set('ktp', employee_ktp, update_modified=False)
+
+def clear_caches():
+    """
+    Clear all caches related to salary slip and tax calculations.
+    This function is used by scheduler events and can be called manually.
+    """
+    try:
+        # Use the centralized cache clearing function
+        clear_all_caches()
+        
+        # Schedule next cache clear in 30 minutes
+        schedule_cache_clearing(minutes=30)
+        
+        frappe.logger().info("Salary slip caches cleared successfully")
+        return {"status": "success", "message": "All caches cleared successfully"}
+    except Exception as e:
+        frappe.logger().error(f"Error clearing caches: {str(e)}")
+        return {"status": "error", "message": f"Error clearing caches: {str(e)}"}
