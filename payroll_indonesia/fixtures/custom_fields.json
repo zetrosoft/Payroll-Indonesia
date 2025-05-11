@@ -231,7 +231,7 @@
     "fieldname": "payroll_indo_section",
     "fieldtype": "Section Break",
     "insert_after": "net_pay",
-    "label": "Payroll Indonesia",
+    "label": "Payroll Indonesia (TER, BPJS)",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-payroll_indo_section",
     "collapsible": 1
