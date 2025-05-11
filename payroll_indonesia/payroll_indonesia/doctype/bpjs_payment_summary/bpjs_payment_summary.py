@@ -790,7 +790,15 @@ class BPJSPaymentSummary(Document):
                     or not self.account_details
                     or len(self.account_details) == 0
                 ):
-                    company_abbr = frappe.get_cached_value("Company", self.company, "abbr")
+                    # Either remove this line completely:
+                    # company_abbr = frappe.get_cached_value("Company", self.company, "abbr")
+
+                    # Or store it for later use:
+                    # self._company_abbr = frappe.get_cached_value("Company", self.company, "abbr")
+
+                    # Or just use it directly if needed:
+                    # parent_account = f"BPJS Payable - {company_abbr}"
+
                     default_account = frappe.db.get_value(
                         "Account", {"account_type": "Payable", "company": self.company}, "name"
                     )
@@ -828,7 +836,9 @@ class BPJSPaymentSummary(Document):
                 or not self.account_details
                 or len(self.account_details) == 0
             ):
-                company_abbr = frappe.get_cached_value("Company", self.company, "abbr")
+                # Remove the unused company_abbr variable
+                # company_abbr = frappe.get_cached_value("Company", self.company, "abbr")
+
                 default_account = frappe.db.get_value(
                     "Account", {"account_type": "Payable", "company": self.company}, "name"
                 )

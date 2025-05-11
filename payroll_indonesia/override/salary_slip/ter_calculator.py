@@ -295,15 +295,15 @@ def get_ytd_totals_from_tax_summary(employee, year, month):
         # Use a parameterized query to get all needed data
         ytd_data = frappe.db.sql(
             """
-            SELECT 
+            SELECT
             ETS.ytd_tax,
             SUM(ETSD.gross_pay) as ytd_gross,
             SUM(ETSD.bpjs_deductions) as ytd_bpjs
-            FROM 
+            FROM
             tabEmployee Tax Summary` ETS
             LEFT JOIN
             `tabEmployee Tax Summary Detail` ETSD ON ETS.name = ETSD.parent
-            WHERE 
+            WHERE
             ETS.employee = %s
             AND ETS.year = %s
             AND ETSD.month < %s

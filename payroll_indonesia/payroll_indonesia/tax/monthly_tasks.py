@@ -249,6 +249,7 @@ def update_tax_summaries(month=None, year=None, company=None):
                     }
                 )
                 continue
+
         # Log summary
         log_message = (
             "Tax summary update completed for {0:02d}-{1}."
@@ -553,7 +554,7 @@ def calculate_monthly_totals(slip_names):
 
         # Use parameterized query to get all relevant components at once
         component_query = """
-            SELECT parent, salary_component, amount 
+            SELECT parent, salary_component, amount
             FROM `tabSalary Detail`
             WHERE parent IN %s
               AND parentfield = 'deductions'

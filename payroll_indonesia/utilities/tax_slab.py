@@ -265,8 +265,8 @@ def update_existing_assignments():
         try:
             # Use parameterized query for SQL safety
             query = """
-                SELECT DISTINCT parent 
-                FROM `tabSalary Detail` 
+                SELECT DISTINCT parent
+                FROM `tabSalary Detail`
                 WHERE salary_component = %s
                 AND parenttype = %s
             """
