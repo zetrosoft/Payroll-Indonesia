@@ -10,7 +10,7 @@ from frappe.model.document import Document
 from frappe.utils import flt, cint
 
 # Import utility functions
-from payroll_indonesia.payroll_indonesia.utils import get_default_config, debug_log
+from payroll_indonesia.payroll_indonesia.utils import debug_log
 
 
 class PPh21TERTable(Document):
@@ -42,9 +42,6 @@ class PPh21TERTable(Document):
 
         # Check for duplicates
         self.validate_duplicate()
-
-        # Cross-check with configuration
-        self.validate_against_config()
 
         # Set highest bracket flag if appropriate
         if self.income_to == 0 and not self.is_highest_bracket:
@@ -100,51 +97,9 @@ class PPh21TERTable(Document):
                 )
             )
 
-    def validate_against_config(self):
-        """Validate against TER rates in configuration"""
-        try:
-            # Get TER rates from configuration
-            ter_rates = get_default_config("ter_rates")
-            if not ter_rates:
-                debug_log("No TER rates found in configuration", "PPh 21 TER Table")
-                return
-
-            # Check if status_pajak exists in configuration
-            if self.status_pajak not in ter_rates:
-                debug_log(
-                    f"Category {self.status_pajak} not found in TER configuration",
-                    "PPh 21 TER Table",
-                )
-                return
-
-            # Check if this range exists in configuration
-            status_rates = ter_rates[self.status_pajak]
-            for rate_data in status_rates:
-                income_from = flt(rate_data.get("income_from", 0))
-                income_to = flt(rate_data.get("income_to", 0))
-                rate = flt(rate_data.get("rate", 0))
-
-                # If we find a matching range, validate the rate matches configuration
-                if self.income_from == income_from and self.income_to == income_to:
-                    if self.rate != rate:
-                        debug_log(
-                            f"TER rate {self.rate}% for {self.status_pajak} range {self.income_from}-{self.income_to} "
-                            f"does not match configuration value of {rate}%",
-                            "PPh 21 TER Table",
-                        )
-                    break
-
-        except Exception as e:
-            frappe.log_error(
-                f"Error validating TER rate against configuration: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}",
-                "PPh 21 TER Validation Error",
-            )
-            debug_log(
-                f"Error validating TER rate against config: {str(e)}",
-                "PPh 21 TER Table",
-                trace=True,
-            )
+    # Removed method that was causing the import error
+    # def validate_against_config(self):
+    #    ...
 
     def generate_description(self):
         """Set the description automatically with proper formatting"""
