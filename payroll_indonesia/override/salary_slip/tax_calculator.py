@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 07:55:32 by dannyaudianlanjutkan
+# Last modified: 2025-05-11 11:00:37 by dannyaudianlanjutkan
 
 """
 Implementation of tax calculation as per Indonesian regulations.
@@ -30,6 +30,21 @@ from payroll_indonesia.override.salary_slip.ter_calculator import calculate_mont
 # Import standardized cache utilities
 from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
+# Import constants
+from payroll_indonesia.constants import (
+    MONTHS_PER_YEAR, CACHE_SHORT, CACHE_LONG, CACHE_MEDIUM,
+    BIAYA_JABATAN_PERCENT, BIAYA_JABATAN_MAX, 
+    DECEMBER_MONTH
+)
+
+# Import centralized tax logic functions
+from payroll_indonesia.payroll_indonesia.tax.ter_logic import (
+    calculate_progressive_tax,
+    get_ptkp_amount,
+    should_use_ter_method,
+    map_ptkp_to_ter_category
+)
+
 def calculate_tax_components(doc, employee):
     """
     Central entry point for all tax calculations - decides between TER or progressive methods
@@ -52,7 +67,7 @@ def calculate_tax_components(doc, employee):
             return
 
         # Calculate Biaya Jabatan (5% of gross, max 500k)
-        doc.biaya_jabatan = min(doc.gross_pay * 0.05, 500000)
+        doc.biaya_jabatan = min(doc.gross_pay * (BIAYA_JABATAN_PERCENT/100), BIAYA_JABATAN_MAX)
 
         # Calculate netto income
         doc.netto = doc.gross_pay - doc.biaya_jabatan - doc.total_bpjs
@@ -77,41 +92,11 @@ def calculate_tax_components(doc, employee):
             elif employee.override_tax_method == "Progressive":
                 return calculate_monthly_pph_progressive(doc, employee)
         
-        # No explicit override, check company settings
-        try:
-            # Use cache for PPh settings
-            cache_key = "pph_settings:calculation_method"
-            pph_settings = get_cached_value(cache_key)
-            
-            if pph_settings is None:
-                pph_settings = frappe.get_single("PPh 21 Settings")
-                # Cache for 1 hour
-                cache_value(cache_key, pph_settings, 3600)
-                
-            if (hasattr(pph_settings, 'calculation_method') and 
-                pph_settings.calculation_method == "TER" and
-                hasattr(pph_settings, 'use_ter') and
-                cint(pph_settings.use_ter) == 1):
-                
-                # Check month - TER should not be used for December as per PMK 168/2023
-                current_month = getdate(doc.start_date).month if hasattr(doc, 'start_date') else getdate().month
-                if current_month != 12:
-                    # Check employee eligibility for TER
-                    if not should_exclude_from_ter(employee):
-                        return calculate_monthly_pph_with_ter(doc, employee)
-        except Exception as e:
-            # This is not fatal - we can fall back to progressive method
-            frappe.log_error(
-                "Error checking PPh 21 Settings for {0}: {1}".format(
-                    employee.name if hasattr(employee, 'name') else 'unknown', str(e)
-                ),
-                "Tax Method Selection Error"
-            )
-            frappe.msgprint(
-                _("Warning: Could not determine tax calculation method. Using progressive method as fallback."),
-                indicator="orange"
-            )
-            
+        # No explicit override, use centralized logic to check if should use TER
+        use_ter = should_use_ter_method(employee)
+        if use_ter:
+            return calculate_monthly_pph_with_ter(doc, employee)
+        
         # Default to progressive method
         return calculate_monthly_pph_progressive(doc, employee)
     
@@ -125,35 +110,6 @@ def calculate_tax_components(doc, employee):
         )
         # Use throw for validation failures
         frappe.throw(_("Error calculating tax components: {0}").format(str(e)))
-
-def should_exclude_from_ter(employee):
-    """
-    Check if employee should be excluded from TER method based on criteria
-    
-    Args:
-        employee: Employee document
-        
-    Returns:
-        bool: True if employee should be excluded from TER
-    """
-    # Use cache for TER exclusion check
-    cache_key = f"ter_exclude:{employee.name}"
-    cached_result = get_cached_value(cache_key)
-    
-    if cached_result is not None:
-        return cached_result
-    
-    # Freelance employees should use Progressive method
-    if hasattr(employee, 'tipe_karyawan') and employee.tipe_karyawan == "Freelance":
-        cache_value(cache_key, True, 3600)  # Cache for 1 hour
-        return True
-    
-    # Check other exclusion criteria here
-    # ...
-    
-    # Not excluded
-    cache_value(cache_key, False, 3600)  # Cache for 1 hour
-    return False
 
 def calculate_monthly_pph_progressive(doc, employee):
     """
@@ -171,28 +127,22 @@ def calculate_monthly_pph_progressive(doc, employee):
         if pph_settings is None:
             pph_settings = frappe.get_single("PPh 21 Settings")
             # Cache for 1 hour
-            cache_value(cache_key, pph_settings, 3600)
+            cache_value(cache_key, pph_settings, CACHE_MEDIUM)
         
         # Get PTKP value
         if not hasattr(employee, 'status_pajak') or not employee.status_pajak:
             employee.status_pajak = "TK0"  # Default to TK0 if not set
             frappe.msgprint(_("Warning: Employee tax status not set, using TK0 as default"), indicator="orange")
 
-        # Get PTKP with cache
-        cache_key = f"ptkp:{employee.status_pajak}"
-        ptkp = get_cached_value(cache_key)
-        
-        if ptkp is None:
-            ptkp = get_ptkp_amount(pph_settings, employee.status_pajak)
-            # Cache for 24 hours
-            cache_value(cache_key, ptkp, 86400)
+        # Get PTKP using centralized function
+        ptkp = get_ptkp_amount(employee.status_pajak, pph_settings)
 
         # Get annual values
         monthly_netto = doc.netto
-        annual_netto = monthly_netto * 12
+        annual_netto = monthly_netto * MONTHS_PER_YEAR
         pkp = max(annual_netto - ptkp, 0)
 
-        # Calculate annual PPh
+        # Calculate annual PPh using centralized function
         cache_key = f"progressive_tax:{pkp}"
         tax_result = get_cached_value(cache_key)
         
@@ -200,13 +150,13 @@ def calculate_monthly_pph_progressive(doc, employee):
             annual_pph, tax_details = calculate_progressive_tax(pkp, pph_settings)
             tax_result = {"annual_pph": annual_pph, "tax_details": tax_details}
             # Cache for 1 hour
-            cache_value(cache_key, tax_result, 3600)
+            cache_value(cache_key, tax_result, CACHE_MEDIUM)
         else:
             annual_pph = tax_result["annual_pph"]
             tax_details = tax_result["tax_details"]
         
         # Calculate monthly PPh
-        monthly_pph = annual_pph / 12
+        monthly_pph = annual_pph / MONTHS_PER_YEAR
 
         # Update PPh 21 component
         update_component_amount(doc, "PPh 21", monthly_pph, "deductions")
@@ -252,7 +202,7 @@ def calculate_december_pph(doc, employee):
             try:
                 pph_settings = frappe.get_single("PPh 21 Settings")
                 # Cache for 1 hour
-                cache_value(cache_key, pph_settings, 3600)
+                cache_value(cache_key, pph_settings, CACHE_MEDIUM)
             except Exception as e:
                 # This is a critical validation error - can't proceed without settings
                 frappe.log_error(
@@ -272,33 +222,25 @@ def calculate_december_pph(doc, employee):
         if ytd is None:
             ytd = get_ytd_totals_from_tax_summary(doc, year)
             # Cache for 30 minutes
-            cache_value(cache_key, ytd, 1800)
+            cache_value(cache_key, ytd, CACHE_SHORT)
 
         # Calculate annual totals
         annual_gross = ytd.get("gross", 0) + doc.gross_pay
         annual_bpjs = ytd.get("bpjs", 0) + doc.total_bpjs
         
         # Biaya Jabatan is 5% of annual gross, max 500k/year according to regulations
-        annual_biaya_jabatan = min(annual_gross * 0.05, 500000)
+        annual_biaya_jabatan = min(annual_gross * (BIAYA_JABATAN_PERCENT/100), BIAYA_JABATAN_MAX)
         annual_netto = annual_gross - annual_biaya_jabatan - annual_bpjs
 
-        # Get PTKP value
+        # Get PTKP value using centralized function
         if not hasattr(employee, 'status_pajak') or not employee.status_pajak:
             employee.status_pajak = "TK0"  # Default to TK0 if not set
             frappe.msgprint(_("Warning: Employee tax status not set, using TK0 as default"), indicator="orange")
 
-        # Get PTKP with cache
-        ptkp_cache_key = f"ptkp:{employee.status_pajak}"
-        ptkp = get_cached_value(ptkp_cache_key)
-        
-        if ptkp is None:
-            ptkp = get_ptkp_amount(pph_settings, employee.status_pajak)
-            # Cache for 24 hours
-            cache_value(ptkp_cache_key, ptkp, 86400)
-            
+        ptkp = get_ptkp_amount(employee.status_pajak, pph_settings)
         pkp = max(annual_netto - ptkp, 0)
 
-        # Calculate annual PPh with cache
+        # Calculate annual PPh using centralized function
         tax_cache_key = f"progressive_tax:{pkp}"
         tax_result = get_cached_value(tax_cache_key)
         
@@ -306,7 +248,7 @@ def calculate_december_pph(doc, employee):
             annual_pph, tax_details = calculate_progressive_tax(pkp, pph_settings)
             tax_result = {"annual_pph": annual_pph, "tax_details": tax_details}
             # Cache for 1 hour
-            cache_value(tax_cache_key, tax_result, 3600)
+            cache_value(tax_cache_key, tax_result, CACHE_MEDIUM)
         else:
             annual_pph = tax_result["annual_pph"]
             tax_details = tax_result["tax_details"]
@@ -508,233 +450,64 @@ def add_tax_info_to_note(doc, tax_method, values):
             doc.payroll_note += _("\n\nWarning: Could not add detailed tax calculation notes.")
             frappe.msgprint(_("Warning: Could not add detailed tax calculation notes."), indicator="orange")
             
-def calculate_progressive_tax(pkp, pph_settings=None):
+def set_basic_payroll_note(doc, employee):
     """
-    Calculate tax using progressive rates
+    Set basic payroll note with component details
     
     Args:
-        pkp: Penghasilan Kena Pajak (taxable income)
-        pph_settings: PPh 21 Settings document (optional)
-        
-    Returns:
-        tuple: (total_tax, tax_details)
+        doc: Salary slip document
+        employee: Employee document
     """
     try:
-        # Check cache first
-        cache_key = f"tax_brackets:{pkp}"
-        cached_result = get_cached_value(cache_key)
-        
-        if cached_result is not None:
-            return cached_result
+        # Check if payroll_note already has content
+        if hasattr(doc, 'payroll_note') and doc.payroll_note:
+            # Don't overwrite existing note, add to it
+            return
             
-        if not pph_settings:
-            try:
-                # Use cached settings if possible
-                settings_cache_key = "pph_21_settings"
-                pph_settings = get_cached_value(settings_cache_key)
-                
-                if pph_settings is None:
-                    pph_settings = frappe.get_single("PPh 21 Settings")
-                    # Cache for 1 hour
-                    cache_value(settings_cache_key, pph_settings, 3600)
-            except Exception as e:
-                # This is a critical error - can't calculate tax without settings
-                frappe.log_error(
-                    "Error retrieving PPh 21 Settings: {0}".format(str(e)),
-                    "Tax Settings Error"
-                )
-                frappe.throw(_("Error retrieving PPh 21 Settings: {0}").format(str(e)))
-
-        # First check if bracket_table is directly available as attribute
-        bracket_table = []
-        if hasattr(pph_settings, 'bracket_table'):
-            bracket_table = pph_settings.bracket_table
-            
-        # If not found or empty, query from database
-        if not bracket_table:
-            # Check cache for brackets
-            brackets_cache_key = "pph_21_brackets"
-            bracket_table = get_cached_value(brackets_cache_key)
-            
-            if bracket_table is None:
-                bracket_table = frappe.db.sql("""
-                    SELECT income_from, income_to, tax_rate
-                    FROM `tabPPh 21 Tax Bracket`
-                    WHERE parent = 'PPh 21 Settings'
-                    ORDER BY income_from ASC
-                """, as_dict=1)
-                
-                # Cache for 24 hours
-                cache_value(brackets_cache_key, bracket_table, 86400)
-
-        # If still not found, use default values
-        if not bracket_table:
-            # Default bracket values if not found - based on PMK 101/2016 and UU HPP 2021
-            bracket_table = [
-                {"income_from": 0, "income_to": 60000000, "tax_rate": 5},
-                {"income_from": 60000000, "income_to": 250000000, "tax_rate": 15},
-                {"income_from": 250000000, "income_to": 500000000, "tax_rate": 25},
-                {"income_from": 500000000, "income_to": 5000000000, "tax_rate": 30},
-                {"income_from": 5000000000, "income_to": 0, "tax_rate": 35}
-            ]
-            frappe.msgprint(_("Tax brackets not configured, using default progressive rates."), indicator="orange")
-
-        # Calculate tax using progressive rates
-        total_tax = 0
-        tax_details = []
-        remaining_pkp = pkp
-
-        for bracket in sorted(bracket_table, key=lambda x: flt(x.get("income_from", 0))):
-            if remaining_pkp <= 0:
-                break
-
-            income_from = flt(bracket.get("income_from", 0))
-            income_to = flt(bracket.get("income_to", 0))
-            tax_rate = flt(bracket.get("tax_rate", 0))
-
-            # Handle unlimited upper bracket
-            upper_limit = income_to if income_to > 0 else float('inf')
-            lower_limit = income_from
-            taxable = min(remaining_pkp, upper_limit - lower_limit)
-
-            tax = taxable * (tax_rate / 100)
-            total_tax += tax
-
-            if tax > 0:
-                tax_details.append({
-                    'rate': tax_rate,
-                    'taxable': taxable,
-                    'tax': tax
-                })
-
-            remaining_pkp -= taxable
-
-        # Cache the result
-        result = (total_tax, tax_details)
-        cache_value(cache_key, result, 3600)  # Cache for 1 hour
+        status_pajak = employee.status_pajak if hasattr(employee, 'status_pajak') and employee.status_pajak else "TK0"
         
-        return result
-        
+        doc.payroll_note = "\n".join([
+                        "<!-- BASIC_INFO_START -->",
+            "=== Informasi Dasar ===",
+            f"Status Pajak: {status_pajak}",
+            f"Penghasilan Bruto: Rp {doc.gross_pay:,.0f}",
+            f"Biaya Jabatan: Rp {doc.biaya_jabatan:,.0f}",
+            f"BPJS (JHT+JP+Kesehatan): Rp {doc.total_bpjs:,.0f}",
+            f"Penghasilan Neto: Rp {doc.netto:,.0f}",
+            "<!-- BASIC_INFO_END -->"
+        ])
     except Exception as e:
-        # This is a critical calculation error
+        # This is not a critical error - the note is mostly informational
         frappe.log_error(
-            "Progressive Tax Calculation Error for PKP {0}: {1}".format(pkp, str(e)),
-            "Tax Bracket Calculation Error"
+            "Error setting basic payroll note for {0}: {1}".format(doc.employee, str(e)),
+            "Payroll Note Error"
         )
-        frappe.throw(_("Error calculating progressive tax brackets: {0}").format(str(e)))
+        # Just set a basic note
+        doc.payroll_note = f"Penghasilan Bruto: Rp {doc.gross_pay:,.0f}"
+        # Inform the user but don't block processing
+        frappe.msgprint(_("Warning: Could not set detailed payroll note."), indicator="orange")
 
-def get_ptkp_amount(pph_settings, status_pajak):
+def is_december(doc):
     """
-    Get PTKP amount based on tax status
+    Check if salary slip is for December
     
     Args:
-        pph_settings: PPh 21 Settings document
-        status_pajak: Tax status (e.g., 'TK0', 'K1', etc.)
+        doc: Salary slip document
         
     Returns:
-        float: PTKP amount
+        bool: True if the salary slip is for December
     """
     try:
-        # Check cache first
-        cache_key = f"ptkp:{status_pajak}"
-        cached_ptkp = get_cached_value(cache_key)
-        
-        if cached_ptkp is not None:
-            return cached_ptkp
-            
-        # Get PTKP from settings
-        ptkp_table = pph_settings.ptkp_table if hasattr(pph_settings, 'ptkp_table') else []
-        
-        # If not found, query from database
-        if not ptkp_table:
-            ptkp_cache_key = "ptkp_table"
-            ptkp_table = get_cached_value(ptkp_cache_key)
-            
-            if ptkp_table is None:
-                ptkp_table = frappe.db.sql("""
-                    SELECT status_pajak as tax_status, ptkp_amount as amount
-                    FROM `tabPPh 21 PTKP Table`
-                    WHERE parent = 'PPh 21 Settings'
-                """, as_dict=1)
-                
-                # Cache for 24 hours
-                cache_value(ptkp_cache_key, ptkp_table, 86400)
-        
-        # Find matching status
-        for ptkp in ptkp_table:
-            if hasattr(ptkp, 'tax_status') and ptkp.tax_status == status_pajak:
-                ptkp_amount = flt(ptkp.amount)
-                cache_value(cache_key, ptkp_amount, 86400)  # Cache for 24 hours
-                return ptkp_amount
-            
-            # For backward compatibility
-            if hasattr(ptkp, 'status_pajak') and ptkp.status_pajak == status_pajak:
-                ptkp_amount = flt(ptkp.ptkp_amount)
-                cache_value(cache_key, ptkp_amount, 86400)  # Cache for 24 hours
-                return ptkp_amount
-        
-        # If not found, try to match prefix (TK0 -> TK)
-        prefix = status_pajak[:2] if len(status_pajak) >= 2 else status_pajak
-        for ptkp in ptkp_table:
-            ptkp_status = ptkp.tax_status if hasattr(ptkp, 'tax_status') else ptkp.status_pajak
-            if ptkp_status and ptkp_status.startswith(prefix):
-                ptkp_amount = flt(ptkp.amount if hasattr(ptkp, 'amount') else ptkp.ptkp_amount)
-                cache_value(cache_key, ptkp_amount, 86400)  # Cache for 24 hours
-                return ptkp_amount
-        
-        # Default values if not found - based on PMK-101/PMK.010/2016 and updated values
-        default_ptkp = {
-            "TK": 54000000,  # TK/0
-            "K": 58500000,   # K/0
-            "HB": 112500000  # HB/0
-        }
-        
-        # Return default based on prefix
-        for key, value in default_ptkp.items():
-            if status_pajak.startswith(key):
-                # Log warning but continue with default
-                frappe.log_error(
-                    "PTKP value not found for status {0}, using default value {1}".format(
-                        status_pajak, value
-                    ),
-                    "PTKP Default Used"
-                )
-                frappe.msgprint(
-                    _("Warning: PTKP value not found for status {0}. Using default value {1}").format(
-                        status_pajak, value
-                    ),
-                    indicator="orange"
-                )
-                cache_value(cache_key, value, 86400)  # Cache for 24 hours
-                return value
-                
-        # Last resort - TK0
-        default_value = 54000000  # Default for TK0
+        return getdate(doc.end_date).month == DECEMBER_MONTH
+    except Exception as e:
+        # Non-critical error - log and default to False
         frappe.log_error(
-            "No PTKP match found for status {0}, using TK0 default ({1})".format(
-                status_pajak, default_value
+            "Error checking if salary slip {0} is for December: {1}".format(
+                doc.name if hasattr(doc, 'name') else 'unknown', str(e)
             ),
-            "PTKP Default Used"
+            "Date Check Error"
         )
-        frappe.msgprint(
-            _("Warning: No PTKP match found for status {0}. Using TK0 default.").format(status_pajak),
-            indicator="orange"
-        )
-        cache_value(cache_key, default_value, 86400)  # Cache for 24 hours
-        return default_value
-    
-    except Exception as e:
-        # This is not a critical error - we can use default values
-        frappe.log_error(
-            "Error getting PTKP amount for {0}: {1}".format(status_pajak, str(e)),
-            "PTKP Calculation Error"
-        )
-        frappe.msgprint(
-            _("Warning: Error determining PTKP amount. Using default value."),
-            indicator="orange"
-        )
-        # Return default PTKP for TK0
-        return 54000000
+        return False
 
 def get_ytd_totals_from_tax_summary(doc, year):
     """
@@ -776,7 +549,7 @@ def get_ytd_totals_from_tax_summary(doc, year):
                 indicator="orange"
             )
             result = get_ytd_totals(doc, year)
-            cache_value(cache_key, result, 1800)  # Cache for 30 minutes
+            cache_value(cache_key, result, CACHE_SHORT)
             return result
             
         # Get Employee Tax Summary
@@ -802,7 +575,7 @@ def get_ytd_totals_from_tax_summary(doc, year):
                     indicator="orange"
                 )
                 result = get_ytd_totals(doc, year)
-                cache_value(cache_key, result, 1800)  # Cache for 30 minutes
+                cache_value(cache_key, result, CACHE_SHORT)
                 return result
             
             # Get current month
@@ -817,7 +590,7 @@ def get_ytd_totals_from_tax_summary(doc, year):
                         result["pph21"] += flt(monthly.tax_amount if hasattr(monthly, 'tax_amount') else 0)
                 
                 # Cache the result
-                cache_value(cache_key, result, 1800)  # Cache for 30 minutes
+                cache_value(cache_key, result, CACHE_SHORT)
                 return result
             else:
                 # This is not a critical error - we can use traditional calculation
@@ -843,7 +616,7 @@ def get_ytd_totals_from_tax_summary(doc, year):
         
     # Fall back to traditional method if tax summary not found or error occurs
     result = get_ytd_totals(doc, year)
-    cache_value(cache_key, result, 1800)  # Cache for 30 minutes
+    cache_value(cache_key, result, CACHE_SHORT)
     return result
 
 def get_ytd_totals(doc, year):
@@ -937,7 +710,7 @@ def get_ytd_totals(doc, year):
                 continue
 
         # Cache the result for 30 minutes
-        cache_value(cache_key, result, 1800)
+        cache_value(cache_key, result, CACHE_SHORT)
         return result
         
     except Exception as e:
@@ -952,62 +725,3 @@ def get_ytd_totals(doc, year):
         )
         # Return empty result on error
         return {"gross": 0, "bpjs": 0, "pph21": 0}
-
-def set_basic_payroll_note(doc, employee):
-    """
-    Set basic payroll note with component details
-    
-    Args:
-        doc: Salary slip document
-        employee: Employee document
-    """
-    try:
-        # Check if payroll_note already has content
-        if hasattr(doc, 'payroll_note') and doc.payroll_note:
-            # Don't overwrite existing note, add to it
-            return
-            
-        status_pajak = employee.status_pajak if hasattr(employee, 'status_pajak') and employee.status_pajak else "TK0"
-        
-        doc.payroll_note = "\n".join([
-                        "<!-- BASIC_INFO_START -->",
-            "=== Informasi Dasar ===",
-            f"Status Pajak: {status_pajak}",
-            f"Penghasilan Bruto: Rp {doc.gross_pay:,.0f}",
-            f"Biaya Jabatan: Rp {doc.biaya_jabatan:,.0f}",
-            f"BPJS (JHT+JP+Kesehatan): Rp {doc.total_bpjs:,.0f}",
-            f"Penghasilan Neto: Rp {doc.netto:,.0f}",
-            "<!-- BASIC_INFO_END -->"
-        ])
-    except Exception as e:
-        # This is not a critical error - the note is mostly informational
-        frappe.log_error(
-            "Error setting basic payroll note for {0}: {1}".format(doc.employee, str(e)),
-            "Payroll Note Error"
-        )
-        # Just set a basic note
-        doc.payroll_note = f"Penghasilan Bruto: Rp {doc.gross_pay:,.0f}"
-        # Inform the user but don't block processing
-        frappe.msgprint(_("Warning: Could not set detailed payroll note."), indicator="orange")
-
-def is_december(doc):
-    """
-    Check if salary slip is for December
-    
-    Args:
-        doc: Salary slip document
-        
-    Returns:
-        bool: True if the salary slip is for December
-    """
-    try:
-        return getdate(doc.end_date).month == 12
-    except Exception as e:
-        # Non-critical error - log and default to False
-        frappe.log_error(
-            "Error checking if salary slip {0} is for December: {1}".format(
-                doc.name if hasattr(doc, 'name') else 'unknown', str(e)
-            ),
-            "Date Check Error"
-        )
-        return False
