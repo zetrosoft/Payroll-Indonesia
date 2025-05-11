@@ -3,7 +3,9 @@
 
 import frappe
 
+
 def on_app_init():
     """Jalankan saat app diinisialisasi"""
     from payroll_indonesia import patch_get_versions
+
     patch_get_versions()

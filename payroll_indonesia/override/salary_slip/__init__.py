@@ -11,7 +11,7 @@ from .controller import (
     check_fiscal_year_setup,
     clear_caches,
     get_component,
-    set_component
+    set_component,
 )
 
 # Import debug_log from bpjs_calculator to prevent circular imports
@@ -19,14 +19,14 @@ from payroll_indonesia.override.salary_slip.bpjs_calculator import debug_log
 
 # Export for direct imports
 __all__ = [
-    'IndonesiaPayrollSalarySlip',
-    'setup_fiscal_year_if_missing',
-    'process_salary_slips_batch',
-    'check_fiscal_year_setup',
-    'clear_caches',
-    'debug_log',
-    'get_component',
-    'set_component'
+    "IndonesiaPayrollSalarySlip",
+    "setup_fiscal_year_if_missing",
+    "process_salary_slips_batch",
+    "check_fiscal_year_setup",
+    "clear_caches",
+    "debug_log",
+    "get_component",
+    "set_component",
 ]
 
 # Note: We're importing debug_log directly from bpjs_calculator to prevent circular imports

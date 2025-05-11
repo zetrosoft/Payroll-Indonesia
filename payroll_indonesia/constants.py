@@ -55,11 +55,11 @@ BIAYA_JABATAN_MAX = 500000
 TER_MAX_RATE = 34.0  # Highest TER rate is 34% for all categories per PMK 168/2023
 
 # Cache lifetimes (in seconds)
-CACHE_BRIEF = 300       # 5 minutes
-CACHE_SHORT = 1800      # 30 minutes
-CACHE_MEDIUM = 3600     # 1 hour
-CACHE_LONG = 86400      # 1 day
-CACHE_EXTENDED = 604800 # 1 week
+CACHE_BRIEF = 300  # 5 minutes
+CACHE_SHORT = 1800  # 30 minutes
+CACHE_MEDIUM = 3600  # 1 hour
+CACHE_LONG = 86400  # 1 day
+CACHE_EXTENDED = 604800  # 1 week
 
 # Log sizes
 MAX_LOG_LENGTH = 500
@@ -69,7 +69,7 @@ VALID_TAX_STATUS = ["TK0", "TK1", "TK2", "TK3", "K0", "K1", "K2", "K3", "HB0", "
 
 # TER Categories
 TER_CATEGORY_A = "TER A"
-TER_CATEGORY_B = "TER B" 
+TER_CATEGORY_B = "TER B"
 TER_CATEGORY_C = "TER C"
 TER_CATEGORIES = [TER_CATEGORY_A, TER_CATEGORY_B, TER_CATEGORY_C]
 
@@ -84,5 +84,5 @@ DEFAULT_BPJS_RATES = {
     "jp_employer_percent": BPJS_JP_EMPLOYER_PERCENT,
     "jp_max_salary": BPJS_JP_MAX_SALARY,
     "jkk_percent": BPJS_JKK_PERCENT,
-    "jkm_percent": BPJS_JKM_PERCENT
+    "jkm_percent": BPJS_JKM_PERCENT,
 }

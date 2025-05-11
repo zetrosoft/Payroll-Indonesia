@@ -8,15 +8,16 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import now
 
+
 class PayrollLog(Document):
     def validate(self):
         """Validate Payroll Log entry"""
         if not self.log_time:
             self.log_time = now()
-        
+
         if not self.title:
             self.set_title()
-    
+
     def set_title(self):
         """Set document title"""
         self.title = f"{self.employee_name} - {self.posting_date}"

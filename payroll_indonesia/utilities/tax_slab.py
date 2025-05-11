@@ -9,40 +9,43 @@ from frappe.utils import getdate, cstr, add_days, today, now_datetime
 from payroll_indonesia.fixtures.setup import debug_log
 
 __all__ = [
-    'create_default_tax_slab',
-    'create_income_tax_slab',
-    'get_default_tax_slab',
-    'update_salary_structures',
-    'update_existing_assignments'
+    "create_default_tax_slab",
+    "create_income_tax_slab",
+    "get_default_tax_slab",
+    "update_salary_structures",
+    "update_existing_assignments",
 ]
+
 
 def create_default_tax_slab():
     """
     Function for compatibility - calls create_income_tax_slab()
-    
+
     Returns:
         str: Name of the Income Tax Slab or None if creation failed
     """
     return create_income_tax_slab()
 
+
 def create_income_tax_slab():
     """
     Create Income Tax Slab for Indonesia
-    
+
     Returns:
         str: Name of the created or existing Income Tax Slab, None if failed
     """
     try:
         # Check if already exists
         existing_slabs = frappe.get_all(
-            "Income Tax Slab", 
-            filters={"currency": "IDR"},
-            fields=["name"]
+            "Income Tax Slab", filters={"currency": "IDR"}, fields=["name"]
         )
         if existing_slabs:
-            debug_log("Income Tax Slab for IDR already exists: {}".format(existing_slabs[0].name), "Tax Slab")
+            debug_log(
+                "Income Tax Slab for IDR already exists: {}".format(existing_slabs[0].name),
+                "Tax Slab",
+            )
             return existing_slabs[0].name
-            
+
         # Get company
         company = frappe.defaults.get_defaults().get("company")
         if not company:
@@ -52,7 +55,7 @@ def create_income_tax_slab():
             else:
                 debug_log("No company found, cannot create Income Tax Slab", "Tax Slab Error")
                 return None
-                
+
         # Create tax slab
         tax_slab = frappe.new_doc("Income Tax Slab")
         tax_slab.title = "Indonesia Income Tax"
@@ -65,11 +68,19 @@ def create_income_tax_slab():
 
         # Add tax brackets
         tax_slab.append("slabs", {"from_amount": 0, "to_amount": 60000000, "percent_deduction": 5})
-        tax_slab.append("slabs", {"from_amount": 60000000, "to_amount": 250000000, "percent_deduction": 15})
-        tax_slab.append("slabs", {"from_amount": 250000000, "to_amount": 500000000, "percent_deduction": 25})
-        tax_slab.append("slabs", {"from_amount": 500000000, "to_amount": 5000000000, "percent_deduction": 30})
-        tax_slab.append("slabs", {"from_amount": 5000000000, "to_amount": 0, "percent_deduction": 35})
-            
+        tax_slab.append(
+            "slabs", {"from_amount": 60000000, "to_amount": 250000000, "percent_deduction": 15}
+        )
+        tax_slab.append(
+            "slabs", {"from_amount": 250000000, "to_amount": 500000000, "percent_deduction": 25}
+        )
+        tax_slab.append(
+            "slabs", {"from_amount": 500000000, "to_amount": 5000000000, "percent_deduction": 30}
+        )
+        tax_slab.append(
+            "slabs", {"from_amount": 5000000000, "to_amount": 0, "percent_deduction": 35}
+        )
+
         # Save with flags to bypass validation
         tax_slab.flags.ignore_permissions = True
         tax_slab.flags.ignore_mandatory = True
@@ -78,47 +89,49 @@ def create_income_tax_slab():
 
         debug_log("Successfully created Income Tax Slab: {}".format(tax_slab.name), "Tax Slab")
         return tax_slab.name
-            
+
     except Exception as e:
         frappe.db.rollback()
         debug_log("Error creating Income Tax Slab: {}".format(str(e)), "Tax Slab Error")
         frappe.log_error("Error creating Income Tax Slab: {}".format(str(e)), "Tax Slab Error")
-        
+
         # Last resort - check if any tax slabs exist already
         try:
             existing_slabs = frappe.get_all("Income Tax Slab", limit=1)
             if existing_slabs:
-                debug_log("Using existing tax slab as last resort: {}".format(existing_slabs[0].name), "Tax Slab")
+                debug_log(
+                    "Using existing tax slab as last resort: {}".format(existing_slabs[0].name),
+                    "Tax Slab",
+                )
                 return existing_slabs[0].name
         except:
             pass
-            
+
         return None
+
 
 def get_default_tax_slab(create_if_missing=True):
     """
     Get default Income Tax Slab for Indonesia
-    
+
     Args:
         create_if_missing: Create tax slab if none exists
-        
+
     Returns:
         str: Name of the default Income Tax Slab, None if not found or creation failed
     """
     try:
         # Check if we have a default slab
         default_slab = None
-        
+
         # Get default slab if is_default field exists
         try:
             default_slab = frappe.db.get_value(
-                "Income Tax Slab", 
-                {"currency": "IDR", "is_default": 1},
-                "name"
+                "Income Tax Slab", {"currency": "IDR", "is_default": 1}, "name"
             )
         except:
             pass
-        
+
         # If no default slab, get any IDR slab
         if not default_slab:
             slabs = frappe.get_all(
@@ -126,48 +139,47 @@ def get_default_tax_slab(create_if_missing=True):
                 filters={"currency": "IDR"},
                 fields=["name"],
                 order_by="effective_from desc",
-                limit=1
+                limit=1,
             )
-            
+
             if slabs:
                 default_slab = slabs[0].name
-                
+
         # If still no slab and create_if_missing is True, create one
         if not default_slab and create_if_missing:
             default_slab = create_income_tax_slab()
-            
+
         return default_slab
-        
+
     except Exception as e:
         frappe.log_error("Error getting default tax slab: {}".format(str(e)), "Tax Slab Error")
         return None
+
 
 def update_salary_structures():
     """
     Update all Salary Structures to bypass Income Tax Slab validation
     with improved error handling for missing salary details
-    
+
     Returns:
         int: Number of successfully updated Salary Structures
     """
     success_count = 0
-    
+
     try:
         # Get default tax slab
         default_tax_slab = get_default_tax_slab()
         if not default_tax_slab:
             debug_log("Failed to get default tax slab", "Tax Slab Error")
             return 0
-            
+
         # Get active salary structures
         structures = frappe.get_all(
-            "Salary Structure", 
-            filters={"is_active": 1},
-            fields=["name", "docstatus"]
+            "Salary Structure", filters={"is_active": 1}, fields=["name", "docstatus"]
         )
-        
+
         debug_log("Found {} active salary structures to update".format(len(structures)), "Tax Slab")
-        
+
         # Update each structure
         for structure in structures:
             try:
@@ -185,60 +197,56 @@ def update_salary_structures():
                     frappe.db.set_value(
                         "Salary Structure",
                         structure.name,
-                        {
-                            "income_tax_slab": default_tax_slab,
-                            "tax_calculation_method": "Manual"
-                        },
-                        update_modified=False
+                        {"income_tax_slab": default_tax_slab, "tax_calculation_method": "Manual"},
+                        update_modified=False,
                     )
                     success_count += 1
             except Exception as e:
                 frappe.log_error(
-                    "Error updating structure {}: {}".format(structure.name, str(e)), 
-                    "Salary Structure Update Error"
+                    "Error updating structure {}: {}".format(structure.name, str(e)),
+                    "Salary Structure Update Error",
                 )
-                
+
         frappe.db.commit()
         debug_log("Updated {} salary structures".format(success_count), "Tax Slab")
         return success_count
-        
+
     except Exception as e:
         frappe.db.rollback()
         frappe.log_error(
-            "Critical error updating salary structures: {}".format(str(e)), 
-            "Tax Slab Error"
+            "Critical error updating salary structures: {}".format(str(e)), "Tax Slab Error"
         )
         return 0
+
 
 def update_existing_assignments():
     """
     Update existing Salary Structure Assignments with default Income Tax Slab
     to bypass validation errors
-    
+
     Returns:
         int: Number of successfully updated Salary Structure Assignments
     """
     success_count = 0
-    
+
     try:
         # Get default tax slab
         default_tax_slab = get_default_tax_slab()
         if not default_tax_slab:
             debug_log("Failed to get default tax slab", "Tax Slab Error")
             return 0
-            
+
         # Get assignments needing update
         assignments = frappe.get_all(
             "Salary Structure Assignment",
-            filters=[
-                ["income_tax_slab", "in", ["", None]],
-                ["docstatus", "=", 1]
-            ],
-            fields=["name", "salary_structure"]
+            filters=[["income_tax_slab", "in", ["", None]], ["docstatus", "=", 1]],
+            fields=["name", "salary_structure"],
         )
-        
-        debug_log("Found {} salary structure assignments to update".format(len(assignments)), "Tax Slab")
-        
+
+        debug_log(
+            "Found {} salary structure assignments to update".format(len(assignments)), "Tax Slab"
+        )
+
         # Find structures with PPh 21 component - using parameterized query
         tax_structures = []
         try:
@@ -249,26 +257,22 @@ def update_existing_assignments():
                 WHERE salary_component = %s
                 AND parenttype = %s
             """
-            structures_with_tax = frappe.db.sql(
-                query, 
-                ["PPh 21", "Salary Structure"], 
-                as_dict=1
-            )
-            
+            structures_with_tax = frappe.db.sql(query, ["PPh 21", "Salary Structure"], as_dict=1)
+
             if structures_with_tax:
                 tax_structures = [s.parent for s in structures_with_tax]
         except Exception as e:
             frappe.log_error(
-                "Error finding salary structures with PPh 21: {}".format(str(e)), 
-                "Tax Structure Query Error"
+                "Error finding salary structures with PPh 21: {}".format(str(e)),
+                "Tax Structure Query Error",
             )
-            
+
         # Process assignments
         batch_size = 50
         for i in range(0, len(assignments), batch_size):
-            batch = assignments[i:i+batch_size]
+            batch = assignments[i : i + batch_size]
             updated_in_batch = 0
-            
+
             for assignment in batch:
                 try:
                     # Only update if the structure has PPh 21 component
@@ -278,27 +282,26 @@ def update_existing_assignments():
                             assignment.name,
                             "income_tax_slab",
                             default_tax_slab,
-                            update_modified=False
+                            update_modified=False,
                         )
                         updated_in_batch += 1
                         success_count += 1
                 except Exception as e:
                     frappe.log_error(
-                        "Error updating assignment {}: {}".format(assignment.name, str(e)), 
-                        "Assignment Update Error"
+                        "Error updating assignment {}: {}".format(assignment.name, str(e)),
+                        "Assignment Update Error",
                     )
                     continue
-            
+
             # Commit after each batch
             frappe.db.commit()
-                
+
         debug_log("Updated {} salary structure assignments".format(success_count), "Tax Slab")
         return success_count
-        
+
     except Exception as e:
         frappe.db.rollback()
         frappe.log_error(
-            "Error updating salary structure assignments: {}".format(str(e)), 
-            "Tax Slab Error"
+            "Error updating salary structure assignments: {}".format(str(e)), "Tax Slab Error"
         )
         return 0
