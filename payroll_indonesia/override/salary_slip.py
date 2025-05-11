@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 05:45:00 by dannyaudian
+# Last modified: 2025-05-11 07:12:29 by dannyaudian
 
 import frappe
 from frappe import _
@@ -17,19 +17,17 @@ from payroll_indonesia.override.salary_slip.bpjs_calculator import calculate_bpj
 # Import centralized tax calculation
 from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
 
+# Import standardized cache utilities
+from payroll_indonesia.payroll_indonesia.utils.cache_utils import get_cached_value, cache_value, clear_cache
+
 # Define exports for proper importing by other modules
 __all__ = [
     'IndonesiaPayrollSalarySlip',
     'setup_fiscal_year_if_missing',
     'check_fiscal_year_setup',
-    'clear_caches',
+    'clear_salary_slip_caches',
     'extend_salary_slip_functionality'
 ]
-
-# Cache variables - encapsulated in a module-level dict to avoid global namespace pollution
-_CACHE = {
-    'ytd_tax_cache': {}
-}
 
 class IndonesiaPayrollSalarySlip(SalarySlip):
     """
@@ -106,6 +104,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     def _get_employee_doc(self):
         """
         Retrieves the complete Employee document for the current salary slip.
+        Uses cache if available.
         
         Returns:
             frappe.Document: The employee document
@@ -117,7 +116,16 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             frappe.throw(_("Salary Slip must have an employee assigned"))
             
         try:
-            return frappe.get_doc("Employee", self.employee)
+            # Check cache first
+            cache_key = f"employee_doc:{self.employee}"
+            employee_doc = get_cached_value(cache_key)
+            
+            if employee_doc is None:
+                employee_doc = frappe.get_doc("Employee", self.employee)
+                # Cache for 1 hour
+                cache_value(cache_key, employee_doc, 3600)
+                
+            return employee_doc
         except Exception as e:
             frappe.throw(_("Could not retrieve Employee {0}: {1}").format(self.employee, str(e)))
     
@@ -191,11 +199,20 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         and create one if missing.
         """
         if hasattr(self, "start_date"):
-            fiscal_year = check_fiscal_year_setup(self.start_date)
+            cache_key = f"fiscal_year:{getdate(self.start_date)}"
+            fiscal_year = get_cached_value(cache_key)
+            
+            if fiscal_year is None:
+                fiscal_year = check_fiscal_year_setup(self.start_date)
+                # Cache for 24 hours - fiscal years don't change often
+                cache_value(cache_key, fiscal_year, 86400)
+                
             if fiscal_year.get("status") == "error":
                 # Try to create fiscal year
                 setup_result = setup_fiscal_year_if_missing(self.start_date)
                 self.add_payroll_note(f"Fiscal year setup: {setup_result.get('status', 'unknown')}")
+                # Update cache with new fiscal year
+                cache_value(cache_key, {"status": "ok", "fiscal_year": setup_result.get("fiscal_year")}, 86400)
     
     def _handle_validation_error(self, error, employee_info):
         """
@@ -402,8 +419,13 @@ def _enhance_validate(doc, *args, **kwargs):
         # Initialize additional fields
         temp._initialize_payroll_fields()
         
-        # Get employee document
-        employee = temp._get_employee_doc()
+        # Get employee document using cache
+        cache_key = f"employee_doc:{doc.employee}"
+        employee = get_cached_value(cache_key)
+        
+        if employee is None:
+            employee = temp._get_employee_doc()
+            # Cache already handled in _get_employee_doc()
         
         # Calculate BPJS components
         temp._calculate_bpjs(employee)
@@ -532,15 +554,24 @@ def _enhance_on_cancel(doc, *args, **kwargs):
         )
 
 # Cache management functions
-def clear_caches():
+def clear_salary_slip_caches():
     """
-    Clear YTD tax cache to prevent memory bloat.
+    Clear salary slip related caches to prevent memory bloat.
     Schedules itself to run periodically.
     """
-    _CACHE['ytd_tax_cache'] = {}
+    # Clear caches using standardized cache_utils
+    prefixes_to_clear = [
+        "employee_doc:",
+        "fiscal_year:",
+        "salary_slip:",
+        "ytd_tax:"
+    ]
+    
+    for prefix in prefixes_to_clear:
+        clear_cache(prefix)
     
     # Schedule next cleanup in 30 minutes
-    frappe.enqueue(clear_caches, queue='long', job_name='clear_payroll_caches', is_async=True, now=False, 
+    frappe.enqueue(clear_salary_slip_caches, queue='long', job_name='clear_payroll_caches', is_async=True, now=False, 
                   enqueue_after=add_to_date(now_datetime(), minutes=30))
 
 # Helper function for fiscal year management
@@ -558,27 +589,41 @@ def check_fiscal_year_setup(date_str=None):
         from frappe.utils import getdate
         test_date = getdate(date_str) if date_str else getdate()
         
+        # Use cache for fiscal year lookup
+        cache_key = f"fiscal_year_check:{test_date}"
+        cached_result = get_cached_value(cache_key)
+        
+        if cached_result is not None:
+            return cached_result
+        
         fiscal_year = frappe.db.get_value("Fiscal Year", {
             "year_start_date": ["<=", test_date],
             "year_end_date": [">=", test_date]
         })
         
         if not fiscal_year:
-            return {
+            result = {
                 "status": "error",
                 "message": f"No active Fiscal Year found for date {test_date}",
                 "solution": "Create a Fiscal Year that includes this date in Company settings"
             }
+            # Cache negative result for 1 hour
+            cache_value(cache_key, result, 3600)
+            return result
         
-        return {
+        result = {
             "status": "ok",
             "fiscal_year": fiscal_year
         }
+        # Cache positive result for 24 hours
+        cache_value(cache_key, result, 86400)
+        return result
     except Exception as e:
-        return {
+        result = {
             "status": "error",
             "message": str(e)
         }
+        return result
 
 @frappe.whitelist()
 def setup_fiscal_year_if_missing(date_str=None):
@@ -595,6 +640,13 @@ def setup_fiscal_year_if_missing(date_str=None):
         from frappe.utils import getdate, add_to_date
         test_date = getdate(date_str) if date_str else getdate()
         
+        # Check cache first
+        cache_key = f"fiscal_year_setup:{test_date}"
+        cached_result = get_cached_value(cache_key)
+        
+        if cached_result is not None:
+            return cached_result
+        
         # Check if fiscal year exists
         fiscal_year = frappe.db.get_value("Fiscal Year", {
             "year_start_date": ["<=", test_date],
@@ -602,10 +654,13 @@ def setup_fiscal_year_if_missing(date_str=None):
         })
         
         if fiscal_year:
-            return {
+            result = {
                 "status": "exists",
                 "fiscal_year": fiscal_year
             }
+            # Cache result for 24 hours
+            cache_value(cache_key, result, 86400)
+            return result
         
         # Create a new fiscal year
         year = test_date.year
@@ -632,7 +687,7 @@ def setup_fiscal_year_if_missing(date_str=None):
         new_fy.year_end_date = end_date
         new_fy.save()
         
-        return {
+        result = {
             "status": "created",
             "fiscal_year": new_fy.name,
             "year": new_fy.year,
@@ -640,22 +695,27 @@ def setup_fiscal_year_if_missing(date_str=None):
             "end_date": end_date.strftime('%Y-%m-%d')
         }
         
+        # Cache result for 24 hours
+        cache_value(cache_key, result, 86400)
+        return result
+        
     except Exception as e:
         frappe.log_error(
             f"Error setting up fiscal year: {str(e)}\n\n"
             f"Traceback: {frappe.get_traceback()}",
             "Fiscal Year Setup Error"
         )
-        return {
+        result = {
             "status": "error",
             "message": str(e)
         }
+        return result
 
 # Hook to apply our extensions when the module is loaded
 def setup_hooks():
     """Set up our hooks and monkey patches when the module is loaded"""
     extend_salary_slip_functionality()
-    clear_caches()  # Start cache clearing process
+    clear_salary_slip_caches()  # Start cache clearing process
 
 # Apply extensions
 setup_hooks()
