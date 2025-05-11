@@ -57,21 +57,9 @@
   {
     "doctype": "Custom Field",
     "dt": "Employee",
-    "fieldname": "override_tax_method",
-    "fieldtype": "Select",
-    "insert_after": "status_pajak",
-    "label": "Override Tax Method",
-    "module": "Payroll Indonesia",
-    "name": "Employee-override_tax_method",
-    "options": "\nTER\nProgressive",
-    "description": "Override default tax calculation method for this employee"
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Employee",
     "fieldname": "jumlah_tanggungan",
     "fieldtype": "Int",
-    "insert_after": "override_tax_method",
+    "insert_after": "status_pajak",
     "label": "Jumlah Tanggungan",
     "module": "Payroll Indonesia",
     "name": "Employee-jumlah_tanggungan",
@@ -215,29 +203,6 @@
     "name": "Employee-penghasilan_final",
     "default": "0"
   },
-
-  {
-    "doctype": "Custom Field",
-    "dt": "Salary Slip",
-    "fieldname": "monthly_gross_for_ter",
-    "fieldtype": "Currency",
-    "insert_after": "gross_pay",
-    "label": "Monthly Gross for TER",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-monthly_gross_for_ter",
-    "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Salary Slip",
-    "fieldname": "annual_taxable_amount",
-    "fieldtype": "Currency",
-    "insert_after": "monthly_gross_for_ter",
-    "label": "Annual Taxable Amount",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-annual_taxable_amount",
-    "read_only": 1
-  },
   {
     "doctype": "Custom Field",
     "dt": "Salary Slip",
@@ -264,21 +229,9 @@
   {
     "doctype": "Custom Field",
     "dt": "Salary Slip",
-    "fieldname": "ter_rate",
-    "fieldtype": "Float",
-    "insert_after": "is_using_ter",
-    "label": "TER Rate",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-ter_rate",
-    "read_only": 1,
-    "precision": 2
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Salary Slip",
     "fieldname": "ter_category",
     "fieldtype": "Data",
-    "insert_after": "ter_rate",
+    "insert_after": "is_using_ter",
     "label": "TER Category",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-ter_category",
@@ -307,21 +260,9 @@
   {
     "doctype": "Custom Field",
     "dt": "Salary Slip",
-    "fieldname": "ter_calculation_note",
-    "fieldtype": "Small Text",
-    "insert_after": "koreksi_pph21",
-    "label": "TER Calculation Note",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-ter_calculation_note",
-    "read_only": 1,
-    "depends_on": "eval:doc.is_using_ter==1"
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Salary Slip",
     "fieldname": "tax_details_section",
     "fieldtype": "Section Break",
-    "insert_after": "ter_calculation_note",
+    "insert_after": "koreksi_pph21",
     "label": "Tax Details",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-tax_details_section"
@@ -394,35 +335,10 @@
   },
   {
     "doctype": "Custom Field",
-    "dt": "Salary Slip", 
-    "fieldname": "total_bpjs_employer",
-    "fieldtype": "Currency",
-    "insert_after": "total_bpjs",
-    "label": "Total BPJS Employer",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-total_bpjs_employer",
-    "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Salary Slip",
-    "fieldname": "is_final_gabung_suami",
-    "fieldtype": "Check",
-    "insert_after": "total_bpjs_employer",
-    "label": "Is Final Gabung Suami",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-is_final_gabung_suami",
-    "default": "0",
-    "read_only": 1,
-    "hidden": 1,
-    "fetch_from": "employee.npwp_gabung_suami"
-  },
-  {
-    "doctype": "Custom Field",
     "dt": "Salary Slip",
     "fieldname": "payroll_note_section",
     "fieldtype": "Section Break",
-    "insert_after": "is_final_gabung_suami",
+    "insert_after": "total_bpjs",
     "label": "Payroll Notes",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-payroll_note_section"
@@ -437,30 +353,5 @@
     "module": "Payroll Indonesia",
     "name": "Salary Slip-payroll_note",
     "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Salary Slip",
-    "fieldname": "bypass_annual_detection",
-    "fieldtype": "Check",
-    "insert_after": "payroll_note",
-    "label": "Bypass Annual Detection",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-bypass_annual_detection",
-    "default": "0",
-    "description": "Avoid automatic detection of annual amounts in TER calculation"
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Salary Slip",
-    "fieldname": "ter_adjustment_amount",
-    "fieldtype": "Currency",
-    "insert_after": "bypass_annual_detection",
-    "label": "TER Adjustment Amount",
-    "module": "Payroll Indonesia",
-    "name": "Salary Slip-ter_adjustment_amount",
-    "read_only": 1,
-    "hidden": 1,
-    "description": "Manual adjustment for TER calculation"
   }
 ]
