@@ -4,14 +4,14 @@
     "dt": "Employee",
     "fieldname": "payroll_indonesia_section",
     "fieldtype": "Section Break",
-    "insert_after": "personal_details",
+    "insert_after": "personal_details", 
     "label": "Payroll Indonesia (HR Extension)",
     "module": "Payroll Indonesia",
     "name": "Employee-payroll_indonesia_section",
     "collapsible": 1
   },
   {
-    "doctype": "Custom Field", 
+    "doctype": "Custom Field",
     "dt": "Employee",
     "fieldname": "golongan",
     "fieldtype": "Link",
@@ -29,14 +29,14 @@
     "fieldname": "jabatan",
     "fieldtype": "Link",
     "insert_after": "golongan",
-    "label": "Jabatan", 
+    "label": "Jabatan",
     "module": "Payroll Indonesia",
     "name": "Employee-jabatan",
     "options": "Jabatan"
   },
   {
     "doctype": "Custom Field",
-    "dt": "Employee", 
+    "dt": "Employee",
     "fieldname": "col_break_payroll_id",
     "fieldtype": "Column Break",
     "insert_after": "jabatan",
@@ -68,9 +68,20 @@
   {
     "doctype": "Custom Field",
     "dt": "Employee",
+    "fieldname": "override_tax_method",
+    "fieldtype": "Select",
+    "insert_after": "jumlah_tanggungan",
+    "label": "Override Tax Method",
+    "module": "Payroll Indonesia",
+    "name": "Employee-override_tax_method",
+    "options": "\nProgressive\nTER"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Employee",
     "fieldname": "npwp_section",
     "fieldtype": "Section Break",
-    "insert_after": "jumlah_tanggungan",
+    "insert_after": "override_tax_method",
     "label": "Tax Identifiers",
     "module": "Payroll Indonesia",
     "name": "Employee-npwp_section"
@@ -203,6 +214,41 @@
     "name": "Employee-penghasilan_final",
     "default": "0"
   },
+  
+  {
+    "doctype": "Custom Field",
+    "dt": "Payroll Entry",
+    "fieldname": "use_ter_method",
+    "fieldtype": "Check",
+    "insert_after": "naming_series",
+    "label": "Use TER Method",
+    "module": "Payroll Indonesia",
+    "name": "Payroll Entry-use_ter_method",
+    "default": "0"
+  },
+  
+  {
+    "doctype": "Custom Field",
+    "dt": "Salary Slip",
+    "fieldname": "monthly_gross_for_ter",
+    "fieldtype": "Currency",
+    "insert_after": "gross_pay",
+    "label": "Monthly Gross for TER",
+    "module": "Payroll Indonesia",
+    "name": "Salary Slip-monthly_gross_for_ter",
+    "read_only": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Salary Slip",
+    "fieldname": "annual_taxable_amount",
+    "fieldtype": "Currency",
+    "insert_after": "monthly_gross_for_ter",
+    "label": "Annual Taxable Amount",
+    "module": "Payroll Indonesia",
+    "name": "Salary Slip-annual_taxable_amount",
+    "read_only": 1
+  },
   {
     "doctype": "Custom Field",
     "dt": "Salary Slip",
@@ -217,9 +263,21 @@
   {
     "doctype": "Custom Field",
     "dt": "Salary Slip",
-    "fieldname": "is_using_ter",
+    "fieldname": "is_final_gabung_suami",
     "fieldtype": "Check",
     "insert_after": "payroll_indo_section",
+    "label": "Is Final (NPWP Gabung Suami)",
+    "module": "Payroll Indonesia",
+    "name": "Salary Slip-is_final_gabung_suami",
+    "default": "0",
+    "read_only": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Salary Slip",
+    "fieldname": "is_using_ter",
+    "fieldtype": "Check",
+    "insert_after": "is_final_gabung_suami",
     "label": "Using TER Method",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-is_using_ter",
@@ -229,9 +287,21 @@
   {
     "doctype": "Custom Field",
     "dt": "Salary Slip",
+    "fieldname": "ter_rate",
+    "fieldtype": "Float",
+    "insert_after": "is_using_ter",
+    "label": "TER Rate",
+    "module": "Payroll Indonesia",
+    "name": "Salary Slip-ter_rate",
+    "read_only": 1,
+    "precision": 2
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Salary Slip",
     "fieldname": "ter_category",
     "fieldtype": "Data",
-    "insert_after": "is_using_ter",
+    "insert_after": "ter_rate",
     "label": "TER Category",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-ter_category",
@@ -260,9 +330,21 @@
   {
     "doctype": "Custom Field",
     "dt": "Salary Slip",
+    "fieldname": "ter_calculation_note",
+    "fieldtype": "Small Text",
+    "insert_after": "koreksi_pph21",
+    "label": "TER Calculation Note",
+    "module": "Payroll Indonesia",
+    "name": "Salary Slip-ter_calculation_note",
+    "read_only": 1,
+    "depends_on": "eval:doc.is_using_ter==1"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Salary Slip",
     "fieldname": "tax_details_section",
     "fieldtype": "Section Break",
-    "insert_after": "koreksi_pph21",
+    "insert_after": "ter_calculation_note",
     "label": "Tax Details",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-tax_details_section"
