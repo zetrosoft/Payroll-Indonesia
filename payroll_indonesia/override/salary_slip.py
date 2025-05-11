@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-08 09:25:41 by dannyaudian
 
 import frappe
 from frappe import _
@@ -21,6 +20,7 @@ __all__ = [
     'clear_caches'
 ]
 
+# Import BPJS related functions  
 from payroll_indonesia.override.salary_slip.bpjs_calculator import (
     calculate_bpjs_components,
     verify_bpjs_components,
@@ -28,17 +28,18 @@ from payroll_indonesia.override.salary_slip.bpjs_calculator import (
     check_bpjs_enrollment,
 )
 
-# Import functions from support modules with better error handling and cache TER rates
+# Cache variables
 _ter_rate_cache = {}
 _ytd_tax_cache = {}
 _ptkp_mapping_cache = None  # Added for PMK 168/2023 TER mapping
 
+# Import required modules with proper error handling
 try:
     debug_log("Starting imports from payroll_indonesia modules")
     
     from payroll_indonesia.override.salary_slip.base import get_formatted_currency, get_component_amount, update_component_amount
     from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
-    from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter, should_use_ter_method
+    from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter, should_use_ter_method, verify_calculation_integrity
     
     # Direct import for BPJS calculation to ensure it's always available
     from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
@@ -61,13 +62,9 @@ except ImportError as e:
         debug_log(f"Using placeholder calculate_tax_components for employee {employee.name if hasattr(employee, 'name') else 'unknown'}")
         pass
     
-    def map_ptkp_to_ter_category(status_pajak):
-        """
-        Fallback placeholder for mapping PTKP status to TER category
-        Returns TER C as the safest default
-        """
-        debug_log(f"Using placeholder map_ptkp_to_ter_category for {status_pajak}")
-        return "TER C"
+    def verify_calculation_integrity(**kwargs):
+        debug_log("Using placeholder verify_calculation_integrity")
+        return True
 
 
 class IndonesiaPayrollSalarySlip(SalarySlip):
@@ -82,289 +79,256 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
       - Implemented with 3 TER categories (TER A, TER B, TER C) based on PTKP
     - Integration with Employee Tax Summary
     """
-class IndonesiaPayrollSalarySlip(SalarySlip):
     
     def validate(self):
-        """Validate salary slip and calculate Indonesian components with enhanced BPJS handling"""
+        """Validate salary slip and calculate Indonesian components"""
         employee_info = f"{self.employee} ({self.employee_name})" if hasattr(self, 'employee_name') else self.employee
         debug_log(f"Starting validate for salary slip {self.name}", employee=employee_info)
         
         try:
             # Call parent validation first
-            debug_log(f"Calling parent validate for {self.name}", employee=employee_info)
-            super(IndonesiaPayrollSalarySlip, self).validate()
+            super().validate()
             
-            # Initialize additional fields if not present
-            debug_log(f"Initializing payroll fields for {self.name}", employee=employee_info)
+            # Initialize additional fields
             self.initialize_payroll_fields()
             
-            # Get employee document with validation
-            debug_log(f"Getting employee doc for {self.employee}", employee=employee_info)
+            # Get employee document
             employee = self.get_employee_doc()
             
-            # Calculate base salary for BPJS with enhanced validation
-            debug_log(f"Calculating base salary for {self.name}", employee=employee_info)
+            # Calculate BPJS components
             base_salary = self.get_base_salary_for_bpjs()
-            
-            # Enhanced validation for base_salary
-            if base_salary <= 0:
-                debug_log(f"Warning: Base salary is zero or negative: {base_salary}. Attempting to use gross pay.", employee=employee_info)
-                if hasattr(self, 'gross_pay') and self.gross_pay > 0:
-                    base_salary = self.gross_pay
-                    debug_log(f"Using gross pay as base salary: {base_salary}", employee=employee_info)
-                else:
-                    # Use minimum default (UMR Jakarta as safe default)
-                    base_salary = 4900000  # Default to Jakarta UMR as safe minimum
-                    debug_log(f"Using default minimum wage as base salary: {base_salary}", employee=employee_info)
-            
-            debug_log(f"Final base salary for BPJS calculation: {base_salary}", employee=employee_info)
-            
-            # Calculate BPJS components with validated base_salary
-            debug_log(f"Calling calculate_bpjs_components with base_salary: {base_salary}", employee=employee_info)
             calculate_bpjs_components(self, employee, base_salary)
             
-            # Verify BPJS components were calculated
-            verification = verify_bpjs_components(self)
-            if verification["all_zero"]:
-                debug_log(f"Warning: All BPJS components are zero after calculation for {employee_info}. Check enrollment status or salary structure.", employee=employee_info)
-                
-                # Check if employee should have BPJS
-                if check_bpjs_enrollment(employee):
-                    debug_log(f"Employee is enrolled in BPJS but components are zero. Attempting recalculation.", employee=employee_info)
-                    # Re-attempt with direct hitung_bpjs call
-                    try:
-                        bpjs_values = hitung_bpjs(employee, base_salary)
-                        if bpjs_values["total_employee"] > 0:
-                            # BPJS calculation succeeded but component update may have failed
-                            debug_log(f"Direct BPJS calculation succeeded but components were not updated. Manually updating components.", employee=employee_info)
-                            # Manually update BPJS components
-                            for component, value in [
-                                ("BPJS Kesehatan Employee", bpjs_values["kesehatan_employee"]), 
-                                ("BPJS JHT Employee", bpjs_values["jht_employee"]), 
-                                ("BPJS JP Employee", bpjs_values["jp_employee"])
-                            ]:
-                                if value > 0:
-                                    update_component_amount(self, component, value, "deductions")
-                                    debug_log(f"Manually updated {component}: {value}", employee=employee_info)
-                            
-                            # Update total_bpjs
-                            self.total_bpjs = flt(bpjs_values["total_employee"])
-                    except Exception as bpjs_err:
-                        debug_log(f"Error in direct BPJS calculation: {str(bpjs_err)}", employee=employee_info, trace=True)
+            # Verify BPJS components
+            self.handle_bpjs_verification(employee, base_salary)
             
-            # IMPROVED: First determine tax calculation strategy, then calculate
+            # Calculate tax
             tax_strategy = self.determine_tax_strategy(employee)
             self.calculate_tax_with_strategy(tax_strategy, employee)
             
-            # PENTING: Verifikasi is_using_ter setelah kalkulasi
+            # Final verifications
             self.verify_ter_settings()
-            
-            # Generate tax ID data
             self.generate_tax_id_data(employee)
-
-            # Check if fiscal year exists for posting date, create if missing
             self.check_or_create_fiscal_year()
-
-            # Add note to payroll_note
+            
             self.add_payroll_note("Validasi berhasil: Komponen BPJS dan Pajak dihitung.")
-            debug_log(f"Validation completed successfully for {self.name}", employee=employee_info)
             
         except Exception as e:
-            debug_log(f"Error in validate for {self.name}: {str(e)}", employee=employee_info, trace=True)
-            frappe.log_error(
-                f"Error dalam validasi Salary Slip untuk {self.name}: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}",
-                "Salary Slip Validation Error"
-            )
-            frappe.throw(_("Error dalam validasi Salary Slip: {0}").format(str(e)))
+            self.handle_validation_error(e, employee_info)
+    
+    def handle_bpjs_verification(self, employee, base_salary):
+        """Handle BPJS component verification and potential recalculation"""
+        employee_info = f"{self.employee} ({self.employee_name})" if hasattr(self, 'employee_name') else self.employee
+        verification = verify_bpjs_components(self)
+        
+        if verification["all_zero"]:
+            debug_log(f"Warning: All BPJS components are zero for {employee_info}", employee=employee_info)
+            
+            # Check if employee should have BPJS
+            if check_bpjs_enrollment(employee):
+                debug_log(f"Employee is enrolled in BPJS but components are zero. Attempting recalculation.", employee=employee_info)
+                self.recalculate_bpjs_components(employee, base_salary)
+    
+    def recalculate_bpjs_components(self, employee, base_salary):
+        """Recalculate BPJS components directly"""
+        employee_info = f"{self.employee} ({self.employee_name})" if hasattr(self, 'employee_name') else self.employee
+        
+        try:
+            bpjs_values = hitung_bpjs(employee, base_salary)
+            if bpjs_values["total_employee"] > 0:
+                # Manually update BPJS components
+                for component, value in [
+                    ("BPJS Kesehatan Employee", bpjs_values["kesehatan_employee"]), 
+                    ("BPJS JHT Employee", bpjs_values["jht_employee"]), 
+                    ("BPJS JP Employee", bpjs_values["jp_employee"])
+                ]:
+                    if value > 0:
+                        update_component_amount(self, component, value, "deductions")
+                        debug_log(f"Manually updated {component}: {value}", employee=employee_info)
+                
+                # Update total_bpjs
+                self.total_bpjs = flt(bpjs_values["total_employee"])
+                self.db_set('total_bpjs', self.total_bpjs, update_modified=False)
+        except Exception as bpjs_err:
+            debug_log(f"Error in direct BPJS calculation: {str(bpjs_err)}", employee=employee_info, trace=True)
     
     def verify_ter_settings(self):
-        """
-        Verifikasi pengaturan TER dan pastikan nilai tersimpan dengan benar
-        Fungsi baru untuk memastikan is_using_ter dan ter_rate teratur dengan benar
-        """
+        """Verify TER settings consistency"""
         debug_log(f"Verifying TER settings for {self.name}")
         
-        # Jika ter_rate > 0, pastikan is_using_ter = 1
+        # If ter_rate > 0, ensure is_using_ter = 1
         if hasattr(self, 'ter_rate') and flt(self.ter_rate) > 0:
             if not hasattr(self, 'is_using_ter') or not self.is_using_ter:
-                debug_log(f"TER rate is {self.ter_rate} but is_using_ter is not set. Setting is_using_ter=1")
                 self.is_using_ter = 1
-                # Gunakan db_set untuk memastikan nilai tersimpan langsung ke database
                 self.db_set('is_using_ter', 1, update_modified=False)
         
-        # Jika ada ter_category, pastikan is_using_ter = 1
+        # If ter_category exists, ensure is_using_ter = 1
         if hasattr(self, 'ter_category') and self.ter_category:
             if not hasattr(self, 'is_using_ter') or not self.is_using_ter:
-                debug_log(f"TER category is {self.ter_category} but is_using_ter is not set. Setting is_using_ter=1")
                 self.is_using_ter = 1
                 self.db_set('is_using_ter', 1, update_modified=False)
         
-        # Jika is_using_ter=0, pastikan ter_rate=0
+        # If is_using_ter=0, ensure ter_rate=0 and ter_category=""
         if hasattr(self, 'is_using_ter') and not self.is_using_ter:
             if hasattr(self, 'ter_rate') and flt(self.ter_rate) > 0:
-                debug_log(f"is_using_ter=0 but ter_rate={self.ter_rate}. Resetting ter_rate to 0")
                 self.ter_rate = 0
                 self.db_set('ter_rate', 0, update_modified=False)
             
             if hasattr(self, 'ter_category') and self.ter_category:
-                debug_log(f"is_using_ter=0 but ter_category is set. Clearing ter_category")
                 self.ter_category = ""
                 self.db_set('ter_category', "", update_modified=False)
-        
-        debug_log(f"TER settings verified: is_using_ter={getattr(self, 'is_using_ter', 0)}, ter_rate={getattr(self, 'ter_rate', 0)}")
+    
+    def determine_tax_strategy(self, employee):
+        """Determine whether to use TER or Progressive method"""
+        try:
+            return "TER" if should_use_ter_method(employee) else "PROGRESSIVE"
+        except Exception:
+            # Fall back to simple checks if the import fails
+            if hasattr(employee, 'tipe_karyawan') and employee.tipe_karyawan == "Freelance":
+                return "PROGRESSIVE"
+                
+            if hasattr(employee, 'override_tax_method') and employee.override_tax_method == "Progressive":
+                return "PROGRESSIVE"
+                
+            # Per PMK 168/2023, check if December (always use Progressive in December)
+            if self.end_date and getdate(self.end_date).month == 12:
+                return "PROGRESSIVE"
+                
+            return "TER"
     
     def calculate_tax_with_strategy(self, strategy, employee):
-        """
-        Calculate tax based on selected strategy (TER or Progressive)
-        Ensures proper setting and persistence of TER flags
-        """
+        """Calculate tax using either TER or Progressive method"""
         # Store original values to restore after calculation
-        original_gross = self.gross_pay
-        original_netto = getattr(self, 'netto', 0)
-    
-        frappe.logger().debug(f"Starting tax calculation with strategy: {strategy} for {self.name}")
-    
+        original_values = {
+            'gross_pay': flt(self.gross_pay),
+            'monthly_gross_for_ter': flt(getattr(self, 'monthly_gross_for_ter', 0)),
+            'annual_taxable_amount': flt(getattr(self, 'annual_taxable_amount', 0)),
+            'ter_rate': flt(getattr(self, 'ter_rate', 0)),
+            'ter_category': getattr(self, 'ter_category', '')
+        }
+        
         try:
             if strategy == "TER":
-                # TER calculation
-                frappe.logger().debug(f"Using TER calculation method for {self.name}")
-            
-                # Call TER calculation function
-                calculate_monthly_pph_with_ter(self, employee)
-            
-                # CRITICAL: Explicitly set and persist TER flags regardless of what the function did
-                # This ensures the flags are always set and saved to the database
-                self.is_using_ter = 1
-            
-                # Ensure ter_rate has a valid value
-                if not hasattr(self, 'ter_rate') or flt(self.ter_rate) <= 0:
-                    self.ter_rate = 5.0  # Default to 5% if missing or zero
-                    frappe.logger().warning(f"TER rate was missing or zero for {self.name}, setting default 5%")
-            
-                # Persist values to database with db_set
-                self.db_set('is_using_ter', 1, update_modified=False)
-                self.db_set('ter_rate', flt(self.ter_rate), update_modified=False)
-            
-                # Log confirmation of TER application
-                frappe.logger().info(
-                    f"TER applied for {self.name}: is_using_ter=1, ter_rate={self.ter_rate}, "
-                    f"employee={getattr(self, 'employee_name', self.employee)}"
-                )
-            
-                # Add note to payroll_note if available
-                if hasattr(self, 'add_payroll_note'):
-                    self.add_payroll_note(f"TER method applied with rate: {self.ter_rate}%")
-                
+                self.apply_ter_calculation(employee)
             else:
-                # Progressive calculation
-                frappe.logger().debug(f"Using Progressive calculation method for {self.name}")
-                calculate_tax_components(self, employee)
+                self.apply_progressive_calculation(employee)
+                
+            # Verify calculation integrity
+            verify_calculation_integrity(
+                doc=self,
+                original_values=original_values,
+                monthly_gross_pay=getattr(self, 'monthly_gross_for_ter', self.gross_pay),
+                annual_taxable_amount=getattr(self, 'annual_taxable_amount', 0),
+                ter_rate=getattr(self, 'ter_rate', 0) / 100 if hasattr(self, 'ter_rate') else 0,
+                ter_category=getattr(self, 'ter_category', ''),
+                monthly_tax=self.get_tax_amount()
+            )
             
-                # Reset TER values for progressive method
-                self.is_using_ter = 0
-                self.ter_rate = 0
-            
-                # Persist values to database
-                self.db_set('is_using_ter', 0, update_modified=False)
-                self.db_set('ter_rate', 0, update_modified=False)
-            
-                frappe.logger().info(
-                    f"Progressive method used for {self.name}: is_using_ter=0, ter_rate=0, "
-                    f"employee={getattr(self, 'employee_name', self.employee)}"
-                )
+        except Exception as e:
+            self.handle_tax_calculation_error(e)
             
         finally:
             # Verify TER flags are set correctly for TER strategy
             if strategy == "TER" and not getattr(self, 'is_using_ter', 0):
-                frappe.logger().warning(f"TER flags not set properly for {self.name}. Setting is_using_ter=1 now.")
+                debug_log(f"TER flags not set properly for {self.name}. Setting is_using_ter=1 now.")
                 self.is_using_ter = 1
                 self.db_set('is_using_ter', 1, update_modified=False)
-        
-            # Verify values haven't been globally changed
-            if strategy == "TER" and abs(original_gross - self.gross_pay) > 1:
-                frappe.logger().warning(f"gross_pay modified during TER calculation: {original_gross} -> {self.gross_pay}")
-                # Restore original gross_pay for TER calculation
-                if original_gross != self.gross_pay:
-                    self.gross_pay = original_gross
-                    frappe.logger().debug(f"Restored original gross_pay: {original_gross}")
-
-    def _is_eligible_for_ter(self, employee):
-        """
-        Deprecated - use should_use_ter_method from ter_calculator.py instead
-        This remains for backward compatibility
-        """
-        # Delegate to the centralized should_use_ter_method function
-        try:
-            from payroll_indonesia.override.salary_slip.ter_calculator import should_use_ter_method
-            # Get PPh 21 Settings - only if we have it cached already
-            pph_settings = frappe.get_cached_value(
-                "PPh 21 Settings", 
-                "PPh 21 Settings",
-                ["calculation_method", "use_ter", "default_ter_rate"],
-                as_dict=True
-            ) if frappe.cache().exists("PPh 21 Settings") else None
             
-            return should_use_ter_method(employee, pph_settings)
-        except Exception:
-            # Fall back to simple checks if the import fails
-            # Quick check for exclusion fields
-            if hasattr(employee, 'tipe_karyawan') and employee.tipe_karyawan == "Freelance":
-                return False
-                
-            if hasattr(employee, 'override_tax_method') and employee.override_tax_method == "Progressive":
-                return False
-                
-            # Per PMK 168/2023, check if December (always use Progressive in December)
-            if self.end_date and getdate(self.end_date).month == 12:
-                return False
-                
-            return True
-
-    def calculate_tax_with_strategy(self, strategy, employee):
-        # Store original values to restore after calculation
-        original_gross = self.gross_pay
-        original_netto = getattr(self, 'netto', 0)
-    
-        try:
-            if strategy == "TER":
-                # TER calculation
-                calculate_monthly_pph_with_ter(self, employee)
-            else:
-                # Progressive calculation
-                calculate_tax_components(self, employee)
-        finally:
             # Verify values haven't been globally changed
-            if strategy == "TER" and abs(original_gross - self.gross_pay) > 1:
-                frappe.logger().warning(f"gross_pay modified during TER calculation: {original_gross} -> {self.gross_pay}")
+            if strategy == "TER" and abs(original_values['gross_pay'] - self.gross_pay) > 1:
+                debug_log(f"gross_pay modified during TER calculation: {original_values['gross_pay']} -> {self.gross_pay}")
                 # Restore original gross_pay for TER calculation
-                if original_gross != self.gross_pay:
-                    self.gross_pay = original_gross
-
+                self.gross_pay = original_values['gross_pay']
+    
+    def apply_ter_calculation(self, employee):
+        """Apply TER calculation method"""
+        debug_log(f"Using TER calculation method for {self.name}")
+        
+        # Call TER calculation function
+        calculate_monthly_pph_with_ter(self, employee)
+        
+        # Explicitly set and persist TER flags
+        self.is_using_ter = 1
+        
+        # Ensure ter_rate has a valid value
+        if not hasattr(self, 'ter_rate') or flt(self.ter_rate) <= 0:
+            self.ter_rate = 5.0  # Default to 5% if missing or zero
+            debug_log(f"TER rate was missing or zero for {self.name}, setting default 5%")
+        
+        # Persist values to database with db_set
+        self.db_set('is_using_ter', 1, update_modified=False)
+        self.db_set('ter_rate', flt(self.ter_rate), update_modified=False)
+        
+        # Add note to payroll_note
+        self.add_payroll_note(f"TER method applied with rate: {self.ter_rate}%")
+    
+    def apply_progressive_calculation(self, employee):
+        """Apply Progressive calculation method"""
+        debug_log(f"Using Progressive calculation method for {self.name}")
+        
+        # Call progressive calculation function
+        calculate_tax_components(self, employee)
+        
+        # Reset TER values
+        self.is_using_ter = 0
+        self.ter_rate = 0
+        
+        # Persist values to database
+        self.db_set('is_using_ter', 0, update_modified=False)
+        self.db_set('ter_rate', 0, update_modified=False)
+        
+        # Clear ter_category if it exists
+        if hasattr(self, 'ter_category'):
+            self.ter_category = ""
+            self.db_set('ter_category', "", update_modified=False)
+            
+        self.add_payroll_note("Progressive tax calculation applied")
+    
+    def get_tax_amount(self):
+        """Get PPh 21 amount from deductions"""
+        return next(
+            (d.amount for d in self.deductions if d.salary_component == "PPh 21"),
+            0
+        )
+    
+    def handle_validation_error(self, e, employee_info=""):
+        """Handle validation errors consistently"""
+        debug_log(f"Error in validate for {self.name}: {str(e)}", employee=employee_info, trace=True)
+        frappe.log_error(
+            f"Error dalam validasi Salary Slip untuk {self.name}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Salary Slip Validation Error"
+        )
+        frappe.throw(_("Error dalam validasi Salary Slip: {0}").format(str(e)))
+    
+    def handle_tax_calculation_error(self, e):
+        """Handle tax calculation errors consistently"""
+        debug_log(f"Tax calculation error for {self.name}: {str(e)}", trace=True)
+        frappe.log_error(
+            f"Tax Calculation Error for {self.name}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Tax Calculation Error"
+        )
+        frappe.throw(_("Tax Calculation Error: {0}").format(str(e)))
+    
     def on_submit(self):
         """Create related documents on submit and verify BPJS values"""
         try:
-            # Start time measurement
-            start_time = now_datetime()
             debug_log(f"Starting on_submit for salary slip {self.name}", 
                       employee=getattr(self, 'employee_name', self.employee))
             
-            # Verifikasi TER settings sebelum submit
+            # Verify TER settings before submit
             self.verify_ter_settings()
             
-            # Verify BPJS components before submission - using imported function
-            verification = verify_bpjs_components(self)
+            # Verify BPJS components before submission
+            verify_bpjs_components(self)
             
-            # ... rest of code here ...
-        
             # Call parent on_submit method
             super(IndonesiaPayrollSalarySlip, self).on_submit()
-        
-            # Use optimized queue for document creation
+            
+            # Queue document creation
             self.queue_document_creation()
-        
-            # ... rest of code here ...
-        
+            
         except Exception as e:
             debug_log(f"Error in on_submit for {self.name}: {str(e)}", trace=True)
             frappe.log_error(
@@ -374,83 +338,52 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             )
             frappe.throw(_("Error during salary slip submission: {0}").format(str(e)))
 
-    
     def queue_document_creation(self):
-        """
-        Queue creation of related documents after salary slip submission:
-        - Employee Tax Summary only
-
-        BPJS Payment Summary is now handled manually via its doctype
-        
-        Optimized version with job_name parameters to avoid duplicates.
-        """
+        """Queue creation of related documents after salary slip submission"""
         try:
             # Generate unique job identifiers
             job_prefix = hashlib.md5(f"{self.name}_{now_datetime()}".encode()).hexdigest()[:8]
             is_test = bool(getattr(frappe.flags, 'in_test', False))
             
-            # Log start of document creation
-            start_time = now_datetime()
             month = getdate(self.end_date).month
             year = getdate(self.end_date).year
-            
-            # Prepare note about queued documents
-            queued_docs = ["Employee Tax Summary"]
             
             # Queue Employee Tax Summary creation (always created)
             job_id = f"tax_summary_{job_prefix}_{self.name}"
             
-            # Check if job already exists in the queue
             if not self._job_exists(job_id):
                 enqueue(
                     method="payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
-                    queue="long",  # Changed to long queue for better load balancing
-                    timeout=600,   # Increased timeout
+                    queue="long",
+                    timeout=600,
                     is_async=True,
                     job_name=job_id,
                     now=is_test,
                     salary_slip=self.name
                 )
-        
-            # Add note to salary slip's payroll_note field with details
-            if hasattr(self, 'payroll_note'):
-                timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
-                queued_docs_text = ", ".join(queued_docs)
-                memory_estimate = self._estimate_memory_usage()
-                
-                # Include TER category information if using TER
-                ter_info = ""
-                if hasattr(self, 'is_using_ter') and self.is_using_ter:
-                    # Use TER category if available, otherwise just indicate TER is used
-                    if hasattr(self, 'ter_category') and self.ter_category:
-                        ter_info = f" Menggunakan {self.ter_category} sesuai PMK 168/2023."
-                    else:
-                        ter_info = f" Menggunakan metode TER sesuai PMK 168/2023."
-                
-                note = (
-                    f"\n[{timestamp}] Submit berhasil: Dokumen dijadwalkan: {queued_docs_text}. "
-                    f"Periode: {month:02d}/{year}.{ter_info} "
-                )
-                
-                if memory_estimate:
-                    note += f"Est. memory: {memory_estimate:.2f}MB."
-                    
-                self.payroll_note += note
-                
-                # Use db_set to avoid another full save
-                self.db_set('payroll_note', self.payroll_note, update_modified=False)
-                
-                # Add note about BPJS Payment Summary
-                self.add_payroll_note("BPJS Payment Summary harus dibuat secara manual dari doctype BPJS Payment Summary.")
             
-            # Calculate and log execution time for queuing
-            end_time = now_datetime()
-            execution_time = (end_time - start_time).total_seconds()
+            # Add note about successful submission
+            timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
+            ter_info = ""
+            if hasattr(self, 'is_using_ter') and self.is_using_ter:
+                if hasattr(self, 'ter_category') and self.ter_category:
+                    ter_info = f" Menggunakan {self.ter_category} sesuai PMK 168/2023."
+                else:
+                    ter_info = f" Menggunakan metode TER sesuai PMK 168/2023."
             
-            debug_log(
-                f"Document creation jobs queued in {execution_time:.2f}s for {self.name}: "
-                f"{', '.join(queued_docs)}"
+            note = (
+                f"\n[{timestamp}] Submit berhasil: Dokumen dijadwalkan: Employee Tax Summary. "
+                f"Periode: {month:02d}/{year}.{ter_info} "
             )
+            
+            memory_estimate = self._estimate_memory_usage()
+            if memory_estimate:
+                note += f"Est. memory: {memory_estimate:.2f}MB."
+                
+            self.add_payroll_note(note)
+            
+            # Add note about BPJS Payment Summary
+            self.add_payroll_note("BPJS Payment Summary harus dibuat secara manual dari doctype BPJS Payment Summary.")
             
         except Exception as e:
             debug_log(f"Error queueing document creation for {self.name}: {str(e)}")
@@ -461,52 +394,22 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             )
             # Do not raise exception, just show a message to the user
             frappe.msgprint(_("Warning: Error occurred while queueing related documents: {0}").format(str(e)))
-
+    
     def _job_exists(self, job_name):
-        """
-        Check if a job with the given name already exists in the queue
-        Args:
-            job_name: Job name to check
-        Returns:
-            bool: True if job exists, False otherwise
-        """
+        """Check if a job with the given name already exists in the queue"""
         try:
-            # Check all queues for the job
             for queue in ['default', 'long', 'short']:
                 jobs = get_jobs(queue, job_name=job_name)
                 if jobs:
                     return True
             return False
         except Exception:
-            # If error checking queues, assume job doesn't exist
             return False
-            
-    def _get_component_amounts(self, component_names):
-        """
-        Get component amounts efficiently
-        Args:
-            component_names: List of component names to get
-        Returns:
-            dict: Dictionary of component names and amounts
-        """
-        result = {name: 0 for name in component_names}
-        
-        for deduction in self.deductions:
-            if deduction.salary_component in result:
-                result[deduction.salary_component] = flt(deduction.amount)
-                
-        return result
-        
+    
     def _estimate_memory_usage(self):
-        """
-        Estimate memory usage of this salary slip
-        Returns:
-            float: Estimated memory usage in MB or None if error
-        """
+        """Estimate memory usage of this salary slip"""
         try:
-            # Convert to string to estimate size - includes child tables
             doc_str = json.dumps(self.as_dict())
-            # Convert to MB (approximate)
             return len(doc_str) / (1024 * 1024)
         except Exception:
             return None
@@ -522,8 +425,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             
             # Update related documents
             self.queue_document_updates_on_cancel()
-            
-            debug_log(f"on_cancel completed successfully for {self.name}", employee=employee_info)
             
         except Exception as e:
             debug_log(f"Error in on_cancel for {self.name}: {str(e)}", employee=employee_info, trace=True)
@@ -547,7 +448,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             # Generate unique job identifiers
             job_prefix = hashlib.md5(f"cancel_{self.name}_{now_datetime()}".encode()).hexdigest()[:8]
             
-            # Only schedule update for Employee Tax Summary
+            # Schedule update for Employee Tax Summary
             job_id = f"tax_cancel_{job_prefix}_{self.name}"
             enqueue(
                 method="payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
@@ -567,8 +468,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             # Add note about BPJS Payment Summary
             self.add_payroll_note("BPJS Payment Summary perlu diupdate secara manual jika sudah dibuat sebelumnya.")
             
-            debug_log(f"queue_document_updates_on_cancel completed for {self.name}", employee=employee_info)
-            
         except Exception as e:
             debug_log(f"Error in queue_document_updates_on_cancel: {str(e)}", employee=employee_info, trace=True)
             frappe.log_error(
@@ -580,20 +479,16 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     
     # Helper methods
     def initialize_payroll_fields(self):
-        """
-        Initialize additional payroll fields.
-        This method is safe to call from outside the class and is
-        designed to handle doc objects passed from hooks or other functions.
-        """
+        """Initialize additional payroll fields"""
         debug_log(f"Initializing payroll fields for {self.name if hasattr(self, 'name') else 'unknown'}")
-        # Use single assignment for better performance
+        
         defaults = {
             'biaya_jabatan': 0,
             'netto': 0,
             'total_bpjs': 0,
             'is_using_ter': 0,
             'ter_rate': 0,
-            'ter_category': "", # Added for PMK 168/2023
+            'ter_category': "",
             'koreksi_pph21': 0,
             'payroll_note': "",
             'npwp': "",
@@ -606,15 +501,10 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             if not hasattr(self, field) or getattr(self, field) is None:
                 setattr(self, field, default)
                 
-        debug_log(f"Payroll fields initialized for {self.name if hasattr(self, 'name') else 'unknown'}")
-        return defaults  # Return defaults for external callers who might need them
+        return defaults
     
     def get_employee_doc(self):
-        """
-        Get employee document with validation and caching.
-        This method can be called externally to get an employee document
-        with proper validation.
-        """
+        """Get employee document with validation and caching"""
         if not hasattr(self, 'employee') or not self.employee:
             frappe.throw(_("Employee harus diisi untuk salary slip"))
             
@@ -623,10 +513,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             return self._cached_employee
             
         try:
-            # Get only required fields for better performance
             employee_doc = frappe.get_doc("Employee", self.employee)
-            
-            # Cache for reuse
             self._cached_employee = employee_doc
             return employee_doc
         except Exception as e:
@@ -634,10 +521,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             frappe.throw(_("Error saat mengambil data karyawan {0}: {1}").format(self.employee, str(e)))
     
     def get_base_salary_for_bpjs(self):
-        """
-        Get base salary for BPJS calculation with enhanced validation
-        First tries to find Gaji Pokok component, then falls back to Basic or first component
-        """
+        """Get base salary for BPJS calculation with enhanced validation"""
         debug_log(f"Getting base salary for BPJS calculation for {self.name}")
         base_salary = 0
         
@@ -646,32 +530,26 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             debug_log(f"No earnings found in salary slip {self.name}")
             # No earnings, use gross_pay if available
             if hasattr(self, 'gross_pay') and self.gross_pay > 0:
-                debug_log(f"Using gross_pay as base salary: {self.gross_pay}")
                 return flt(self.gross_pay)
             return 0
-            
-        # Optimized component lookup with direct access - try Gaji Pokok first
-        gaji_pokok_found = False
+        
+        # Try to find Gaji Pokok component first    
         for earning in self.earnings:
             if earning.salary_component == "Gaji Pokok":
                 base_salary = flt(earning.amount)
-                gaji_pokok_found = True
                 debug_log(f"Found Gaji Pokok component: {base_salary}")
                 break
         
         # If not found, try Basic
-        if not gaji_pokok_found:
-            debug_log("Gaji Pokok not found, looking for Basic component")
-            basic_found = False
+        if base_salary <= 0:
             for earning in self.earnings:
                 if earning.salary_component == "Basic":
                     base_salary = flt(earning.amount)
-                    basic_found = True
                     debug_log(f"Found Basic component: {base_salary}")
                     break
             
             # If still not found, use first component
-            if not basic_found and self.earnings:
+            if base_salary <= 0 and self.earnings:
                 base_salary = flt(self.earnings[0].amount)
                 debug_log(f"Using first component as base salary: {base_salary} ({self.earnings[0].salary_component})")
         
@@ -692,7 +570,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     def generate_tax_id_data(self, employee):
         """Get tax ID information (NPWP and KTP) from employee data"""
         try:
-            # Get NPWP and KTP from employee
             if hasattr(employee, 'npwp'):
                 self.npwp = employee.npwp
                 
@@ -702,16 +579,9 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         except Exception as e:
             debug_log(f"Error generating tax ID data for {self.name}: {str(e)}", trace=True)
             frappe.log_error(f"Error generating tax ID data: {str(e)}", "Tax ID Data Error")
-            # Don't throw, since this is non-critical
     
     def add_payroll_note(self, note, section=None):
-        """
-        Add note to payroll_note field with timestamp and optional section
-    
-        Args:
-            note: Note content to add
-            section: Optional section name to organize notes
-        """
+        """Add note to payroll_note field with timestamp and optional section"""
         if not hasattr(self, 'payroll_note'):
             self.payroll_note = ""
         
@@ -720,120 +590,17 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         formatted_note = f"[{timestamp}] {note}"
     
         if section:
-            # Check if section already exists
-            section_marker = f"=== {section} ==="
-            if section_marker in self.payroll_note:
-                # Could implement section replacement for updates
-                pass
-            
             # Add section header if specified
             formatted_note = f"\n\n=== {section} ===\n{formatted_note}"
     
         # Add new note
         self.payroll_note += f"\n{formatted_note}"
-    
-    def get_component_value(self, component_name, component_type):
-        """
-        Get component amount with better error handling and caching
-        Args:
-            component_name: Name of the component
-            component_type: Type of component (earnings/deductions)
-        Returns:
-            float: Component amount or 0 if not found
-        """
-        # Use cache to avoid repeated lookups
-        cache_key = f"{component_type}:{component_name}"
-        if not hasattr(self, '_component_cache'):
-            self._component_cache = {}
-            
-        if cache_key in self._component_cache:
-            return self._component_cache[cache_key]
-            
-        # Direct lookup for better performance
-        components = getattr(self, component_type, [])
-        for comp in components:
-            if comp.salary_component == component_name:
-                value = flt(comp.amount)
-                self._component_cache[cache_key] = value
-                return value
-                
-        # If not found, return 0
-        self._component_cache[cache_key] = 0
-        return 0
-    
-    def set_component_value(self, component_name, amount, is_deduction=False):
-        """
-        Set component value with improved error handling
-        Args:
-            component_name: Name of the component
-            amount: Amount to set
-            is_deduction: Whether this is a deduction component
-        """
-        if amount is None:
-            amount = 0
-            
-        amount = flt(amount)
-        component_type = "deductions" if is_deduction else "earnings"
         
-        # Use direct component setting for better performance
-        component_list = getattr(self, component_type, [])
-        
-        # Look for existing component
-        found = False
-        for comp in component_list:
-            if comp.salary_component == component_name:
-                comp.amount = amount
-                found = True
-                
-                # Update cache if it exists
-                if hasattr(self, '_component_cache'):
-                    cache_key = f"{component_type}:{component_name}"
-                    self._component_cache[cache_key] = amount
-                    
-                break
-                
-        if not found and amount > 0:
-            # Component doesn't exist, create it if amount > 0
-            try:
-                # Get component abbr efficiently
-                abbr = frappe.get_cached_value("Salary Component", component_name, "salary_component_abbr")
-                if not abbr:
-                    abbr = component_name[:3].upper()
-                
-                # Create and add row
-                row = frappe.new_doc("Salary Detail")
-                row.salary_component = component_name
-                row.abbr = abbr
-                row.amount = amount
-                row.parentfield = component_type
-                row.parenttype = "Salary Slip"
-                row.parent = self.name
-                
-                component_list.append(row)
-                
-                # Update cache if it exists
-                if hasattr(self, '_component_cache'):
-                    cache_key = f"{component_type}:{component_name}"
-                    self._component_cache[cache_key] = amount
-                    
-            except Exception as e:
-                debug_log(f"Error creating new component {component_name}: {str(e)}", trace=True)
-        
-        # Update totals
-        self.update_totals()
-    
-    def update_totals(self):
-        """Update salary slip totals after component changes"""
-        # Use optimized sum calculation
-        self.gross_pay = sum(flt(e.amount) for e in self.earnings)
-        self.total_deduction = sum(flt(d.amount) for d in self.deductions)
-        
-        # Update net pay
-        total_loan = flt(getattr(self, 'total_loan_repayment', 0))
-        self.net_pay = self.gross_pay - self.total_deduction - total_loan
+        # Use db_set to avoid another full save
+        self.db_set('payroll_note', self.payroll_note, update_modified=False)
     
     def check_or_create_fiscal_year(self):
-        """Check if fiscal year exists for the posting date, create if missing."""
+        """Check if fiscal year exists for the posting date, create if missing"""
         try:
             if not hasattr(self, 'posting_date') or not self.posting_date:
                 return
@@ -850,7 +617,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                     self.add_payroll_note(f"Fiscal Year {result.get('year')} was created automatically.")
         except Exception as e:
             debug_log(f"Error checking/creating fiscal year: {str(e)}", trace=True)
-            # Don't throw, this is a non-critical function
 
 
 # Override SalarySlip controller with enhanced version
@@ -882,21 +648,13 @@ def clear_caches():
 clear_caches()
 
 
-# Add to diagnose_system_resources function
+# Helper function for fiscal year management
 def check_fiscal_year_setup(date_str=None):
-    """
-    Check if fiscal years are properly set up
-    
-    Args:
-        date_str: Date string to check (optional)
-    Returns:
-        dict: Status of fiscal year setup
-    """
+    """Check if fiscal years are properly set up"""
     try:
         from frappe.utils import getdate
         test_date = getdate(date_str) if date_str else getdate()
         
-        # Query fiscal year
         fiscal_year = frappe.db.get_value("Fiscal Year", {
             "year_start_date": ["<=", test_date],
             "year_end_date": [">=", test_date]
@@ -922,13 +680,9 @@ def check_fiscal_year_setup(date_str=None):
 
 @frappe.whitelist()
 def setup_fiscal_year_if_missing(date_str=None):
-    """
-    Automatically set up a fiscal year if missing
-    Returns:
-        dict: Result of the fiscal year creation
-    """
+    """Automatically set up a fiscal year if missing"""
     try:
-        from frappe.utils import getdate, add_days, add_to_date
+        from frappe.utils import getdate, add_to_date
         test_date = getdate(date_str) if date_str else getdate()
         
         # Check if fiscal year exists
@@ -988,18 +742,9 @@ def setup_fiscal_year_if_missing(date_str=None):
         }
 
 
-# Helper functions for salary slip batch processing
 @frappe.whitelist()
 def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
-    """
-    Process multiple salary slips in batches to manage memory usage
-    Args:
-        salary_slips: List of salary slip objects (optional)
-        slip_ids: List of salary slip IDs to process (optional)
-        batch_size: Number of slips to process in each batch
-    Returns:
-        dict: Results of the batch processing
-    """
+    """Process multiple salary slips in batches to manage memory usage"""
     start_time = now_datetime()
     
     # Log start of batch process
@@ -1060,7 +805,7 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
             # Process each slip in batch
             for slip_id in batch_ids:
                 try:
-                    # Get slip - use cached lookup if available
+                    # Get slip
                     slip = frappe.get_doc("Salary Slip", slip_id)
                     
                     # Only process if docstatus=0 (Draft)
@@ -1072,31 +817,12 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
                         })
                         continue
                         
-                    # Estimate memory before
-                    if hasattr(slip, '_estimate_memory_usage'):
-                        mem_before = slip._estimate_memory_usage()
-                    else:
-                        mem_before = None
-                    
                     # Submit the salary slip
                     slip.submit()
                     
-                    # Estimate memory after
-                    if hasattr(slip, '_estimate_memory_usage'):
-                        mem_after = slip._estimate_memory_usage()
-                    else:
-                        mem_after = None
-                        
                     # Record success
                     batch_results["successful"] += 1
                     results["successful"] += 1
-                    
-                    batch_results["slip_results"].append({
-                        "slip": slip_id,
-                        "status": "success",
-                        "memory_before": mem_before,
-                        "memory_after": mem_after
-                    })
                     
                 except Exception as e:
                     # Log the error
@@ -1105,12 +831,6 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
                     results["errors"].append({
                         "slip": slip_id,
                         "error": str(e)
-                    })
-                    
-                    batch_results["slip_results"].append({
-                        "slip": slip_id,
-                        "status": "error",
-                        "message": str(e)
                     })
                     
                     frappe.log_error(
@@ -1130,23 +850,11 @@ def process_salary_slips_batch(salary_slips=None, slip_ids=None, batch_size=50):
             # Add batch results
             results["batches"].append(batch_results)
             
-            # Log batch completion
-            frappe.log_error(
-                f"Completed batch {batch_count}: "
-                f"Success: {batch_results['successful']}, "
-                f"Failed: {batch_results['failed']}, "
-                f"Time: {batch_time:.2f}s",
-                "Batch Process - Batch Complete"
-            )
-            
             # Force garbage collection between batches
             import gc
             gc.collect()
             
-            # Add small delay between batches to allow background jobs to start
-            frappe.db.commit()
-            frappe.db.set_value("Background Job Settings", None, 
-                               {"last_batch_processed_timestamp": now_datetime()})
+            # Commit database changes between batches
             frappe.db.commit()
             
         # Calculate total time
@@ -1197,8 +905,3 @@ def diagnose_system_resources():
                 "status": "psutil not installed"
             }
         }
-
-
-def override_salary_slip_gl_entries(doc, method=None):
-    frappe.msgprint("Override GL entries function called")
-    # Rest of the function
