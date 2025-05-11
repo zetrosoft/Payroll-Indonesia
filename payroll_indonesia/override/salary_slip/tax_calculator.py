@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-10 11:30:00 by dannyaudian
+# Last modified: 2025-05-11 05:29:00 by dannyaudian
 
 """
 Implementation of tax calculation as per Indonesian regulations.
@@ -24,13 +24,16 @@ from frappe.utils import flt, getdate, cint, now_datetime
 
 from .base import update_component_amount, get_component_amount
 
+# Import TER calculation function from ter_calculator
+from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter
+
 # Cache for YTD calculations to improve performance
 _YTD_CACHE = {}
 _YTD_CACHE_EXPIRY = now_datetime()
 
 def calculate_tax_components(doc, employee):
     """
-    Calculate tax related components for salary slip
+    Central entry point for all tax calculations - decides between TER or progressive methods
     
     Args:
         doc: Salary slip document
@@ -57,16 +60,46 @@ def calculate_tax_components(doc, employee):
 
         # Set basic payroll note
         set_basic_payroll_note(doc, employee)
-
-        # Calculate PPh 21 - December always uses progressive method as per PMK 168/2023
+        
+        # For December, always use progressive method as per PMK 168/2023
         if is_december(doc):
             # Force disable TER for December according to PMK 168/2023
             doc.is_using_ter = 0
             calculate_december_pph(doc, employee)
-        else:
-            # Regular month - calculation method is determined by salary_slip.py controller
-            # This function just calculates using progressive method
-            calculate_monthly_pph_progressive(doc, employee)
+            return
+            
+        # Decision logic for other months: determine which tax method to use
+        # Check employee override first
+        if hasattr(employee, 'override_tax_method'):
+            # If employee has explicit override to TER
+            if employee.override_tax_method == "TER":
+                return calculate_monthly_pph_with_ter(doc, employee)
+            # If employee has explicit override to Progressive
+            elif employee.override_tax_method == "Progressive":
+                return calculate_monthly_pph_progressive(doc, employee)
+        
+        # No explicit override, check company settings
+        try:
+            pph_settings = frappe.get_single("PPh 21 Settings")
+            if (hasattr(pph_settings, 'calculation_method') and 
+                pph_settings.calculation_method == "TER" and
+                hasattr(pph_settings, 'use_ter') and
+                cint(pph_settings.use_ter) == 1):
+                
+                # Check month - TER should not be used for December as per PMK 168/2023
+                current_month = getdate(doc.start_date).month if hasattr(doc, 'start_date') else getdate().month
+                if current_month != 12:
+                    # Check employee eligibility for TER
+                    if not should_exclude_from_ter(employee):
+                        return calculate_monthly_pph_with_ter(doc, employee)
+        except Exception as e:
+            frappe.log_error(
+                f"Error checking PPh 21 Settings: {str(e)}, falling back to Progressive method",
+                "Tax Method Selection Error"
+            )
+            
+        # Default to progressive method
+        return calculate_monthly_pph_progressive(doc, employee)
     
     except Exception as e:
         frappe.log_error(
@@ -76,6 +109,26 @@ def calculate_tax_components(doc, employee):
         )
         # Convert to user-friendly error
         frappe.throw(_("Error calculating tax components: {0}").format(str(e)))
+
+def should_exclude_from_ter(employee):
+    """
+    Check if employee should be excluded from TER method based on criteria
+    
+    Args:
+        employee: Employee document
+        
+    Returns:
+        bool: True if employee should be excluded from TER
+    """
+    # Freelance employees should use Progressive method
+    if hasattr(employee, 'tipe_karyawan') and employee.tipe_karyawan == "Freelance":
+        return True
+    
+    # Check other exclusion criteria here
+    # ...
+    
+    # Not excluded
+    return False
 
 def calculate_monthly_pph_progressive(doc, employee):
     """
