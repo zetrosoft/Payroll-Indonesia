@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 10:57:31 by dannyaudianlanjutkan
+# Last modified: 2025-05-11 15:01:13 by dannyaudianlanjutkan
 
 import frappe
 from frappe import _
@@ -11,7 +11,7 @@ import hashlib
 from .base import update_component_amount
 
 # Import cache utilities
-from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 # Import constants
 from payroll_indonesia.constants import (
@@ -20,13 +20,17 @@ from payroll_indonesia.constants import (
     TER_CATEGORY_A, TER_CATEGORY_B, TER_CATEGORY_C, TER_CATEGORIES
 )
 
-# Import centralized logic functions from ter_logic.py
+# Import centralized logic functions
 from payroll_indonesia.payroll_indonesia.tax.ter_logic import (
-    get_ter_rate,
-    map_ptkp_to_ter_category,
     detect_annual_income,
-    calculate_monthly_tax_with_ter,
-    should_use_ter_method
+    add_tax_info_to_note
+)
+
+# Import TER functions from pph_ter (single source of truth)
+from payroll_indonesia.payroll_indonesia.tax.pph_ter import (
+    map_ptkp_to_ter_category,
+    get_ter_rate,
+    calculate_monthly_tax_with_ter
 )
 
 def calculate_monthly_pph_with_ter(doc, employee):
@@ -135,15 +139,14 @@ def calculate_monthly_pph_with_ter(doc, employee):
         # Update PPh 21 component
         update_component_amount(doc, "PPh 21", monthly_tax, "deductions")
 
-        # Add note to payroll_note
-        if hasattr(doc, 'payroll_note'):
-            note = (
-                f"\n[TER] Category: {ter_category}, Rate: {ter_rate*100}%, "
-                f"Monthly Tax: {monthly_tax}"
-            )
-            if is_annual:
-                note += f"\nAdjusted from annual value: {doc.gross_pay} → monthly: {monthly_gross_pay}"
-            doc.payroll_note += note
+        # Add tax info to note using shared function
+        add_tax_info_to_note(doc, "TER", {
+            "status_pajak": employee.status_pajak,
+            "ter_category": ter_category,
+            "gross_pay": monthly_gross_pay,
+            "ter_rate": ter_rate * 100,
+            "monthly_tax": monthly_tax
+        })
 
         # Verify calculation integrity
         verify_calculation_integrity(
@@ -249,61 +252,13 @@ def verify_calculation_integrity(doc, original_values, monthly_gross_pay,
         frappe.msgprint(_("Warning: Could not verify TER calculation integrity"), indicator="orange")
         return False
 
-# Import from tax_calculator.py moved to centralized tax logic
-def add_tax_info_to_note(doc, tax_method, values):
-    """
-    Add tax calculation details to payroll note with consistent formatting
-    (Import this from tax_calculator.py after refactoring that file)
-    
-    Args:
-        doc: Salary slip document
-        tax_method: "PROGRESSIVE", "TER", or "PROGRESSIVE_DECEMBER"
-        values: Dictionary with calculation values
-    """
-    # This function will be imported from tax_calculator after it's refactored
-    # For now, provide a stub implementation for direct calls
-    if tax_method == "TER":
-        try:
-            # Initialize payroll_note if needed
-            if not hasattr(doc, 'payroll_note'):
-                doc.payroll_note = ""
-                
-            # Add TER note
-            note = (
-                f"\n\n=== Perhitungan PPh 21 dengan TER ===\n"
-                f"Status Pajak: {values.get('status_pajak', 'TK0')} → {values.get('ter_category', '')}\n"
-                f"Penghasilan Bruto: Rp {values.get('gross_pay', 0):,.0f}\n"
-                f"Tarif Efektif Rata-rata: {values.get('ter_rate', 0):.2f}%\n"
-                f"PPh 21 Sebulan: Rp {values.get('monthly_tax', 0):,.0f}\n\n"
-                f"Sesuai PMK 168/2023 tentang Tarif Efektif Rata-rata"
-            )
-            
-            doc.payroll_note += note
-        except Exception as e:
-            # This is not a critical error - we can continue without adding notes
-            frappe.log_error(
-                "Error adding TER tax info to note: {0}".format(str(e)),
-                "TER Note Error"
-            )
-
-# The following functions are now imported directly from ter_logic.py
-# and have been removed from this file:
-# - get_ter_rate
-# - should_use_ter_method
-
+# YTD functions - to be moved to utils.py in a future refactoring
 def get_ytd_totals_from_tax_summary(employee, year, month):
     """
     Get YTD tax totals from Employee Tax Summary with caching
     
     This function will be moved to utils.py in a future refactoring.
     For now, we keep it here for backward compatibility.
-    
-    Args:
-        employee: Employee ID
-        year: Current year
-        month: Current month (1-12)
-    Returns:
-        dict: Dictionary with ytd_gross, ytd_tax, ytd_bpjs
     """
     # Create cache key
     cache_key = f"ytd:{employee}:{year}:{month}"
@@ -371,7 +326,6 @@ def get_ytd_totals_from_tax_summary_legacy(employee, year, month):
     Legacy fallback method to get YTD tax totals from Employee Tax Summary
     
     This function will be moved to utils.py in a future refactoring.
-    For now, we keep it here for backward compatibility.
     """
     try:
         # Find Employee Tax Summary for this employee and year

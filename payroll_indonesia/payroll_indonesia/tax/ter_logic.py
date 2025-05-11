@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 10:47:38 by dannyaudian
+# Last modified: 2025-05-11 15:01:13 by dannyaudianlanjutkan
 
 """
 Core TER and tax calculation logic for Indonesian payroll.
@@ -22,123 +22,24 @@ from frappe import _
 from frappe.utils import flt, getdate, cint
 
 # Import cache utilities
-from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
+from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
 
 # Import constants
 from payroll_indonesia.constants import (
     MONTHS_PER_YEAR, CACHE_SHORT, CACHE_LONG, CACHE_MEDIUM, 
     TER_CATEGORY_A, TER_CATEGORY_B, TER_CATEGORY_C, 
     TER_MAX_RATE, CURRENCY_PRECISION,
-    BIAYA_JABATAN_PERCENT, BIAYA_JABATAN_MAX
+    BIAYA_JABATAN_PERCENT, BIAYA_JABATAN_MAX,
+    TAX_DETECTION_THRESHOLD, ANNUAL_DETECTION_FACTOR,
+    SALARY_BASIC_FACTOR
 )
 
-def get_ter_rate(ter_category, income):
-    """
-    Get TER rate based on TER category and income - with caching for efficiency
-    
-    Args:
-        ter_category: TER category ('TER A', 'TER B', 'TER C')
-        income: Monthly income amount
-        
-    Returns:
-        float: TER rate as decimal (e.g., 0.05 for 5%)
-    """
-    try:
-        # Validate inputs
-        if not ter_category:
-            ter_category = TER_CATEGORY_C  # Default to highest category if not specified
-            
-        if not income or income <= 0:
-            return 0
-            
-        # Create a unique cache key
-        income_bracket = round(income, -3)  # Round to nearest thousand for better cache hits
-        cache_key = f"ter_rate:{ter_category}:{income_bracket}"
-        
-        # Check cache first
-        rate_value = get_cached_value(cache_key)
-        if rate_value is not None:
-            return rate_value
-        
-        # Get TER rate from database - use efficient SQL query
-        ter = frappe.db.sql("""
-            SELECT rate
-            FROM `tabPPh 21 TER Table`
-            WHERE status_pajak = %s
-              AND %s >= income_from
-              AND (%s <= income_to OR income_to = 0)
-            ORDER BY income_from DESC
-            LIMIT 1
-        """, (ter_category, income, income), as_dict=1)
-
-        if ter:
-            # Cache the result before returning
-            rate_value = float(ter[0].rate) / 100.0
-            cache_value(cache_key, rate_value, CACHE_SHORT)  # 30 minutes
-            return rate_value
-        else:
-            # Try to find using highest available bracket
-            ter = frappe.db.sql("""
-                SELECT rate
-                FROM `tabPPh 21 TER Table`
-                WHERE status_pajak = %s
-                  AND is_highest_bracket = 1
-                LIMIT 1
-            """, (ter_category,), as_dict=1)
-            
-            if ter:
-                # Cache the highest bracket result
-                rate_value = float(ter[0].rate) / 100.0
-                cache_value(cache_key, rate_value, CACHE_SHORT)  # 30 minutes
-                return rate_value
-            else:
-                # As a last resort, use default rate from settings or hardcoded value
-                try:
-                    # Fall back to defaults.json values
-                    from payroll_indonesia.payroll_indonesia.utils import get_default_config
-                    config = get_default_config()
-                    if config and "ter_rates" in config and ter_category in config["ter_rates"]:
-                        # Get the highest rate from the category
-                        highest_rate = 0
-                        for rate_data in config["ter_rates"][ter_category]:
-                            if "is_highest_bracket" in rate_data and rate_data["is_highest_bracket"]:
-                                highest_rate = flt(rate_data["rate"])
-                                break
-                        
-                        if highest_rate > 0:
-                            rate_value = highest_rate / 100.0
-                            cache_value(cache_key, rate_value, CACHE_SHORT)  # 30 minutes
-                            return rate_value
-                    
-                    # PMK 168/2023 highest rate is 34% for all categories
-                    cache_value(cache_key, TER_MAX_RATE / 100.0, CACHE_SHORT)  # 30 minutes
-                    return TER_MAX_RATE / 100.0
-                        
-                except Exception as e:
-                    # This is a validation failure - TER rate is critical to tax calculation
-                    frappe.log_error(
-                        "Failed to determine TER rate for category {0}: {1}".format(
-                            ter_category, str(e)
-                        ),
-                        "TER Rate Error"
-                    )
-                    # Last resort - use PMK 168/2023 highest rate
-                    cache_value(cache_key, TER_MAX_RATE / 100.0, CACHE_SHORT)  # 30 minutes
-                    return TER_MAX_RATE / 100.0
-        
-    except Exception as e:
-        # Handle ValidationError separately
-        if isinstance(e, frappe.exceptions.ValidationError):
-            raise
-            
-        # Log error details
-        frappe.log_error(
-            "Error getting TER rate for category {0} and income {1}: {2}".format(
-                ter_category, income, str(e)
-            ),
-            "TER Rate Error"
-        )
-        raise
+# Import TER category mapping and rate calculation from pph_ter (single source of truth)
+from payroll_indonesia.payroll_indonesia.tax.pph_ter import (
+    map_ptkp_to_ter_category,
+    get_ter_rate,
+    calculate_monthly_tax_with_ter
+)
 
 def calculate_progressive_tax(pkp, pph_settings=None):
     """
@@ -241,94 +142,6 @@ def calculate_progressive_tax(pkp, pph_settings=None):
             "Tax Bracket Calculation Error"
         )
         raise
-
-def map_ptkp_to_ter_category(status_pajak):
-    """
-    Map PTKP status to TER category based on PMK 168/2023
-    
-    Args:
-        status_pajak: Tax status (e.g., 'TK0', 'K1', etc.)
-        
-    Returns:
-        str: TER category ('TER A', 'TER B', or 'TER C')
-    """
-    try:
-        # Use ptkp_to_ter_mapping from settings if available
-        mapping = {}
-        
-        # Try to get the mapping from settings
-        try:
-            # Use cache for ptkp_to_ter_mapping
-            cache_key = "ptkp_to_ter_mapping"
-            mapping = get_cached_value(cache_key)
-            
-            if mapping is None:
-                # Try to get from PPh 21 Settings
-                if frappe.db.exists("DocType", "PPh 21 Settings"):
-                    pph_settings = frappe.get_cached_doc("PPh 21 Settings")
-                    if hasattr(pph_settings, 'ptkp_to_ter_mapping'):
-                        mapping = {}
-                        for row in pph_settings.ptkp_to_ter_mapping:
-                            mapping[row.ptkp_status] = row.ter_category
-                        
-                # If not found, try to get from defaults.json
-                if not mapping:
-                    from payroll_indonesia.payroll_indonesia.utils import get_default_config
-                    config = get_default_config()
-                    if config and "ptkp_to_ter_mapping" in config:
-                        mapping = config["ptkp_to_ter_mapping"]
-                        
-                # Cache the mapping
-                cache_value(cache_key, mapping or {}, CACHE_LONG)  # 24 hours
-        except Exception as e:
-            frappe.log_error(
-                "Error retrieving PTKP to TER mapping: {0}".format(str(e)),
-                "PTKP Mapping Error"
-            )
-            mapping = {}
-            
-        # If status_pajak is in mapping, return the mapped category
-        if mapping and status_pajak in mapping:
-            return mapping[status_pajak]
-            
-        # Default mapping based on PMK 168/2023 logic
-        prefix = status_pajak[:2] if len(status_pajak) >= 2 else status_pajak
-        suffix = status_pajak[2:] if len(status_pajak) >= 3 else "0"
-        
-        # TK/0 uses TER A
-        if status_pajak == "TK0":
-            return TER_CATEGORY_A
-        
-        # TK/1 and TK/2 use TER B
-        elif prefix == "TK" and suffix in ["1", "2"]:
-            return TER_CATEGORY_B
-        
-        # TK/3 uses TER C
-        elif prefix == "TK" and suffix == "3":
-            return TER_CATEGORY_C
-        
-        # K/0 and K/1 use TER B
-        elif prefix == "K" and suffix in ["0", "1"]:
-            return TER_CATEGORY_B
-        
-        # K/2 and K/3 use TER C
-        elif prefix == "K" and suffix in ["2", "3"]:
-            return TER_CATEGORY_C
-        
-        # HB (any) uses TER C
-        elif prefix == "HB":
-            return TER_CATEGORY_C
-        
-        # Default to TER C (most conservative)
-        return TER_CATEGORY_C
-        
-    except Exception as e:
-        # Non-critical error - return TER C as fallback
-        frappe.log_error(
-            "Error mapping PTKP {0} to TER category: {1}".format(status_pajak, str(e)),
-            "PTKP Mapping Error"
-        )
-        return TER_CATEGORY_C
 
 def get_ptkp_amount(status_pajak, pph_settings=None):
     """
@@ -741,29 +554,162 @@ def detect_annual_income(gross_pay, total_earnings=0, basic_salary=0, bypass_det
         
     return is_annual, reason, monthly_gross_pay
 
-def calculate_monthly_tax_with_ter(income, ter_category):
+# Define common function used for tax information display
+def add_tax_info_to_note(doc, tax_method, values):
     """
-    Calculate monthly PPh 21 using TER method
+    Add tax calculation details to payroll note with consistent formatting and
+    section management to avoid duplication.
     
     Args:
-        income: Monthly income amount
-        ter_category: TER category
-        
-    Returns:
-        tuple: (monthly_tax, ter_rate)
+        doc: Salary slip document
+        tax_method: "PROGRESSIVE", "TER", or "PROGRESSIVE_DECEMBER"
+        values: Dictionary with calculation values
     """
     try:
-        # Get TER rate for income and category
-        ter_rate = get_ter_rate(ter_category, income)
+        # Initialize payroll_note if needed
+        if not hasattr(doc, 'payroll_note'):
+            doc.payroll_note = ""
+        elif doc.payroll_note is None:
+            doc.payroll_note = ""
+            
+        # Check if Tax calculation section already exists and remove it if found
+        start_marker = "<!-- TAX_CALCULATION_START -->"
+        end_marker = "<!-- TAX_CALCULATION_END -->"
         
-        # Calculate tax
-        monthly_tax = flt(income * ter_rate)
+        if start_marker in doc.payroll_note and end_marker in doc.payroll_note:
+            start_idx = doc.payroll_note.find(start_marker)
+            end_idx = doc.payroll_note.find(end_marker) + len(end_marker)
+            
+            # Remove the existing section
+            doc.payroll_note = doc.payroll_note[:start_idx] + doc.payroll_note[end_idx:]
         
-        return monthly_tax, ter_rate
+        # Add new tax calculation with section markers
+        note_content = [
+            "\n\n<!-- TAX_CALCULATION_START -->",
+        ]
+        
+        if tax_method == "TER":
+            # TER method - Used by ter_calculator.py
+            status_pajak = values.get('status_pajak', 'TK0')
+            ter_category = values.get('ter_category', '')
+            mapping_info = f" → {ter_category}" if ter_category else ""
+            
+            note_content.extend([
+                "=== Perhitungan PPh 21 dengan TER ===",
+                f"Status Pajak: {status_pajak}{mapping_info}",
+                f"Penghasilan Bruto: Rp {values.get('gross_pay', 0):,.0f}",
+                f"Tarif Efektif Rata-rata: {values.get('ter_rate', 0):.2f}%",
+                f"PPh 21 Sebulan: Rp {values.get('monthly_tax', 0):,.0f}",
+                "",
+                "Sesuai PMK 168/2023 tentang Tarif Efektif Rata-rata"
+            ])
+            
+        elif tax_method == "PROGRESSIVE_DECEMBER":
+            # Progressive method for December with year-end correction
+            note_content.extend([
+                "=== Perhitungan PPh 21 Tahunan (Desember) ===",
+                f"Penghasilan Bruto Setahun: Rp {values.get('annual_gross', 0):,.0f}",
+                f"Biaya Jabatan: Rp {values.get('annual_biaya_jabatan', 0):,.0f}",
+                f"Total BPJS: Rp {values.get('annual_bpjs', 0):,.0f}",
+                f"Penghasilan Neto: Rp {values.get('annual_netto', 0):,.0f}",
+                f"PTKP ({values.get('status_pajak', 'TK0')}): Rp {values.get('ptkp', 0):,.0f}",
+                f"PKP: Rp {values.get('pkp', 0):,.0f}",
+                "",
+                "Perhitungan Per Lapisan Pajak:"
+            ])
+            
+            # Add tax bracket details if available
+            tax_details = values.get('tax_details', [])
+            if tax_details:
+                for d in tax_details:
+                    rate = flt(d.get('rate', 0))
+                    taxable = flt(d.get('taxable', 0))
+                    tax = flt(d.get('tax', 0))
+                    note_content.append(
+                        f"- Lapisan {rate:.0f}%: "
+                        f"Rp {taxable:,.0f} × {rate:.0f}% = "
+                        f"Rp {tax:,.0f}"
+                    )
+            else:
+                note_content.append("- (Tidak ada rincian pajak)")
+                
+            # Add summary values
+            annual_pph = flt(values.get('annual_pph', 0))
+            ytd_pph = flt(values.get('ytd_pph', 0))
+            correction = flt(values.get('correction', 0))
+            
+            note_content.extend([
+                "",
+                f"Total PPh 21 Setahun: Rp {annual_pph:,.0f}",
+                f"PPh 21 Sudah Dibayar: Rp {ytd_pph:,.0f}",
+                f"Koreksi Desember: Rp {correction:,.0f}",
+                f"({'Kurang Bayar' if correction > 0 else 'Lebih Bayar'})",
+                "",
+                "Metode perhitungan Desember menggunakan metode progresif sesuai PMK 168/2023"
+            ])
+            
+        elif tax_method == "PROGRESSIVE":
+            # Regular progressive method for non-December months
+            note_content.extend([
+                "=== Perhitungan PPh 21 dengan Metode Progresif ===",
+                f"Status Pajak: {values.get('status_pajak', 'TK0')}",
+                f"Penghasilan Neto Sebulan: Rp {values.get('monthly_netto', 0):,.0f}",
+                f"Penghasilan Neto Setahun: Rp {values.get('annual_netto', 0):,.0f}",
+                f"PTKP: Rp {values.get('ptkp', 0):,.0f}",
+                f"PKP: Rp {values.get('pkp', 0):,.0f}",
+                "",
+                "PPh 21 Tahunan:"
+            ])
+            
+            # Add tax bracket details if available
+            tax_details = values.get('tax_details', [])
+            if tax_details:
+                for d in tax_details:
+                    rate = flt(d.get('rate', 0))
+                    taxable = flt(d.get('taxable', 0))
+                    tax = flt(d.get('tax', 0))
+                    note_content.append(
+                        f"- Lapisan {rate:.0f}%: "
+                        f"Rp {taxable:,.0f} × {rate:.0f}% = "
+                        f"Rp {tax:,.0f}"
+                    )
+            else:
+                note_content.append("- (Tidak ada rincian pajak)")
+                
+            # Add monthly PPh
+            annual_pph = flt(values.get('annual_pph', 0))
+            monthly_pph = flt(values.get('monthly_pph', 0))
+            note_content.extend([
+                "",
+                f"Total PPh 21 Setahun: Rp {annual_pph:,.0f}",
+                f"PPh 21 Sebulan: Rp {monthly_pph:,.0f}"
+            ])
+        
+        else:
+            # Simple message (e.g., for NPWP Gabung Suami case)
+            if "message" in values:
+                note_content.extend([
+                    "=== Informasi Pajak ===",
+                    values.get("message", "")
+                ])
+            else:
+                note_content.extend([
+                    "=== Informasi Pajak ===",
+                    "Tidak ada perhitungan PPh 21 yang dilakukan."
+                ])
+        
+        # Add end marker
+        note_content.append("<!-- TAX_CALCULATION_END -->")
+        
+        # Add the formatted note to payroll_note
+        doc.payroll_note += "\n" + "\n".join(note_content)
+        
     except Exception as e:
-        # Log error and re-raise
+        # This is not a critical error - we can continue without adding notes
         frappe.log_error(
-            "Error calculating monthly tax with TER for income {0}: {1}".format(income, str(e)),
-            "TER Calculation Error"
+            "Error adding tax info to note: {0}".format(str(e)),
+            "Tax Note Error"
         )
-        raise
+        # Add a simple note to indicate there was an error
+        if hasattr(doc, 'payroll_note'):
+            doc.payroll_note += _("\n\nWarning: Could not add detailed tax calculation notes.")

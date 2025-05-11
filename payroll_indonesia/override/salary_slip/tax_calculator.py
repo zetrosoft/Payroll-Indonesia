@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 11:00:37 by dannyaudianlanjutkan
+# Last modified: 2025-05-11 15:01:13 by dannyaudianlanjutkan
 
 """
 Implementation of tax calculation as per Indonesian regulations.
@@ -26,9 +26,13 @@ from .base import update_component_amount, get_component_amount
 
 # Import TER calculation function from ter_calculator
 from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter
+# Import YTD functions from ter_calculator for backward compatibility
+from payroll_indonesia.override.salary_slip.ter_calculator import (
+    get_ytd_totals_from_tax_summary
+)
 
 # Import standardized cache utilities
-from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 # Import constants
 from payroll_indonesia.constants import (
@@ -42,8 +46,11 @@ from payroll_indonesia.payroll_indonesia.tax.ter_logic import (
     calculate_progressive_tax,
     get_ptkp_amount,
     should_use_ter_method,
-    map_ptkp_to_ter_category
+    add_tax_info_to_note
 )
+
+# Import TER functions from pph_ter (single source of truth)
+from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 
 def calculate_tax_components(doc, employee):
     """
@@ -161,7 +168,7 @@ def calculate_monthly_pph_progressive(doc, employee):
         # Update PPh 21 component
         update_component_amount(doc, "PPh 21", monthly_pph, "deductions")
 
-        # Add tax info to note
+        # Add tax info to note using centralized function
         add_tax_info_to_note(doc, "PROGRESSIVE", {
             "status_pajak": employee.status_pajak,
             "monthly_netto": monthly_netto,
@@ -265,7 +272,7 @@ def calculate_december_pph(doc, employee):
             "deductions"
         )
 
-        # Add tax info to note with special December data
+        # Add tax info to note with special December data using centralized function
         add_tax_info_to_note(doc, "PROGRESSIVE_DECEMBER", {
             "status_pajak": employee.status_pajak,
             "annual_gross": annual_gross,
@@ -290,166 +297,6 @@ def calculate_december_pph(doc, employee):
         )
         frappe.throw(_("Error calculating December PPh 21 correction: {0}").format(str(e)))
 
-def add_tax_info_to_note(doc, tax_method, values):
-    """
-    Add tax calculation details to payroll note with consistent formatting and
-    section management to avoid duplication.
-    
-    Args:
-        doc: Salary slip document
-        tax_method: "PROGRESSIVE", "TER", or "PROGRESSIVE_DECEMBER"
-        values: Dictionary with calculation values
-    """
-    try:
-        # Initialize payroll_note if needed
-        if not hasattr(doc, 'payroll_note'):
-            doc.payroll_note = ""
-        elif doc.payroll_note is None:
-            doc.payroll_note = ""
-            
-        # Check if Tax calculation section already exists and remove it if found
-        start_marker = "<!-- TAX_CALCULATION_START -->"
-        end_marker = "<!-- TAX_CALCULATION_END -->"
-        
-        if start_marker in doc.payroll_note and end_marker in doc.payroll_note:
-            start_idx = doc.payroll_note.find(start_marker)
-            end_idx = doc.payroll_note.find(end_marker) + len(end_marker)
-            
-            # Remove the existing section
-            doc.payroll_note = doc.payroll_note[:start_idx] + doc.payroll_note[end_idx:]
-        
-        # Add new tax calculation with section markers
-        note_content = [
-            "\n\n<!-- TAX_CALCULATION_START -->",
-        ]
-        
-        if tax_method == "TER":
-            # TER method - Used by ter_calculator.py
-            status_pajak = values.get('status_pajak', 'TK0')
-            ter_category = values.get('ter_category', '')
-            mapping_info = f" → {ter_category}" if ter_category else ""
-            
-            note_content.extend([
-                "=== Perhitungan PPh 21 dengan TER ===",
-                f"Status Pajak: {status_pajak}{mapping_info}",
-                f"Penghasilan Bruto: Rp {values.get('gross_pay', 0):,.0f}",
-                f"Tarif Efektif Rata-rata: {values.get('ter_rate', 0):.2f}%",
-                f"PPh 21 Sebulan: Rp {values.get('monthly_tax', 0):,.0f}",
-                "",
-                "Sesuai PMK 168/2023 tentang Tarif Efektif Rata-rata"
-            ])
-            
-        elif tax_method == "PROGRESSIVE_DECEMBER":
-            # Progressive method for December with year-end correction
-            note_content.extend([
-                "=== Perhitungan PPh 21 Tahunan (Desember) ===",
-                f"Penghasilan Bruto Setahun: Rp {values.get('annual_gross', 0):,.0f}",
-                f"Biaya Jabatan: Rp {values.get('annual_biaya_jabatan', 0):,.0f}",
-                f"Total BPJS: Rp {values.get('annual_bpjs', 0):,.0f}",
-                f"Penghasilan Neto: Rp {values.get('annual_netto', 0):,.0f}",
-                f"PTKP ({values.get('status_pajak', 'TK0')}): Rp {values.get('ptkp', 0):,.0f}",
-                f"PKP: Rp {values.get('pkp', 0):,.0f}",
-                "",
-                "Perhitungan Per Lapisan Pajak:"
-            ])
-            
-            # Add tax bracket details if available
-            tax_details = values.get('tax_details', [])
-            if tax_details:
-                for d in tax_details:
-                    rate = flt(d.get('rate', 0))
-                    taxable = flt(d.get('taxable', 0))
-                    tax = flt(d.get('tax', 0))
-                    note_content.append(
-                        f"- Lapisan {rate:.0f}%: "
-                        f"Rp {taxable:,.0f} × {rate:.0f}% = "
-                        f"Rp {tax:,.0f}"
-                    )
-            else:
-                note_content.append("- (Tidak ada rincian pajak)")
-                
-            # Add summary values
-            annual_pph = flt(values.get('annual_pph', 0))
-            ytd_pph = flt(values.get('ytd_pph', 0))
-            correction = flt(values.get('correction', 0))
-            
-            note_content.extend([
-                "",
-                f"Total PPh 21 Setahun: Rp {annual_pph:,.0f}",
-                f"PPh 21 Sudah Dibayar: Rp {ytd_pph:,.0f}",
-                f"Koreksi Desember: Rp {correction:,.0f}",
-                f"({'Kurang Bayar' if correction > 0 else 'Lebih Bayar'})",
-                "",
-                "Metode perhitungan Desember menggunakan metode progresif sesuai PMK 168/2023"
-            ])
-            
-        elif tax_method == "PROGRESSIVE":
-            # Regular progressive method for non-December months
-            note_content.extend([
-                "=== Perhitungan PPh 21 dengan Metode Progresif ===",
-                f"Status Pajak: {values.get('status_pajak', 'TK0')}",
-                f"Penghasilan Neto Sebulan: Rp {values.get('monthly_netto', 0):,.0f}",
-                f"Penghasilan Neto Setahun: Rp {values.get('annual_netto', 0):,.0f}",
-                f"PTKP: Rp {values.get('ptkp', 0):,.0f}",
-                f"PKP: Rp {values.get('pkp', 0):,.0f}",
-                "",
-                "PPh 21 Tahunan:"
-            ])
-            
-            # Add tax bracket details if available
-            tax_details = values.get('tax_details', [])
-            if tax_details:
-                for d in tax_details:
-                    rate = flt(d.get('rate', 0))
-                    taxable = flt(d.get('taxable', 0))
-                    tax = flt(d.get('tax', 0))
-                    note_content.append(
-                        f"- Lapisan {rate:.0f}%: "
-                        f"Rp {taxable:,.0f} × {rate:.0f}% = "
-                        f"Rp {tax:,.0f}"
-                    )
-            else:
-                note_content.append("- (Tidak ada rincian pajak)")
-                
-            # Add monthly PPh
-            annual_pph = flt(values.get('annual_pph', 0))
-            monthly_pph = flt(values.get('monthly_pph', 0))
-            note_content.extend([
-                "",
-                f"Total PPh 21 Setahun: Rp {annual_pph:,.0f}",
-                f"PPh 21 Sebulan: Rp {monthly_pph:,.0f}"
-            ])
-        
-        else:
-            # Simple message (e.g., for NPWP Gabung Suami case)
-            if "message" in values:
-                note_content.extend([
-                    "=== Informasi Pajak ===",
-                    values.get("message", "")
-                ])
-            else:
-                note_content.extend([
-                    "=== Informasi Pajak ===",
-                    "Tidak ada perhitungan PPh 21 yang dilakukan."
-                ])
-        
-        # Add end marker
-        note_content.append("<!-- TAX_CALCULATION_END -->")
-        
-        # Add the formatted note to payroll_note
-        doc.payroll_note += "\n" + "\n".join(note_content)
-        
-    except Exception as e:
-        # This is not a critical error - we can continue without adding notes
-        frappe.log_error(
-            "Error adding tax info to note: {0}".format(str(e)),
-            "Tax Note Error"
-        )
-        # Add a simple note to indicate there was an error
-        if hasattr(doc, 'payroll_note'):
-            doc.payroll_note += _("\n\nWarning: Could not add detailed tax calculation notes.")
-            frappe.msgprint(_("Warning: Could not add detailed tax calculation notes."), indicator="orange")
-            
 def set_basic_payroll_note(doc, employee):
     """
     Set basic payroll note with component details
@@ -508,116 +355,6 @@ def is_december(doc):
             "Date Check Error"
         )
         return False
-
-def get_ytd_totals_from_tax_summary(doc, year):
-    """
-    Get YTD data from Employee Tax Summary with caching for performance
-    
-    Args:
-        doc: Salary slip document
-        year: The tax year
-        
-    Returns:
-        dict: A dictionary with YTD values
-    """
-    # Create cache key
-    month = getdate(doc.start_date).month
-    cache_key = f"ytd_tax_summary:{doc.employee}:{year}:{month}"
-    
-    # Check cache first
-    cached_result = get_cached_value(cache_key)
-    if cached_result is not None:
-        return cached_result
-    
-    # Default result
-    result = {"gross": 0, "bpjs": 0, "pph21": 0}
-    
-    try:
-        # Validate year
-        if not year or not isinstance(year, int):
-            year = getdate(doc.end_date).year
-
-        # Check if Employee Tax Summary DocType exists
-        if not frappe.db.exists("DocType", "Employee Tax Summary"):
-            # This is not a critical error - we can use traditional calculation
-            frappe.log_error(
-                "Employee Tax Summary DocType not found for employee {0}".format(doc.employee),
-                "YTD Tax Calculation"
-            )
-            frappe.msgprint(
-                _("Employee Tax Summary DocType not found, using traditional YTD calculation"),
-                indicator="orange"
-            )
-            result = get_ytd_totals(doc, year)
-            cache_value(cache_key, result, CACHE_SHORT)
-            return result
-            
-        # Get Employee Tax Summary
-        tax_summary = frappe.db.get_value(
-            "Employee Tax Summary",
-            {"employee": doc.employee, "year": year},
-            ["name"], 
-            cache=True
-        )
-        
-        if tax_summary:
-            # Get the full document
-            try:
-                tax_doc = frappe.get_doc("Employee Tax Summary", tax_summary)
-            except Exception as e:
-                # This is not a critical error - we can use traditional calculation
-                frappe.log_error(
-                    "Error retrieving Employee Tax Summary {0}: {1}".format(tax_summary, str(e)),
-                    "Tax Summary Retrieval Error"
-                )
-                frappe.msgprint(
-                    _("Warning: Could not retrieve tax summary data. Using traditional YTD calculation."),
-                    indicator="orange"
-                )
-                result = get_ytd_totals(doc, year)
-                cache_value(cache_key, result, CACHE_SHORT)
-                return result
-            
-            # Get current month
-            current_month = getdate(doc.start_date).month
-            
-            # Calculate totals from monthly details
-            if hasattr(tax_doc, 'monthly_details') and tax_doc.monthly_details:
-                for monthly in tax_doc.monthly_details:
-                    if hasattr(monthly, 'month') and monthly.month < current_month:
-                        result["gross"] += flt(monthly.gross_pay if hasattr(monthly, 'gross_pay') else 0)
-                        result["bpjs"] += flt(monthly.bpjs_deductions if hasattr(monthly, 'bpjs_deductions') else 0)
-                        result["pph21"] += flt(monthly.tax_amount if hasattr(monthly, 'tax_amount') else 0)
-                
-                # Cache the result
-                cache_value(cache_key, result, CACHE_SHORT)
-                return result
-            else:
-                # This is not a critical error - we can use traditional calculation
-                frappe.log_error(
-                    "No monthly details found in Tax Summary for {0}".format(doc.employee),
-                    "YTD Tax Calculation"
-                )
-                frappe.msgprint(
-                    _("No monthly details found in Tax Summary, using traditional YTD calculation"),
-                    indicator="orange"
-                )
-    
-    except Exception as e:
-        # This is not a critical error - we can use traditional calculation
-        frappe.log_error(
-            "Error getting YTD data from tax summary for {0}: {1}".format(doc.employee, str(e)),
-            "YTD Tax Calculation Error"
-        )
-        frappe.msgprint(
-            _("Error retrieving tax summary data: {0}. Using traditional YTD calculation.").format(str(e)),
-            indicator="orange"
-        )
-        
-    # Fall back to traditional method if tax summary not found or error occurs
-    result = get_ytd_totals(doc, year)
-    cache_value(cache_key, result, CACHE_SHORT)
-    return result
 
 def get_ytd_totals(doc, year):
     """
