@@ -181,7 +181,7 @@ fixtures = [
     },
 ]
 
-# Scheduler tasks
+# Scheduler tasks - Updated to use correct paths and remove outdated references
 scheduler_events = {
     "daily": [
         "payroll_indonesia.utilities.cache_utils.clear_all_caches"

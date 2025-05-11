@@ -1,5 +1,4 @@
-# .github/workflows/python-ci.yml
-name: Python CI
+name: Python CI - Payroll Indonesia
 
 on:
   push:
@@ -10,26 +9,28 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-        
-    - name: Install bench
+
+    - name: Install frappe-bench (corrected egg name)
       run: |
-        pip install -e git+https://github.com/frappe/bench.git#egg=bench
-    
-    - name: Setup Frappe environment
+        pip install -e git+https://github.com/frappe/bench.git#egg=frappe-bench
+
+    - name: Install Black and Flake8
       run: |
-        bench init --skip-redis-config-generation frappe-bench
-        cd frappe-bench
-        bench get-app erpnext
-        # SOLUSI: Gunakan branch yang ada (misal version-14 atau develop)
-        bench get-app --branch version-14 frappe
-        # ATAU alternatif:
-        # bench get-app --branch develop frappe
-        bench get-app https://github.com/your-username/payroll_indonesia.git
+        pip install black flake8
+
+    - name: Run Black (code formatter)
+      run: |
+        black --check payroll_indonesia
+
+    - name: Run Flake8 (linter)
+      run: |
+        flake8 payroll_indonesia
