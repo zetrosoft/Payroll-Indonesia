@@ -9,10 +9,52 @@ from hrms.payroll.doctype.payroll_entry.payroll_entry import PayrollEntry
 
 class CustomPayrollEntry(PayrollEntry):
     def validate(self):
-        """Validasi untuk Payroll Entry"""
+        """Validasi untuk Payroll Entry dengan logika terpusat"""
         super().validate()
         self._validate_payroll_dates()
         self._validate_employee_list()
+        
+        # Logic moved from before_validate()
+        if hasattr(self, 'employees') and not self.employees:
+            frappe.msgprint(_("Tidak ada karyawan yang ditemukan. Memeriksa filter..."))
+            
+            # Cek karyawan aktif di perusahaan
+            active_employees = frappe.db.sql("""
+                SELECT name, employee_name
+                FROM `tabEmployee`
+                WHERE status = 'Active' AND company = %s
+            """, (self.company), as_dict=True)
+            
+            if not active_employees:
+                frappe.msgprint(_("Tidak ada karyawan aktif di perusahaan {0}").format(self.company))
+            else:
+                # Cek salary structure assignment
+                employees_with_structure = []
+                for emp in active_employees:
+                    has_structure = frappe.db.exists("Salary Structure Assignment", {
+                        "employee": emp.name,
+                        "docstatus": 1
+                    })
+                    
+                    if has_structure:
+                        employees_with_structure.append(emp)
+                
+                if not employees_with_structure:
+                    frappe.msgprint(_("Karyawan aktif tidak memiliki Salary Structure Assignment"))
+                else:
+                    # Cek karyawan dengan slip gaji yang sudah ada
+                    for emp in employees_with_structure:
+                        existing_slip = frappe.db.exists("Salary Slip", {
+                            "employee": emp.name,
+                            "start_date": self.start_date,
+                            "end_date": self.end_date,
+                            "docstatus": ["!=", 2]  # Not cancelled
+                        })
+                        
+                        if existing_slip:
+                            frappe.msgprint(_(
+                                "Karyawan {0} sudah memiliki slip gaji untuk periode ini: {1}"
+                            ).format(emp.employee_name, existing_slip))
         
     def _validate_payroll_dates(self):
         """Validasi tanggal payroll untuk konteks Indonesia"""
@@ -113,53 +155,9 @@ class CustomPayrollEntry(PayrollEntry):
         
         return filtered_emp_list
     
-    def before_validate(self):
-        """Fungsi yang dijalankan sebelum validasi"""
-        # Debug untuk memeriksa filters yang digunakan
-        if hasattr(self, 'employees') and not self.employees:
-            frappe.msgprint(_("Tidak ada karyawan yang ditemukan. Memeriksa filter..."))
-            
-            # Cek karyawan aktif di perusahaan
-            active_employees = frappe.db.sql("""
-                SELECT name, employee_name
-                FROM `tabEmployee`
-                WHERE status = 'Active' AND company = %s
-            """, (self.company), as_dict=True)
-            
-            if not active_employees:
-                frappe.msgprint(_("Tidak ada karyawan aktif di perusahaan {0}").format(self.company))
-            else:
-                # Cek salary structure assignment
-                employees_with_structure = []
-                for emp in active_employees:
-                    has_structure = frappe.db.exists("Salary Structure Assignment", {
-                        "employee": emp.name,
-                        "docstatus": 1
-                    })
-                    
-                    if has_structure:
-                        employees_with_structure.append(emp)
-                
-                if not employees_with_structure:
-                    frappe.msgprint(_("Karyawan aktif tidak memiliki Salary Structure Assignment"))
-                else:
-                    # Cek karyawan dengan slip gaji yang sudah ada
-                    for emp in employees_with_structure:
-                        existing_slip = frappe.db.exists("Salary Slip", {
-                            "employee": emp.name,
-                            "start_date": self.start_date,
-                            "end_date": self.end_date,
-                            "docstatus": ["!=", 2]  # Not cancelled
-                        })
-                        
-                        if existing_slip:
-                            frappe.msgprint(_(
-                                "Karyawan {0} sudah memiliki slip gaji untuk periode ini: {1}"
-                            ).format(emp.employee_name, existing_slip))
-    
     def get_existing_salary_slips(self, employees):
         """
-        Implementasi metode yang hilang - mendapatkan daftar salary slip yang sudah ada
+        Mendapatkan daftar salary slip yang sudah ada
         untuk karyawan dalam periode payroll yang sama
         """
         existing_slip_names = []
@@ -243,7 +241,8 @@ class CustomPayrollEntry(PayrollEntry):
                 
                 # Update progress if needed
                 if publish_progress:
-                    denominator = max(1, len(set(employees) - set(salary_slips_exist_for)))
+                    # Fix bug with set() usage for list of dicts
+                    denominator = max(1, len({e.get('employee') for e in employees if e.get('employee')} - set(salary_slips_exist_for)))
                     frappe.publish_progress(
                         count * 100 / denominator,
                         title=_("Creating Salary Slips...")

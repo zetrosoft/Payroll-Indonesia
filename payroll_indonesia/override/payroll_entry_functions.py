@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 03:56:22 by dannyaudian
+# Last modified: 2025-05-11 04:40:55 by dannyaudian
 
 import frappe
 from frappe import _
@@ -9,13 +9,18 @@ from frappe import _
 def before_validate(doc, method=None):
     """
     Event hook that runs before validating a Payroll Entry document.
-    This hook delegates to the CustomPayrollEntry class methods.
+    This file is retained only for backward-compatible hook registration.
+    
+    Since all validation logic has been centralized in CustomPayrollEntry class,
+    this simply calls doc.validate() to ensure proper validation flow.
+    
+    This file can be safely removed in future versions once all hooks
+    are updated to use CustomPayrollEntry directly.
     
     Args:
         doc: The Payroll Entry document instance
         method: The method being called (not used)
     """
-    # Delegate to the CustomPayrollEntry's before_validate method
-    # CustomPayrollEntry handles all validation logic internally
-    if hasattr(doc, 'before_validate') and callable(doc.before_validate):
-        doc.before_validate()
+    # Call validate() which contains all centralized validation logic
+    if hasattr(doc, 'validate') and callable(doc.validate):
+        doc.validate()
