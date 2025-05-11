@@ -28,7 +28,6 @@ from payroll_indonesia.constants import (
 from payroll_indonesia.utilities.cache_utils import (
     get_cached_value,
     cache_value,
-    clear_cache,
     memoize_with_ttl,
 )
 
