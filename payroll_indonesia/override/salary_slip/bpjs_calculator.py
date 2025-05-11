@@ -1,86 +1,31 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-06 02:45:10 by dannyaudian
+# Last modified: 2025-05-11 05:40:00 by dannyaudian
 
 import frappe
 from frappe import _
-from frappe.utils import flt, cint, now_datetime
-import gc  # For manual garbage collection
+from frappe.utils import flt, now_datetime
 
 from .base import update_component_amount
-# Import fungsi dari bpjs_calculation.py untuk menghindari duplikasi dan inkonsistensi
+
+# Import functions from bpjs_calculation.py - centralized BPJS logic
 from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import (
     hitung_bpjs,
-    check_bpjs_enrollment as bpjs_calculation_check_enrollment,
-    debug_log as bpjs_calculation_debug_log
+    check_bpjs_enrollment,
+    debug_log
 )
 
 # Define exports for proper importing by other modules
 __all__ = [
     'calculate_bpjs_components',
-    'verify_bpjs_components',
-    'check_bpjs_enrollment',
-    'debug_log'
+    'verify_bpjs_components'
 ]
-
-def debug_log(message, module_name="BPJS Calculator", employee=None, trace=False, max_length=250):
-    """
-    Log debug message with timestamp and limited length
-    
-    Args:
-        message: Message to log
-        module_name: Module name for error log
-        employee: Optional employee identifier for context
-        trace: Whether to include stack trace (default: False)
-        max_length: Maximum message length to avoid memory issues
-    """
-    timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
-    
-    # Add employee info if provided
-    employee_info = f"[Employee: {employee}] " if employee else ""
-    log_message = f"[{timestamp}] {employee_info}{message}"
-    
-    # Truncate message if too long to avoid memory issues
-    if len(log_message) > max_length:
-        log_message = log_message[:max_length] + "... (truncated)"
-    
-    # Include stack trace if requested
-    if trace:
-        log_message += f"\n\nTraceback: {frappe.get_traceback()}"
-        
-    frappe.log_error(log_message, module_name)
-
-
-def check_bpjs_enrollment(employee_doc):
-    """
-    Checks if employee is enrolled in BPJS programs
-    Uses the configuration from bpjs_calculation.py and converts
-    the result to boolean for backward compatibility
-    
-    Args:
-        employee_doc: Employee document
-        
-    Returns:
-        bool: True if enrolled in any BPJS program, False otherwise
-    """
-    # Use the implementation from bpjs_calculation.py
-    config = bpjs_calculation_check_enrollment(employee_doc)
-    
-    # Convert the result to boolean - if any config is returned, employee is enrolled
-    is_enrolled = bool(config and len(config) > 0)
-    
-    # Log the enrollment status for debugging
-    employee_name = getattr(employee_doc, 'name', str(employee_doc))
-    debug_log(f"Employee {employee_name} BPJS enrollment status: {is_enrolled}, config: {len(config) if config else 0} programs")
-    
-    return is_enrolled
-
 
 def calculate_bpjs_components(doc, employee, base_salary):
     """
     Calculate and update BPJS components in salary slip
-    With improved validation and error handling
+    This function is a wrapper around the centralized BPJS calculation logic
     
     Args:
         doc: Salary slip document
@@ -93,23 +38,8 @@ def calculate_bpjs_components(doc, employee, base_salary):
         employee_info += f" ({employee.employee_name})"
         
     try:
-        # Validate base_salary first
-        if not base_salary or base_salary <= 0:
-            debug_log(f"Warning: Invalid base salary ({base_salary}) for {employee_info}, using gross pay or minimum wage", trace=True)
-            
-            # Try to use gross_pay as fallback
-            if hasattr(doc, 'gross_pay') and doc.gross_pay > 0:
-                base_salary = flt(doc.gross_pay)
-                debug_log(f"Using gross pay as base salary: {base_salary} for {employee_info}")
-            else:
-                # Use minimum default (UMR Jakarta as safe default)
-                base_salary = 4900000  # Default to Jakarta UMR as safe minimum if no valid amount
-                debug_log(f"Using default minimum wage as base salary: {base_salary} for {employee_info}")
-        
         # Check if employee is enrolled in any BPJS program
-        # Using the config directly to avoid duplication
-        debug_log(f"Checking BPJS enrollment for {employee_info}")
-        bpjs_config = bpjs_calculation_check_enrollment(employee)
+        bpjs_config = check_bpjs_enrollment(employee)
         
         if not bpjs_config:
             debug_log(f"Employee {employee_info} not enrolled in any BPJS program - skipping calculation")
@@ -120,8 +50,7 @@ def calculate_bpjs_components(doc, employee, base_salary):
                 
             return
             
-        # Calculate BPJS values
-        debug_log(f"Calculating BPJS for {employee_info}, base_salary: {base_salary}")
+        # Calculate BPJS values using the centralized function
         bpjs_values = hitung_bpjs(employee, base_salary)
         
         # If no contributions calculated, initialize fields and return
@@ -139,7 +68,6 @@ def calculate_bpjs_components(doc, employee, base_salary):
         
         # BPJS Kesehatan Employee
         if bpjs_values["kesehatan_employee"] > 0:
-            debug_log(f"Setting BPJS Kesehatan Employee: {bpjs_values['kesehatan_employee']}")
             update_component_amount(
                 doc,
                 "BPJS Kesehatan Employee", 
@@ -149,7 +77,6 @@ def calculate_bpjs_components(doc, employee, base_salary):
         
         # BPJS JHT Employee
         if bpjs_values["jht_employee"] > 0:
-            debug_log(f"Setting BPJS JHT Employee: {bpjs_values['jht_employee']}")
             update_component_amount(
                 doc,
                 "BPJS JHT Employee", 
@@ -159,7 +86,6 @@ def calculate_bpjs_components(doc, employee, base_salary):
         
         # BPJS JP Employee
         if bpjs_values["jp_employee"] > 0:
-            debug_log(f"Setting BPJS JP Employee: {bpjs_values['jp_employee']}")
             update_component_amount(
                 doc,
                 "BPJS JP Employee",
@@ -176,12 +102,7 @@ def calculate_bpjs_components(doc, employee, base_salary):
         add_bpjs_info_to_note(doc, bpjs_values)
         
         # Verify the components were properly added
-        verification = verify_bpjs_components(doc)
-        if verification["all_zero"]:
-            debug_log(f"Warning: All BPJS components are zero after calculation for {employee_info}", trace=True)
-        
-        # Run garbage collection to free memory
-        gc.collect()
+        verify_bpjs_components(doc)
         
         debug_log(f"BPJS components calculation completed for {doc.name}")
         
@@ -270,7 +191,6 @@ def add_bpjs_info_to_note(doc, bpjs_values):
             
         # Check if BPJS calculation section already exists
         if "=== BPJS Calculation ===" in doc.payroll_note:
-            debug_log(f"BPJS calculation info already exists in payroll_note, skipping")
             return
             
         # Add BPJS calculation details with section markers
