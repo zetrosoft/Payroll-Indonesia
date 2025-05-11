@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 09:16:29 by dannyaudian
+# Last modified: 2025-05-11 10:15:05 by dannyaudian
 
 import frappe
 from frappe import _
@@ -9,10 +9,18 @@ from frappe.utils import getdate, get_first_day, get_last_day, add_months, add_d
 from datetime import datetime
 from collections import Counter
 
+# Import constants
+from payroll_indonesia.constants import (
+    CACHE_MEDIUM, CACHE_SHORT, CACHE_LONG, MONTHS_PER_YEAR, 
+    VALID_TAX_STATUS, TER_CATEGORIES
+)
+
 # Import from pph_ter.py instead of ter_calculator.py
 from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 # Import cache utils
 from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+# Import shared utilities
+from payroll_indonesia.payroll_indonesia.utils import get_ytd_totals, get_employee_details
 
 def update_tax_summaries(month=None, year=None, company=None):
     """
@@ -101,28 +109,29 @@ def update_tax_summaries(month=None, year=None, company=None):
             "details": []
         }
         
-        # Get all submitted salary slips in the specified month
+        # Get all submitted salary slips in the specified month - using cache for efficiency
         cache_key = f"monthly_slips:{year}:{month}:{company or 'all'}"
         salary_slips = get_cached_value(cache_key)
         
         if salary_slips is None:
-            salary_slips_filters = {
-                "start_date": [">=", start_date],
-                "end_date": ["<=", end_date],
-                "docstatus": 1
-            }
+            # Use parameterized query for better security and performance
+            query_filters = [
+                ["start_date", ">=", start_date],
+                ["end_date", "<=", end_date],
+                ["docstatus", "=", 1]
+            ]
             
             if company:
-                salary_slips_filters["company"] = company
+                query_filters.append(["company", "=", company])
                 
             salary_slips = frappe.get_all(
                 "Salary Slip",
-                filters=salary_slips_filters,
+                filters=query_filters,
                 fields=["name", "employee", "employee_name", "company", "gross_pay", "start_date"]
             )
             
-            # Cache the results for 1 hour
-            cache_value(cache_key, salary_slips, 3600)
+            # Cache the results for efficiency
+            cache_value(cache_key, salary_slips, CACHE_MEDIUM)
         
         if not salary_slips:
             frappe.msgprint(
@@ -131,8 +140,10 @@ def update_tax_summaries(month=None, year=None, company=None):
             )
             return summary
             
-        # Get unique employees
+        # Get unique employees - Optimize by creating a lookup dictionary to avoid redundant processing
         employees = {}
+        employee_ids = set()
+        
         for slip in salary_slips:
             if slip.employee not in employees:
                 employees[slip.employee] = {
@@ -141,9 +152,25 @@ def update_tax_summaries(month=None, year=None, company=None):
                     "company": slip.company,
                     "slips": []
                 }
+                employee_ids.add(slip.employee)
             employees[slip.employee]["slips"].append(slip.name)
             
         summary["total_employees"] = len(employees)
+        
+        # Pre-fetch employee tax summaries for all employees in a single query to reduce DB calls
+        existing_summaries = {}
+        tax_summary_records = frappe.get_all(
+            "Employee Tax Summary",
+            filters={"employee": ["in", list(employee_ids)], "year": year},
+            fields=["name", "employee"]
+        )
+        
+        # Create lookup dictionary for efficient access
+        for record in tax_summary_records:
+            existing_summaries[record.employee] = record.name
+            # Also cache individual values
+            cache_key = f"tax_summary:{record.employee}:{year}"
+            cache_value(cache_key, record.name, CACHE_MEDIUM)
         
         # Process each employee
         for emp_id, emp_data in employees.items():
@@ -155,18 +182,22 @@ def update_tax_summaries(month=None, year=None, company=None):
                         title=_("Missing DocType")
                     )
                 
-                # Check if employee tax summary already exists for this year
-                cache_key = f"tax_summary:{emp_id}:{year}"
-                existing_summary = get_cached_value(cache_key)
+                # Check if employee tax summary already exists (from pre-fetched data)
+                existing_summary = existing_summaries.get(emp_id)
                 
+                # If not in pre-fetched data, check cache and then database
                 if existing_summary is None:
-                    existing_summary = frappe.db.get_value(
-                        "Employee Tax Summary",
-                        {"employee": emp_id, "year": year},
-                        "name"
-                    )
-                    # Cache for 1 hour
-                    cache_value(cache_key, existing_summary or False, 3600)
+                    cache_key = f"tax_summary:{emp_id}:{year}"
+                    existing_summary = get_cached_value(cache_key)
+                    
+                    if existing_summary is None:
+                        existing_summary = frappe.db.get_value(
+                            "Employee Tax Summary",
+                            {"employee": emp_id, "year": year},
+                            "name"
+                        )
+                        # Cache result
+                        cache_value(cache_key, existing_summary or False, CACHE_MEDIUM)
                 
                 if existing_summary:
                     # Update existing summary
@@ -186,7 +217,8 @@ def update_tax_summaries(month=None, year=None, company=None):
                     
                     if result:
                         # Update cache with the new summary name
-                        cache_value(cache_key, result, 3600)
+                        cache_key = f"tax_summary:{emp_id}:{year}"
+                        cache_value(cache_key, result, CACHE_MEDIUM)
                         
                         summary["created"] += 1
                         summary["details"].append({
@@ -267,8 +299,8 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
         if summary is None:
             # Get the summary document
             summary = frappe.get_doc("Employee Tax Summary", summary_name)
-            # Cache for 30 minutes
-            cache_value(cache_key, summary, 1800)
+            # Cache for efficiency
+            cache_value(cache_key, summary, CACHE_SHORT)
         
         # Check for monthly_details table
         if not hasattr(summary, 'monthly_details'):
@@ -287,7 +319,7 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
         # Replace monthly_details with filtered list
         summary.set("monthly_details", existing_details)
         
-        # Calculate monthly totals from salary slips
+        # Calculate monthly totals from salary slips - using cached results when possible
         monthly_data = calculate_monthly_totals(slip_names)
         
         if not monthly_data:
@@ -347,6 +379,9 @@ def update_existing_summary(summary_name, employee, month, year, slip_names):
         # Clear cache for this document
         clear_cache(cache_key)
         
+        # Also clear the YTD cache for this employee/year
+        clear_cache(f"ytd:{employee}:{year}:")
+        
         return True
         
     except Exception as e:
@@ -378,7 +413,7 @@ def create_new_summary(employee, employee_name, year, month, slip_names):
         str: Name of the created summary document
     """
     try:
-        # Calculate monthly totals from salary slips
+        # Calculate monthly totals from salary slips - using cached results when possible
         monthly_data = calculate_monthly_totals(slip_names)
         
         if not monthly_data:
@@ -482,7 +517,7 @@ def calculate_monthly_totals(slip_names):
         if not slip_names:
             return None
             
-        # Try to get cached results
+        # Try to get cached results for efficiency
         cache_key = f"monthly_totals:{','.join(sorted(slip_names))}"
         cached_result = get_cached_value(cache_key)
         
@@ -509,6 +544,25 @@ def calculate_monthly_totals(slip_names):
         # Track which TER category to use
         ter_categories_found = []
         
+        # Pre-fetch all salary component details for these slips in a single query to reduce DB calls
+        all_components = {}
+        
+        # Use parameterized query to get all relevant components at once
+        component_query = """
+            SELECT parent, salary_component, amount 
+            FROM `tabSalary Detail`
+            WHERE parent IN %s
+              AND parentfield = 'deductions'
+              AND (salary_component IN ('BPJS JHT Employee', 'BPJS JP Employee', 'BPJS Kesehatan Employee', 'PPh 21'))
+        """
+        components_list = frappe.db.sql(component_query, [tuple(slip_names)], as_dict=True)
+        
+        # Organize components by slip
+        for comp in components_list:
+            if comp.parent not in all_components:
+                all_components[comp.parent] = []
+            all_components[comp.parent].append(comp)
+        
         for slip_name in slip_names:
             try:
                 # Try to get cached salary slip
@@ -519,8 +573,8 @@ def calculate_monthly_totals(slip_names):
                     # Use safe get_doc approach with error handling
                     try:
                         slip = frappe.get_doc("Salary Slip", slip_name)
-                        # Cache for 1 hour
-                        cache_value(slip_cache_key, slip, 3600)
+                        # Cache for efficiency
+                        cache_value(slip_cache_key, slip, CACHE_MEDIUM)
                     except Exception as doc_error:
                         # Non-critical error - can continue with other slips
                         frappe.log_error(
@@ -543,19 +597,11 @@ def calculate_monthly_totals(slip_names):
                         
                     # Get TER category if available
                     ter_category = getattr(slip, "ter_category", "")
-                    if ter_category:
+                    if ter_category and ter_category in TER_CATEGORIES:
                         ter_categories_found.append(ter_category)
-                    
-                # Get BPJS components and PPh 21 by querying the child table with parameterized query
-                # Instead of directly accessing deductions, use a parameterized query
-                components_query = """
-                    SELECT salary_component, amount
-                    FROM `tabSalary Detail`
-                    WHERE parent = %s
-                      AND parentfield = 'deductions'
-                      AND (salary_component IN ('BPJS JHT Employee', 'BPJS JP Employee', 'BPJS Kesehatan Employee', 'PPh 21'))
-                """
-                components = frappe.db.sql(components_query, [slip_name], as_dict=True)
+                
+                # Process components from pre-fetched data
+                components = all_components.get(slip_name, [])
                 
                 for component in components:
                     if component.salary_component in ["BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee"]:
@@ -575,7 +621,7 @@ def calculate_monthly_totals(slip_names):
                     if current_latest is None:
                         try:
                             current_latest = frappe.get_doc("Salary Slip", result["latest_slip"])
-                            cache_value(current_latest_cache_key, current_latest, 3600)
+                            cache_value(current_latest_cache_key, current_latest, CACHE_MEDIUM)
                         except Exception:
                             # If error getting current latest, use this slip
                             result["latest_slip"] = slip_name
@@ -594,7 +640,7 @@ def calculate_monthly_totals(slip_names):
                 )
                 continue
         
-        # Determine TER category
+        # Determine TER category - efficiently use pre-fetched data when possible
         if result["is_using_ter"]:
             if ter_categories_found:
                 # Use most common category
@@ -603,36 +649,21 @@ def calculate_monthly_totals(slip_names):
             else:
                 # If no category found but TER is used, get from employee status
                 try:
-                    # Get latest slip employee using parameterized query
-                    employee_query = """
-                        SELECT employee
-                        FROM `tabSalary Slip`
-                        WHERE name = %s
-                    """
-                    employee_id = frappe.db.sql(employee_query, [result["latest_slip"]], as_dict=True)
-                    
-                    if employee_id and employee_id[0].employee:
-                        # Get employee document
-                        emp_cache_key = f"employee:{employee_id[0].employee}"
-                        emp_doc = get_cached_value(emp_cache_key)
+                    # Get employee from latest slip
+                    employee_data = get_employee_details(None, result["latest_slip"])
+                    if employee_data and employee_data.get("status_pajak"):
+                        status_pajak = employee_data.get("status_pajak")
                         
-                        if emp_doc is None:
-                            emp_doc = frappe.get_doc("Employee", employee_id[0].employee)
-                            cache_value(emp_cache_key, emp_doc, 3600)
+                        # Get TER category mapping
+                        ter_category_cache_key = f"ter_category:{status_pajak}"
+                        ter_category = get_cached_value(ter_category_cache_key)
                         
-                        status_pajak = getattr(emp_doc, "status_pajak", "")
+                        if ter_category is None:
+                            # Use map_ptkp_to_ter_category imported from pph_ter.py
+                            ter_category = map_ptkp_to_ter_category(status_pajak)
+                            cache_value(ter_category_cache_key, ter_category, CACHE_LONG)
                         
-                        if status_pajak:
-                            # Get TER category mapping
-                            ter_category_cache_key = f"ter_category:{status_pajak}"
-                            ter_category = get_cached_value(ter_category_cache_key)
-                            
-                            if ter_category is None:
-                                # Use map_ptkp_to_ter_category imported from pph_ter.py
-                                ter_category = map_ptkp_to_ter_category(status_pajak)
-                                cache_value(ter_category_cache_key, ter_category, 86400)  # Cache for 24 hours
-                            
-                            result["ter_category"] = ter_category
+                        result["ter_category"] = ter_category
                 except Exception as emp_error:
                     # Non-critical error - can continue without category
                     frappe.log_error(
@@ -642,8 +673,8 @@ def calculate_monthly_totals(slip_names):
                     # If error, leave category empty
                     pass
         
-        # Cache the result for 30 minutes
-        cache_value(cache_key, result, 1800)
+        # Cache the result for efficiency
+        cache_value(cache_key, result, CACHE_SHORT)
         
         return result
         
@@ -683,7 +714,7 @@ def validate_monthly_entries():
             "details": []
         }
         
-        # Get all tax summaries for the current year
+        # Get all tax summaries for the current year - using cache for efficiency
         cache_key = f"tax_summaries:{current_year}"
         tax_summaries = get_cached_value(cache_key)
         
@@ -693,8 +724,8 @@ def validate_monthly_entries():
                 filters={"year": current_year},
                 fields=["name", "employee", "employee_name", "ytd_tax"]
             )
-            # Cache for 1 hour
-            cache_value(cache_key, tax_summaries, 3600)
+            # Cache for efficiency
+            cache_value(cache_key, tax_summaries, CACHE_MEDIUM)
         
         if not tax_summaries:
             frappe.msgprint(
@@ -714,8 +745,8 @@ def validate_monthly_entries():
                 
                 if summary_doc is None:
                     summary_doc = frappe.get_doc("Employee Tax Summary", tax_summary.name)
-                    # Cache for 30 minutes
-                    cache_value(doc_cache_key, summary_doc, 1800)
+                    # Cache for efficiency
+                    cache_value(doc_cache_key, summary_doc, CACHE_SHORT)
                 
                 # Safely get monthly details
                 monthly_details = summary_doc.get("monthly_details", [])
@@ -753,6 +784,9 @@ def validate_monthly_entries():
                     
                     # Clear cache for this document
                     clear_cache(doc_cache_key)
+                    
+                    # Also clear the YTD cache for this employee
+                    clear_cache(f"ytd:{tax_summary.employee}:{current_year}:")
                     
                     summary["fixed"] += 1
                     summary["details"].append({

@@ -1,13 +1,22 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 09:24:57 by dannyaudian
+# Last modified: 2025-05-11 10:19:22 by dannyaudianllanjutkan
 
 import frappe
 import json
 import os
 from frappe import _
 from frappe.utils import flt, cint, getdate, now_datetime
+
+# Import constants
+from payroll_indonesia.constants import (
+    CACHE_MEDIUM, CACHE_SHORT, CACHE_LONG, MONTHS_PER_YEAR,
+    DEFAULT_BPJS_RATES
+)
+
+# Import cache utilities
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 __all__ = [
     'get_default_config',
@@ -23,24 +32,27 @@ __all__ = [
     'get_spt_month',
     'get_pph21_settings',
     'get_pph21_brackets',
-    'map_ptkp_to_ter',  # Tambahan fungsi baru
+    'map_ptkp_to_ter',
     'get_ter_rate',
     'should_use_ter',
     'create_tax_summary_doc',
-    'get_ytd_tax_info'
+    'get_ytd_tax_info',
+    # New shared functions for centralized YTD handling
+    'get_ytd_totals',
+    'get_ytd_totals_from_tax_summary',
+    'get_employee_details',
 ]
 
 # Config handling functions
 def get_default_config(section=None):
     """
-    Load configuration from Payroll Indonesia Settings DocType with caching
-    Falls back to defaults.json if DocType doesn't exist
+    Load configuration from defaults.json with caching
     
     Args:
         section (str, optional): Specific section to retrieve from config
         
     Returns:
-        dict: Configuration data or empty dict if not found/error
+        dict: Configuration data from defaults.json or empty dict if not found/error
     """
     # Try to get from cache first
     cache_key = "payroll_indonesia_config"
@@ -52,47 +64,495 @@ def get_default_config(section=None):
         return config
         
     try:
-        # Check if the DocType exists and has a record
-        if frappe.db.exists("DocType", "Payroll Indonesia Settings") and frappe.db.exists("Payroll Indonesia Settings"):
-            settings = frappe.get_doc("Payroll Indonesia Settings")
-            all_config = _convert_settings_to_config(settings)
+        config_path = frappe.get_app_path("payroll_indonesia", "config", "defaults.json")
+        if not os.path.exists(config_path):
+            frappe.log_error(
+                f"Config file not found at {config_path}",
+                "Config Error"
+            )
+            return {} if section is None else {}
+        
+        with open(config_path) as f:
+            all_config = json.load(f)
             
             # Cache full config for 24 hours (86400 seconds)
-            frappe.cache().set_value("payroll_indonesia_config", all_config, expires_in_sec=86400)
+            frappe.cache().set_value("payroll_indonesia_config", all_config, expires_in_sec=CACHE_LONG)
             
             # Return and cache requested section if specified
             if section:
                 section_data = all_config.get(section, {})
-                frappe.cache().set_value(f"payroll_indonesia_config_{section}", section_data, expires_in_sec=86400)
+                frappe.cache().set_value(f"payroll_indonesia_config_{section}", section_data, expires_in_sec=CACHE_LONG)
                 return section_data
                 
             return all_config
-        else:
-            # Fallback to defaults.json if DocType or record doesn't exist
-            config_path = frappe.get_app_path("payroll_indonesia", "config", "defaults.json")
-            if not os.path.exists(config_path):
-                frappe.log_error(
-                    f"Config file not found at {config_path} and Payroll Indonesia Settings not found",
-                    "Config Error"
-                )
-                return {} if section is None else {}
-            
-            with open(config_path) as f:
-                all_config = json.load(f)
-                
-                # Cache full config for 24 hours (86400 seconds)
-                frappe.cache().set_value("payroll_indonesia_config", all_config, expires_in_sec=86400)
-                
-                # Return and cache requested section if specified
-                if section:
-                    section_data = all_config.get(section, {})
-                    frappe.cache().set_value(f"payroll_indonesia_config_{section}", section_data, expires_in_sec=86400)
-                    return section_data
-                    
-                return all_config
     except Exception as e:
         frappe.log_error(f"Error loading configuration: {str(e)}", "Configuration Error")
         return {} if section is None else {}
+
+# Logging functions
+def debug_log(message, title=None, max_length=500, trace=False):
+    """
+    Debug logging helper with consistent format
+    
+    Args:
+        message (str): Message to log
+        title (str, optional): Optional title/context for the log
+        max_length (int, optional): Maximum message length (default: 500)
+        trace (bool, optional): Whether to include traceback (default: False)
+    """
+    timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
+    
+    if os.environ.get("DEBUG_BPJS") or trace:
+        # Truncate if message is too long to avoid memory issues
+        message = str(message)[:max_length]
+        
+        if title:
+            log_message = f"[{timestamp}] [{title}] {message}"
+        else:
+            log_message = f"[{timestamp}] {message}"
+            
+        frappe.logger().debug(f"[BPJS DEBUG] {log_message}")
+        
+        if trace:
+            frappe.logger().debug(f"[BPJS DEBUG] [TRACE] {frappe.get_traceback()[:max_length]}")
+
+# [... Keep existing functions unchanged ...]
+
+# New centralized YTD data retrieval functions
+
+def get_employee_details(employee_id=None, salary_slip=None):
+    """
+    Get employee details from either employee ID or salary slip
+    with efficient caching
+    
+    Args:
+        employee_id (str, optional): Employee ID
+        salary_slip (str, optional): Salary slip name to extract employee ID from
+        
+    Returns:
+        dict: Employee details
+    """
+    try:
+        if not employee_id and not salary_slip:
+            return None
+            
+        # If salary slip provided but not employee_id, extract it from salary slip
+        if not employee_id and salary_slip:
+            # Check cache for salary slip
+            slip_cache_key = f"salary_slip:{salary_slip}"
+            slip = get_cached_value(slip_cache_key)
+            
+            if slip is None:
+                # Query employee directly from salary slip if not in cache
+                employee_id = frappe.db.get_value("Salary Slip", salary_slip, "employee")
+                
+                if not employee_id:
+                    # Salary slip not found or doesn't have employee
+                    return None
+            else:
+                # Extract employee_id from cached slip
+                employee_id = slip.employee
+                
+        # Now we should have employee_id, get employee details from cache or DB
+        cache_key = f"employee_details:{employee_id}"
+        employee_data = get_cached_value(cache_key)
+        
+        if employee_data is None:
+            # Query employee document
+            employee_doc = frappe.get_doc("Employee", employee_id)
+            
+            # Extract relevant fields for lighter caching
+            employee_data = {
+                "name": employee_doc.name,
+                "employee_name": employee_doc.employee_name,
+                "company": employee_doc.company,
+                "status_pajak": getattr(employee_doc, "status_pajak", "TK0"),
+                "npwp": getattr(employee_doc, "npwp", ""),
+                "ktp": getattr(employee_doc, "ktp", ""),
+                "ikut_bpjs_kesehatan": cint(getattr(employee_doc, "ikut_bpjs_kesehatan", 1)),
+                "ikut_bpjs_ketenagakerjaan": cint(getattr(employee_doc, "ikut_bpjs_ketenagakerjaan", 1))
+            }
+            
+            # Cache employee data
+            cache_value(cache_key, employee_data, CACHE_MEDIUM)
+            
+        return employee_data
+        
+    except Exception as e:
+        frappe.log_error(
+            "Error retrieving employee details for {0} or slip {1}: {2}".format(
+                employee_id or "unknown", salary_slip or "unknown", str(e)
+            ),
+            "Employee Details Error"
+        )
+        return None
+
+def get_ytd_totals(employee, year, month, include_current=False):
+    """
+    Get YTD tax and other totals for an employee with caching
+    This centralized function provides consistent YTD data across the module
+    
+    Args:
+        employee (str): Employee ID
+        year (int): Tax year
+        month (int): Current month (1-12)
+        include_current (bool, optional): Whether to include current month
+        
+    Returns:
+        dict: Dictionary with ytd_gross, ytd_tax, ytd_bpjs, etc.
+    """
+    try:
+        # Validate inputs
+        if not employee or not year or not month:
+            return {
+                'ytd_gross': 0, 
+                'ytd_tax': 0, 
+                'ytd_bpjs': 0,
+                'ytd_biaya_jabatan': 0,
+                'ytd_netto': 0
+            }
+        
+        # Create cache key - include current month flag
+        current_flag = "with_current" if include_current else "without_current"
+        cache_key = f"ytd:{employee}:{year}:{month}:{current_flag}"
+        
+        # Check cache first
+        cached_result = get_cached_value(cache_key)
+        
+        if cached_result is not None:
+            return cached_result
+        
+        # First try to get from tax summary
+        from_summary = get_ytd_totals_from_tax_summary(employee, year, month, include_current)
+        
+        # If summary had data, use it
+        if from_summary and from_summary.get("has_data", False):
+            # Cache result
+            cache_value(cache_key, from_summary, CACHE_MEDIUM)
+            return from_summary
+        
+        # If summary didn't have data or was incomplete, calculate from salary slips
+        result = calculate_ytd_from_salary_slips(employee, year, month, include_current)
+        
+        # Cache result
+        cache_value(cache_key, result, CACHE_MEDIUM)
+        return result
+        
+    except Exception as e:
+        frappe.log_error(
+            "Error getting YTD totals for {0}, year {1}, month {2}: {3}".format(
+                employee, year, month, str(e)
+            ),
+            "YTD Totals Error"
+        )
+        # Return default values on error
+        return {
+            'ytd_gross': 0, 
+            'ytd_tax': 0, 
+            'ytd_bpjs': 0,
+            'ytd_biaya_jabatan': 0,
+            'ytd_netto': 0
+        }
+
+def get_ytd_totals_from_tax_summary(employee, year, month, include_current=False):
+    """
+    Get YTD tax totals from Employee Tax Summary with efficient caching
+    
+    Args:
+        employee (str): Employee ID
+        year (int): Tax year
+        month (int): Current month (1-12)
+        include_current (bool): Whether to include current month
+        
+    Returns:
+        dict: Dictionary with YTD totals and summary data
+    """
+    try:
+        # Find Employee Tax Summary for this year
+        tax_summary = frappe.db.get_value(
+            "Employee Tax Summary",
+            {"employee": employee, "year": year},
+            ["name", "ytd_tax"],
+            as_dict=1
+        )
+        
+        if not tax_summary:
+            return {"has_data": False}
+            
+        # Prepare filter for monthly details
+        month_filter = ["<=", month] if include_current else ["<", month]
+        
+        # Efficient query to get monthly details with all fields at once
+        monthly_details = frappe.get_all(
+            "Employee Tax Summary Detail",
+            filters={
+                "parent": tax_summary.name,
+                "month": month_filter
+            },
+            fields=["gross_pay", "bpjs_deductions", "tax_amount", "month", "is_using_ter", "ter_rate"]
+        )
+        
+        if not monthly_details:
+            return {"has_data": False}
+            
+        # Calculate YTD totals
+        ytd_gross = sum(flt(d.gross_pay) for d in monthly_details)
+        ytd_bpjs = sum(flt(d.bpjs_deductions) for d in monthly_details)
+        ytd_tax = sum(flt(d.tax_amount) for d in monthly_details)  # Use sum instead of tax_summary.ytd_tax to ensure consistency
+        
+        # Estimate biaya_jabatan if not directly available
+        ytd_biaya_jabatan = 0
+        for detail in monthly_details:
+            # Rough estimate using standard formula - this should be improved if possible
+            if flt(detail.gross_pay) > 0:
+                # Assume 5% of gross with ceiling of 500,000 per month
+                monthly_biaya_jabatan = min(flt(detail.gross_pay) * 0.05, 500000)
+                ytd_biaya_jabatan += monthly_biaya_jabatan
+        
+        # Calculate netto
+        ytd_netto = ytd_gross - ytd_bpjs - ytd_biaya_jabatan
+        
+        # Extract latest TER information
+        is_using_ter = False
+        highest_ter_rate = 0
+        
+        for detail in monthly_details:
+            if detail.is_using_ter:
+                is_using_ter = True
+                if flt(detail.ter_rate) > highest_ter_rate:
+                    highest_ter_rate = flt(detail.ter_rate)
+        
+        result = {
+            'has_data': True,
+            'ytd_gross': ytd_gross,
+            'ytd_tax': ytd_tax,
+            'ytd_bpjs': ytd_bpjs,
+            'ytd_biaya_jabatan': ytd_biaya_jabatan,
+            'ytd_netto': ytd_netto,
+            'is_using_ter': is_using_ter,
+            'ter_rate': highest_ter_rate,
+            'source': 'tax_summary',
+            'summary_name': tax_summary.name
+        }
+        
+        return result
+        
+    except Exception as e:
+        frappe.log_error(
+            "Error getting YTD tax data from summary for {0}, year {1}, month {2}: {3}".format(
+                employee, year, month, str(e)
+            ),
+            "YTD Tax Summary Error"
+        )
+        return {"has_data": False}
+
+def calculate_ytd_from_salary_slips(employee, year, month, include_current=False):
+    """
+    Calculate YTD totals from salary slips with caching
+    
+    Args:
+        employee (str): Employee ID
+        year (int): Tax year
+        month (int): Current month (1-12)
+        include_current (bool): Whether to include current month
+        
+    Returns:
+        dict: Dictionary with ytd_gross, ytd_tax, ytd_bpjs, etc.
+    """
+    try:
+        # Calculate date range
+        start_date = f"{year}-01-01"
+        
+        if include_current:
+            end_date = f"{year}-{month:02d}-31"  # Use end of month
+        else:
+            # Use end of previous month
+            if month > 1:
+                end_date = f"{year}-{(month-1):02d}-31"
+            else:
+                # If month is January and not including current, return zeros
+                return {
+                    'has_data': True,
+                    'ytd_gross': 0,
+                    'ytd_tax': 0,
+                    'ytd_bpjs': 0,
+                    'ytd_biaya_jabatan': 0,
+                    'ytd_netto': 0,
+                    'is_using_ter': False,
+                    'ter_rate': 0,
+                    'source': 'salary_slips'
+                }
+        
+        # Get salary slips within date range using parameterized query
+        slips_query = """
+            SELECT name, gross_pay, is_using_ter, ter_rate, biaya_jabatan
+            FROM `tabSalary Slip`
+            WHERE employee = %s
+            AND start_date >= %s
+            AND end_date <= %s
+            AND docstatus = 1
+        """
+        
+        slips = frappe.db.sql(slips_query, [employee, start_date, end_date], as_dict=1)
+        
+        if not slips:
+            return {
+                'has_data': True,
+                'ytd_gross': 0,
+                'ytd_tax': 0,
+                'ytd_bpjs': 0,
+                'ytd_biaya_jabatan': 0,
+                'ytd_netto': 0,
+                'is_using_ter': False,
+                'ter_rate': 0,
+                'source': 'salary_slips'
+            }
+            
+        # Prepare for efficient batch query of all components
+        slip_names = [slip.name for slip in slips]
+        
+        # Get all components at once
+        components_query = """
+            SELECT sd.parent, sd.salary_component, sd.amount
+            FROM `tabSalary Detail` sd
+            WHERE sd.parent IN %s
+            AND sd.parentfield = 'deductions'
+            AND sd.salary_component IN ('PPh 21', 'BPJS JHT Employee', 'BPJS JP Employee', 'BPJS Kesehatan Employee')
+        """
+        
+        components = frappe.db.sql(components_query, [tuple(slip_names)], as_dict=1)
+        
+        # Organize components by slip
+        slip_components = {}
+        for comp in components:
+            if comp.parent not in slip_components:
+                slip_components[comp.parent] = []
+            slip_components[comp.parent].append(comp)
+        
+        # Calculate totals
+        ytd_gross = 0
+        ytd_tax = 0
+        ytd_bpjs = 0
+        ytd_biaya_jabatan = 0
+        is_using_ter = False
+        highest_ter_rate = 0
+        
+        for slip in slips:
+            ytd_gross += flt(slip.gross_pay)
+            ytd_biaya_jabatan += flt(getattr(slip, "biaya_jabatan", 0))
+            
+            # Check TER info
+            if getattr(slip, "is_using_ter", 0):
+                is_using_ter = True
+                if flt(getattr(slip, "ter_rate", 0)) > highest_ter_rate:
+                    highest_ter_rate = flt(getattr(slip, "ter_rate", 0))
+            
+            # Process components for this slip
+            slip_comps = slip_components.get(slip.name, [])
+            for comp in slip_comps:
+                if comp.salary_component == "PPh 21":
+                    ytd_tax += flt(comp.amount)
+                elif comp.salary_component in ["BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee"]:
+                    ytd_bpjs += flt(comp.amount)
+        
+        # If biaya_jabatan wasn't in slips, estimate it
+        if ytd_biaya_jabatan == 0 and ytd_gross > 0:
+            # Apply standard formula per month
+            months_processed = len({getdate(slip.posting_date).month for slip in slips if hasattr(slip, 'posting_date')})
+            months_processed = max(1, months_processed)  # Ensure at least 1 month
+            
+            # 5% of gross with ceiling of 500,000 per month
+            ytd_biaya_jabatan = min(ytd_gross * 0.05, 500000 * months_processed)
+        
+        # Calculate netto
+        ytd_netto = ytd_gross - ytd_bpjs - ytd_biaya_jabatan
+        
+        result = {
+            'has_data': True,
+            'ytd_gross': ytd_gross,
+            'ytd_tax': ytd_tax,
+            'ytd_bpjs': ytd_bpjs,
+            'ytd_biaya_jabatan': ytd_biaya_jabatan,
+            'ytd_netto': ytd_netto,
+            'is_using_ter': is_using_ter,
+            'ter_rate': highest_ter_rate,
+            'source': 'salary_slips'
+        }
+        
+        return result
+        
+    except Exception as e:
+        frappe.log_error(
+            "Error calculating YTD totals from salary slips for {0}, year {1}, month {2}: {3}".format(
+                employee, year, month, str(e)
+            ),
+            "YTD Salary Slip Error"
+        )
+        # Return default values
+        return {
+            'has_data': True,
+            'ytd_gross': 0,
+            'ytd_tax': 0,
+            'ytd_bpjs': 0,
+            'ytd_biaya_jabatan': 0,
+            'ytd_netto': 0,
+            'is_using_ter': False,
+            'ter_rate': 0,
+            'source': 'fallback'
+        }
+
+# Updated version of the existing function to use our new centralized function
+def get_ytd_tax_info(employee, date=None):
+    """
+    Get year-to-date tax information for an employee
+    Uses the centralized get_ytd_totals function
+    
+    Args:
+        employee (str): Employee ID
+        date (datetime, optional): Date to determine year, defaults to current date
+        
+    Returns:
+        dict: YTD tax information
+    """
+    try:
+        # Validate employee parameter
+        if not employee:
+            frappe.throw(_("Employee is required to get YTD tax information"))
+            
+        # Check if employee exists
+        if not frappe.db.exists("Employee", employee):
+            frappe.log_error(f"Employee {employee} does not exist", "YTD Tax Info Error")
+            return {"ytd_tax": 0, "is_using_ter": 0, "ter_rate": 0}
+        
+        # Determine tax year and month from date
+        if not date:
+            date = getdate()
+        
+        year = date.year
+        month = date.month
+        
+        # Get YTD totals using the centralized function
+        ytd_data = get_ytd_totals(employee, year, month)
+        
+        # Return simplified result for backward compatibility
+        return {
+            "ytd_tax": flt(ytd_data.get("ytd_tax", 0)),
+            "is_using_ter": ytd_data.get("is_using_ter", False),
+            "ter_rate": flt(ytd_data.get("ter_rate", 0))
+        }
+
+    except Exception as e:
+        frappe.log_error(
+            f"Error in get_ytd_tax_info for {employee}: {str(e)}",
+            "YTD Tax Info Error"
+        )
+        
+        # Return default values on error
+        return {
+            "ytd_tax": 0,
+            "is_using_ter": 0,
+            "ter_rate": 0
+        }
 
 def _convert_settings_to_config(settings):
     """
@@ -283,33 +743,6 @@ def map_ptkp_to_ter(status_pajak):
     except Exception as e:
         frappe.log_error(f"Error mapping PTKP to TER: {str(e)}", "PTKP-TER Mapping Error")
         return "TER C"  # Default to highest category on error
-
-# Logging functions
-def debug_log(message, title=None, max_length=500, trace=False):
-    """
-    Debug logging helper with consistent format
-    
-    Args:
-        message (str): Message to log
-        title (str, optional): Optional title/context for the log
-        max_length (int, optional): Maximum message length (default: 500)
-        trace (bool, optional): Whether to include traceback (default: False)
-    """
-    timestamp = now_datetime().strftime('%Y-%m-%d %H:%M:%S')
-    
-    if os.environ.get("DEBUG_BPJS") or trace:
-        # Truncate if message is too long to avoid memory issues
-        message = str(message)[:max_length]
-        
-        if title:
-            log_message = f"[{timestamp}] [{title}] {message}"
-        else:
-            log_message = f"[{timestamp}] {message}"
-            
-        frappe.logger().debug(f"[BPJS DEBUG] {log_message}")
-        
-        if trace:
-            frappe.logger().debug(f"[BPJS DEBUG] [TRACE] {frappe.get_traceback()[:max_length]}")
 
 # Account functions
 def find_parent_account(company, parent_name, company_abbr, account_type, candidates=None):
@@ -1844,3 +2277,436 @@ def create_default_bpjs_settings():
             "BPJS Settings Error"
         )
         return create_default_settings_dict()
+def get_employee_details(employee_id=None, salary_slip=None):
+    """
+    Get employee details from either employee ID or salary slip
+    with efficient caching
+    
+    Args:
+        employee_id (str, optional): Employee ID
+        salary_slip (str, optional): Salary slip name to extract employee ID from
+        
+    Returns:
+        dict: Employee details
+    """
+    try:
+        if not employee_id and not salary_slip:
+            return None
+            
+        # If salary slip provided but not employee_id, extract it from salary slip
+        if not employee_id and salary_slip:
+            # Check cache for salary slip
+            slip_cache_key = f"salary_slip:{salary_slip}"
+            slip = get_cached_value(slip_cache_key)
+            
+            if slip is None:
+                # Query employee directly from salary slip if not in cache
+                employee_id = frappe.db.get_value("Salary Slip", salary_slip, "employee")
+                
+                if not employee_id:
+                    # Salary slip not found or doesn't have employee
+                    return None
+            else:
+                # Extract employee_id from cached slip
+                employee_id = slip.employee
+                
+        # Now we should have employee_id, get employee details from cache or DB
+        cache_key = f"employee_details:{employee_id}"
+        employee_data = get_cached_value(cache_key)
+        
+        if employee_data is None:
+            # Query employee document
+            employee_doc = frappe.get_doc("Employee", employee_id)
+            
+            # Extract relevant fields for lighter caching
+            employee_data = {
+                "name": employee_doc.name,
+                "employee_name": employee_doc.employee_name,
+                "company": employee_doc.company,
+                "status_pajak": getattr(employee_doc, "status_pajak", "TK0"),
+                "npwp": getattr(employee_doc, "npwp", ""),
+                "ktp": getattr(employee_doc, "ktp", ""),
+                "ikut_bpjs_kesehatan": cint(getattr(employee_doc, "ikut_bpjs_kesehatan", 1)),
+                "ikut_bpjs_ketenagakerjaan": cint(getattr(employee_doc, "ikut_bpjs_ketenagakerjaan", 1))
+            }
+            
+            # Cache employee data
+            cache_value(cache_key, employee_data, CACHE_MEDIUM)
+            
+        return employee_data
+        
+    except Exception as e:
+        frappe.log_error(
+            "Error retrieving employee details for {0} or slip {1}: {2}".format(
+                employee_id or "unknown", salary_slip or "unknown", str(e)
+            ),
+            "Employee Details Error"
+        )
+        return None
+
+def get_ytd_totals(employee, year, month, include_current=False):
+    """
+    Get YTD tax and other totals for an employee with caching
+    This centralized function provides consistent YTD data across the module
+    
+    Args:
+        employee (str): Employee ID
+        year (int): Tax year
+        month (int): Current month (1-12)
+        include_current (bool, optional): Whether to include current month
+        
+    Returns:
+        dict: Dictionary with ytd_gross, ytd_tax, ytd_bpjs, etc.
+    """
+    try:
+        # Validate inputs
+        if not employee or not year or not month:
+            return {
+                'ytd_gross': 0, 
+                'ytd_tax': 0, 
+                'ytd_bpjs': 0,
+                'ytd_biaya_jabatan': 0,
+                'ytd_netto': 0
+            }
+        
+        # Create cache key - include current month flag
+        current_flag = "with_current" if include_current else "without_current"
+        cache_key = f"ytd:{employee}:{year}:{month}:{current_flag}"
+        
+        # Check cache first
+        cached_result = get_cached_value(cache_key)
+        
+        if cached_result is not None:
+            return cached_result
+        
+        # First try to get from tax summary
+        from_summary = get_ytd_totals_from_tax_summary(employee, year, month, include_current)
+        
+        # If summary had data, use it
+        if from_summary and from_summary.get("has_data", False):
+            # Cache result
+            cache_value(cache_key, from_summary, CACHE_MEDIUM)
+            return from_summary
+        
+        # If summary didn't have data or was incomplete, calculate from salary slips
+        result = calculate_ytd_from_salary_slips(employee, year, month, include_current)
+        
+        # Cache result
+        cache_value(cache_key, result, CACHE_MEDIUM)
+        return result
+        
+    except Exception as e:
+        frappe.log_error(
+            "Error getting YTD totals for {0}, year {1}, month {2}: {3}".format(
+                employee, year, month, str(e)
+            ),
+            "YTD Totals Error"
+        )
+        # Return default values on error
+        return {
+            'ytd_gross': 0, 
+            'ytd_tax': 0, 
+            'ytd_bpjs': 0,
+            'ytd_biaya_jabatan': 0,
+            'ytd_netto': 0
+        }
+
+def get_ytd_totals_from_tax_summary(employee, year, month, include_current=False):
+    """
+    Get YTD tax totals from Employee Tax Summary with efficient caching
+    
+    Args:
+        employee (str): Employee ID
+        year (int): Tax year
+        month (int): Current month (1-12)
+        include_current (bool): Whether to include current month
+        
+    Returns:
+        dict: Dictionary with YTD totals and summary data
+    """
+    try:
+        # Find Employee Tax Summary for this year
+        tax_summary = frappe.db.get_value(
+            "Employee Tax Summary",
+            {"employee": employee, "year": year},
+            ["name", "ytd_tax"],
+            as_dict=1
+        )
+        
+        if not tax_summary:
+            return {"has_data": False}
+            
+        # Prepare filter for monthly details
+        month_filter = ["<=", month] if include_current else ["<", month]
+        
+        # Efficient query to get monthly details with all fields at once
+        monthly_details = frappe.get_all(
+            "Employee Tax Summary Detail",
+            filters={
+                "parent": tax_summary.name,
+                "month": month_filter
+            },
+            fields=["gross_pay", "bpjs_deductions", "tax_amount", "month", "is_using_ter", "ter_rate"]
+        )
+        
+        if not monthly_details:
+            return {"has_data": False}
+            
+        # Calculate YTD totals
+        ytd_gross = sum(flt(d.gross_pay) for d in monthly_details)
+        ytd_bpjs = sum(flt(d.bpjs_deductions) for d in monthly_details)
+        ytd_tax = sum(flt(d.tax_amount) for d in monthly_details)  # Use sum instead of tax_summary.ytd_tax to ensure consistency
+        
+        # Estimate biaya_jabatan if not directly available
+        ytd_biaya_jabatan = 0
+        for detail in monthly_details:
+            # Rough estimate using standard formula - this should be improved if possible
+            if flt(detail.gross_pay) > 0:
+                # Assume 5% of gross with ceiling of 500,000 per month
+                monthly_biaya_jabatan = min(flt(detail.gross_pay) * 0.05, 500000)
+                ytd_biaya_jabatan += monthly_biaya_jabatan
+        
+        # Calculate netto
+        ytd_netto = ytd_gross - ytd_bpjs - ytd_biaya_jabatan
+        
+        # Extract latest TER information
+        is_using_ter = False
+        highest_ter_rate = 0
+        
+        for detail in monthly_details:
+            if detail.is_using_ter:
+                is_using_ter = True
+                if flt(detail.ter_rate) > highest_ter_rate:
+                    highest_ter_rate = flt(detail.ter_rate)
+        
+        result = {
+            'has_data': True,
+            'ytd_gross': ytd_gross,
+            'ytd_tax': ytd_tax,
+            'ytd_bpjs': ytd_bpjs,
+            'ytd_biaya_jabatan': ytd_biaya_jabatan,
+            'ytd_netto': ytd_netto,
+            'is_using_ter': is_using_ter,
+            'ter_rate': highest_ter_rate,
+            'source': 'tax_summary',
+            'summary_name': tax_summary.name
+        }
+        
+        return result
+        
+    except Exception as e:
+        frappe.log_error(
+            "Error getting YTD tax data from summary for {0}, year {1}, month {2}: {3}".format(
+                employee, year, month, str(e)
+            ),
+            "YTD Tax Summary Error"
+        )
+        return {"has_data": False}
+
+def calculate_ytd_from_salary_slips(employee, year, month, include_current=False):
+    """
+    Calculate YTD totals from salary slips with caching
+    
+    Args:
+        employee (str): Employee ID
+        year (int): Tax year
+        month (int): Current month (1-12)
+        include_current (bool): Whether to include current month
+        
+    Returns:
+        dict: Dictionary with ytd_gross, ytd_tax, ytd_bpjs, etc.
+    """
+    try:
+        # Calculate date range
+        start_date = f"{year}-01-01"
+        
+        if include_current:
+            end_date = f"{year}-{month:02d}-31"  # Use end of month
+        else:
+            # Use end of previous month
+            if month > 1:
+                end_date = f"{year}-{(month-1):02d}-31"
+            else:
+                # If month is January and not including current, return zeros
+                return {
+                    'has_data': True,
+                    'ytd_gross': 0,
+                    'ytd_tax': 0,
+                    'ytd_bpjs': 0,
+                    'ytd_biaya_jabatan': 0,
+                    'ytd_netto': 0,
+                    'is_using_ter': False,
+                    'ter_rate': 0,
+                    'source': 'salary_slips'
+                }
+        
+        # Get salary slips within date range using parameterized query
+        slips_query = """
+            SELECT name, gross_pay, is_using_ter, ter_rate, biaya_jabatan
+            FROM `tabSalary Slip`
+            WHERE employee = %s
+            AND start_date >= %s
+            AND end_date <= %s
+            AND docstatus = 1
+        """
+        
+        slips = frappe.db.sql(slips_query, [employee, start_date, end_date], as_dict=1)
+        
+        if not slips:
+            return {
+                'has_data': True,
+                'ytd_gross': 0,
+                'ytd_tax': 0,
+                'ytd_bpjs': 0,
+                'ytd_biaya_jabatan': 0,
+                'ytd_netto': 0,
+                'is_using_ter': False,
+                'ter_rate': 0,
+                'source': 'salary_slips'
+            }
+            
+        # Prepare for efficient batch query of all components
+        slip_names = [slip.name for slip in slips]
+        
+        # Get all components at once
+        components_query = """
+            SELECT sd.parent, sd.salary_component, sd.amount
+            FROM `tabSalary Detail` sd
+            WHERE sd.parent IN %s
+            AND sd.parentfield = 'deductions'
+            AND sd.salary_component IN ('PPh 21', 'BPJS JHT Employee', 'BPJS JP Employee', 'BPJS Kesehatan Employee')
+        """
+        
+        components = frappe.db.sql(components_query, [tuple(slip_names)], as_dict=1)
+        
+        # Organize components by slip
+        slip_components = {}
+        for comp in components:
+            if comp.parent not in slip_components:
+                slip_components[comp.parent] = []
+            slip_components[comp.parent].append(comp)
+        
+        # Calculate totals
+        ytd_gross = 0
+        ytd_tax = 0
+        ytd_bpjs = 0
+        ytd_biaya_jabatan = 0
+        is_using_ter = False
+        highest_ter_rate = 0
+        
+        for slip in slips:
+            ytd_gross += flt(slip.gross_pay)
+            ytd_biaya_jabatan += flt(getattr(slip, "biaya_jabatan", 0))
+            
+            # Check TER info
+            if getattr(slip, "is_using_ter", 0):
+                is_using_ter = True
+                if flt(getattr(slip, "ter_rate", 0)) > highest_ter_rate:
+                    highest_ter_rate = flt(getattr(slip, "ter_rate", 0))
+            
+            # Process components for this slip
+            slip_comps = slip_components.get(slip.name, [])
+            for comp in slip_comps:
+                if comp.salary_component == "PPh 21":
+                    ytd_tax += flt(comp.amount)
+                elif comp.salary_component in ["BPJS JHT Employee", "BPJS JP Employee", "BPJS Kesehatan Employee"]:
+                    ytd_bpjs += flt(comp.amount)
+        
+        # If biaya_jabatan wasn't in slips, estimate it
+        if ytd_biaya_jabatan == 0 and ytd_gross > 0:
+            # Apply standard formula per month
+            months_processed = len({getdate(slip.posting_date).month for slip in slips if hasattr(slip, 'posting_date')})
+            months_processed = max(1, months_processed)  # Ensure at least 1 month
+            
+            # 5% of gross with ceiling of 500,000 per month
+            ytd_biaya_jabatan = min(ytd_gross * 0.05, 500000 * months_processed)
+        
+        # Calculate netto
+        ytd_netto = ytd_gross - ytd_bpjs - ytd_biaya_jabatan
+        
+        result = {
+            'has_data': True,
+            'ytd_gross': ytd_gross,
+            'ytd_tax': ytd_tax,
+            'ytd_bpjs': ytd_bpjs,
+            'ytd_biaya_jabatan': ytd_biaya_jabatan,
+            'ytd_netto': ytd_netto,
+            'is_using_ter': is_using_ter,
+            'ter_rate': highest_ter_rate,
+            'source': 'salary_slips'
+        }
+        
+        return result
+        
+    except Exception as e:
+        frappe.log_error(
+            "Error calculating YTD totals from salary slips for {0}, year {1}, month {2}: {3}".format(
+                employee, year, month, str(e)
+            ),
+            "YTD Salary Slip Error"
+        )
+        # Return default values
+        return {
+            'has_data': True,
+            'ytd_gross': 0,
+            'ytd_tax': 0,
+            'ytd_bpjs': 0,
+            'ytd_biaya_jabatan': 0,
+            'ytd_netto': 0,
+            'is_using_ter': False,
+            'ter_rate': 0,
+            'source': 'fallback'
+        }
+
+# Updated version of the existing function to use our new centralized function
+def get_ytd_tax_info(employee, date=None):
+    """
+    Get year-to-date tax information for an employee
+    Uses the centralized get_ytd_totals function
+    
+    Args:
+        employee (str): Employee ID
+        date (datetime, optional): Date to determine year, defaults to current date
+        
+    Returns:
+        dict: YTD tax information
+    """
+    try:
+        # Validate employee parameter
+        if not employee:
+            frappe.throw(_("Employee is required to get YTD tax information"))
+            
+        # Check if employee exists
+        if not frappe.db.exists("Employee", employee):
+            frappe.log_error(f"Employee {employee} does not exist", "YTD Tax Info Error")
+            return {"ytd_tax": 0, "is_using_ter": 0, "ter_rate": 0}
+        
+        # Determine tax year and month from date
+        if not date:
+            date = getdate()
+        
+        year = date.year
+        month = date.month
+        
+        # Get YTD totals using the centralized function
+        ytd_data = get_ytd_totals(employee, year, month)
+        
+        # Return simplified result for backward compatibility
+        return {
+            "ytd_tax": flt(ytd_data.get("ytd_tax", 0)),
+            "is_using_ter": ytd_data.get("is_using_ter", False),
+            "ter_rate": flt(ytd_data.get("ter_rate", 0))
+        }
+
+    except Exception as e:
+        frappe.log_error(
+            f"Error in get_ytd_tax_info for {employee}: {str(e)}",
+            "YTD Tax Info Error"
+        )
+        
+        # Return default values on error
+        return {
+            "ytd_tax": 0,
+            "is_using_ter": 0,
+            "ter_rate": 0
+        }
