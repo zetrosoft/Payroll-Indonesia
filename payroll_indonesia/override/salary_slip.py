@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
+# Last modified: 2025-05-11 05:45:00 by dannyaudian
 
 import frappe
 from frappe import _
@@ -9,8 +10,12 @@ from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
 import json
 import hashlib
 
-# Import BPJS calculation module - refactored out of this file
+# Import BPJS calculation module
 from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
+from payroll_indonesia.override.salary_slip.bpjs_calculator import calculate_bpjs_components
+
+# Import centralized tax calculation
+from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
 
 # Define exports for proper importing by other modules
 __all__ = [
@@ -23,9 +28,7 @@ __all__ = [
 
 # Cache variables - encapsulated in a module-level dict to avoid global namespace pollution
 _CACHE = {
-    'ter_rate_cache': {},
-    'ytd_tax_cache': {},
-    'ptkp_mapping_cache': None,  # For PMK 168/2023 TER mapping
+    'ytd_tax_cache': {}
 }
 
 class IndonesiaPayrollSalarySlip(SalarySlip):
@@ -58,11 +61,11 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             # Get employee document
             employee = self._get_employee_doc()
             
-            # Calculate BPJS components - uses the imported module
+            # Calculate BPJS components
             self._calculate_bpjs(employee)
             
-            # Determine and apply tax calculation strategy
-            self._calculate_tax(employee)
+            # Calculate tax components using centralized function
+            calculate_tax_components(self, employee)
             
             # Final verifications
             self._verify_ter_settings()
@@ -121,6 +124,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
     def _calculate_bpjs(self, employee):
         """
         Calculate BPJS (Social Security) components using the external calculation module.
+        Uses the centralized BPJS calculator module.
         
         Args:
             employee (frappe.Document): Employee document for BPJS calculation
@@ -128,14 +132,8 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         # Get base salary for BPJS calculation
         base_salary = self._get_base_salary_for_bpjs()
         
-        # Use the imported BPJS calculation function from the separate module
-        bpjs_result = hitung_bpjs(employee, base_salary)
-        
-        # Store BPJS results for further processing
-        self.total_bpjs = flt(bpjs_result.get("total_employee", 0))
-        
-        # Update deduction components for BPJS employee contributions
-        self._update_bpjs_components(bpjs_result)
+        # Use the bpjs_calculator to calculate and update components
+        calculate_bpjs_components(self, employee, base_salary)
     
     def _get_base_salary_for_bpjs(self):
         """
@@ -158,151 +156,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         self.add_payroll_note(f"Base salary for BPJS: {base_salary}")
         
         return base_salary
-    
-    def _update_bpjs_components(self, bpjs_result):
-        """
-        Update salary slip with BPJS component values.
-        Creates or updates deduction entries for BPJS components.
-        
-        Args:
-            bpjs_result (dict): Results from BPJS calculation containing component values
-        """
-        # Component mappings from calculation result to salary components
-        bpjs_components = {
-            "BPJS Kesehatan Employee": bpjs_result.get("kesehatan_employee", 0),
-            "BPJS JHT Employee": bpjs_result.get("jht_employee", 0),
-            "BPJS JP Employee": bpjs_result.get("jp_employee", 0),
-        }
-        
-        # Only process components with non-zero amounts
-        for component_name, amount in bpjs_components.items():
-            if flt(amount) > 0:
-                # Find or create the deduction component
-                self._update_or_create_component(component_name, amount, "deduction")
-    
-    def _update_or_create_component(self, component_name, amount, component_type):
-        """
-        Update an existing salary component or create a new one if not found.
-        
-        Args:
-            component_name (str): Name of the salary component
-            amount (float): Amount to set for the component
-            component_type (str): Type of component - "earning" or "deduction"
-        """
-        table_name = "earnings" if component_type == "earning" else "deductions"
-        
-        # Skip if component table doesn't exist
-        if not hasattr(self, table_name):
-            self.add_payroll_note(f"No {table_name} table found, skipping {component_name}")
-            return
-            
-        # Check if component already exists
-        component_found = False
-        components_list = getattr(self, table_name)
-        
-        for row in components_list:
-            if row.salary_component == component_name:
-                # Update existing component
-                row.amount = flt(amount)
-                component_found = True
-                break
-                
-        # Create new component if not found
-        if not component_found and flt(amount) > 0:
-            # Create component
-            component_row = frappe.new_doc("Salary Detail")
-            component_row.salary_component = component_name
-            component_row.amount = flt(amount)
-            component_row.parentfield = table_name
-            component_row.parenttype = self.doctype
-            component_row.parent = self.name if hasattr(self, 'name') else ""
-            
-            # Add to components list
-            components_list.append(component_row)
-    
-    def _calculate_tax(self, employee):
-        """
-        Calculate Indonesian income tax (PPh 21) based on applicable method.
-        Determines whether to use TER or progressive tax calculation.
-        
-        Args:
-            employee (frappe.Document): Employee document for tax calculation
-        """
-        # Check if should use TER method (PMK 168/2023)
-        if self._should_use_ter(employee):
-            self._apply_ter(employee)
-        else:
-            self._apply_progressive(employee)
-    
-    def _should_use_ter(self, employee):
-        """
-        Determine if TER (Tarif Efektif Rata-rata) method should be used
-        based on company settings and employee eligibility.
-        
-        Args:
-            employee (frappe.Document): Employee document
-            
-        Returns:
-            bool: True if TER method should be used, False otherwise
-        """
-        # Implement logic to check if TER should be used
-        # This is a placeholder for your actual implementation
-        try:
-            # Check company settings
-            settings = frappe.get_doc("PPh 21 Settings", "PPh 21 Settings")
-            if not settings.enable_ter_method:
-                return False
-                
-            # Check employee eligibility criteria
-            # For example, based on PTKP category or income level
-            # This would depend on your specific implementation
-            
-            # Set flag if using TER
-            self.is_using_ter = 1
-            return True
-        except Exception as e:
-            self.add_payroll_note(f"Error checking TER eligibility: {str(e)}")
-            return False
-    
-    def _apply_ter(self, employee):
-        """
-        Apply TER (Tarif Efektif Rata-rata) method for tax calculation
-        according to PMK 168/PMK.010/2023.
-        
-        Args:
-            employee (frappe.Document): Employee document
-        """
-        # Implementation for TER method
-        # This would be your specific implementation based on Indonesian tax regulations
-        self.add_payroll_note("Using TER method for tax calculation")
-        
-        # Calculate TER rate based on PTKP category
-        # ...
-        
-        # Apply TER rate to calculate tax
-        # ...
-        
-        # Add tax as a deduction component
-        # ...
-    
-    def _apply_progressive(self, employee):
-        """
-        Apply standard progressive tax calculation method for PPh 21.
-        
-        Args:
-            employee (frappe.Document): Employee document
-        """
-        # Implementation for progressive tax calculation method
-        self.add_payroll_note("Using progressive method for tax calculation")
-        
-        # Calculate taxable income
-        # ...
-        
-        # Apply progressive tax rates
-        # ...
-        
-        # Add tax as a deduction component
-        # ...
     
     def _verify_ter_settings(self):
         """
@@ -555,8 +408,8 @@ def _enhance_validate(doc, *args, **kwargs):
         # Calculate BPJS components
         temp._calculate_bpjs(employee)
         
-        # Determine and apply tax calculation strategy
-        temp._calculate_tax(employee)
+        # Calculate tax components using centralized function
+        calculate_tax_components(temp, employee)
         
         # Final verifications
         temp._verify_ter_settings()
@@ -681,12 +534,10 @@ def _enhance_on_cancel(doc, *args, **kwargs):
 # Cache management functions
 def clear_caches():
     """
-    Clear TER rate and YTD tax caches to prevent memory bloat.
+    Clear YTD tax cache to prevent memory bloat.
     Schedules itself to run periodically.
     """
-    _CACHE['ter_rate_cache'] = {}
     _CACHE['ytd_tax_cache'] = {}
-    _CACHE['ptkp_mapping_cache'] = None
     
     # Schedule next cleanup in 30 minutes
     frappe.enqueue(clear_caches, queue='long', job_name='clear_payroll_caches', is_async=True, now=False, 
