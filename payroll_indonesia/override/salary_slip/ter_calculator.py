@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 07:29:02 by dannyaudian
+# Last modified: 2025-05-11 10:11:30 by dannyaudianlanjutkan
 
 import frappe
 from frappe import _
@@ -18,6 +18,14 @@ from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_cate
 
 # Import cache utilities
 from payroll_indonesia.payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+
+# Import constants
+from payroll_indonesia.constants import (
+    MONTHS_PER_YEAR, CACHE_SHORT, CACHE_LONG, ANNUAL_DETECTION_FACTOR,
+    SALARY_BASIC_FACTOR, TAX_DETECTION_THRESHOLD, CACHE_MEDIUM,
+    TER_CATEGORY_A, TER_CATEGORY_B, TER_CATEGORY_C, TER_CATEGORIES,
+    TER_MAX_RATE, CURRENCY_PRECISION
+)
 
 def calculate_monthly_pph_with_ter(doc, employee):
     """Calculate PPh 21 using TER method based on PMK 168/2023"""
@@ -51,16 +59,16 @@ def calculate_monthly_pph_with_ter(doc, employee):
             total_earnings = flt(sum(flt(e.amount) for e in doc.earnings)) if hasattr(doc, 'earnings') and doc.earnings else 0
             
             # Deteksi berdasarkan total earnings
-            if total_earnings > 0 and flt(doc.gross_pay) > (total_earnings * 3):
+            if total_earnings > 0 and flt(doc.gross_pay) > (total_earnings * ANNUAL_DETECTION_FACTOR):
                 is_annual = True
-                reason = f"Gross pay ({doc.gross_pay}) exceeds 3x total earnings ({total_earnings})"
+                reason = f"Gross pay ({doc.gross_pay}) exceeds {ANNUAL_DETECTION_FACTOR}x total earnings ({total_earnings})"
                 monthly_gross_pay = total_earnings
             
             # Deteksi nilai terlalu besar
-            elif flt(doc.gross_pay) > 100000000:
+            elif flt(doc.gross_pay) > TAX_DETECTION_THRESHOLD:
                 is_annual = True
-                reason = "Gross pay exceeds 100 million (likely annual)"
-                monthly_gross_pay = flt(doc.gross_pay / 12)
+                reason = f"Gross pay exceeds {TAX_DETECTION_THRESHOLD} (likely annual)"
+                monthly_gross_pay = flt(doc.gross_pay / MONTHS_PER_YEAR)
 
             # Deteksi berdasarkan basic salary
             elif hasattr(doc, 'earnings'):
@@ -69,11 +77,11 @@ def calculate_monthly_pph_with_ter(doc, employee):
                      if e.salary_component in ["Gaji Pokok", "Basic Salary", "Basic Pay"]), 
                     0
                 )
-                if basic_salary > 0 and flt(doc.gross_pay) > (basic_salary * 10):
+                if basic_salary > 0 and flt(doc.gross_pay) > (basic_salary * SALARY_BASIC_FACTOR):
                     is_annual = True
-                    reason = f"Gross pay exceeds 10x basic salary ({basic_salary})"
+                    reason = f"Gross pay exceeds {SALARY_BASIC_FACTOR}x basic salary ({basic_salary})"
                     monthly_gross_pay = (
-                        flt(doc.gross_pay / 12) 
+                        flt(doc.gross_pay / MONTHS_PER_YEAR) 
                         if 11 < (doc.gross_pay / basic_salary) < 13
                         else total_earnings
                     )
@@ -92,7 +100,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
                 doc.payroll_note += f"\n[TER] {reason}. Using monthly value: {monthly_gross_pay}"
 
         # Set dan simpan nilai bulanan dan tahunan
-        annual_taxable_amount = flt(monthly_gross_pay * 12)
+        annual_taxable_amount = flt(monthly_gross_pay * MONTHS_PER_YEAR)
         
         # Simpan monthly_gross_for_ter
         if hasattr(doc, 'monthly_gross_for_ter'):
@@ -111,7 +119,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
         
         if ter_category is None:
             ter_category = map_ptkp_to_ter_category(employee.status_pajak)
-            cache_value(cache_key, ter_category, 86400)  # Cache for 24 hours
+            cache_value(cache_key, ter_category, CACHE_LONG)  # Cache for 24 hours
             
         # Use cache for ter_rate
         cache_key = f"ter_rate:{ter_category}:{round(monthly_gross_pay, -3)}"
@@ -119,7 +127,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
         
         if ter_rate is None:
             ter_rate = flt(get_ter_rate(ter_category, monthly_gross_pay))
-            cache_value(cache_key, ter_rate, 1800)  # Cache for 30 minutes
+            cache_value(cache_key, ter_rate, CACHE_SHORT)  # Cache for 30 minutes
         
         # Hitung PPh 21 bulanan
         monthly_tax = flt(monthly_gross_pay * ter_rate)
@@ -195,7 +203,7 @@ def verify_calculation_integrity(doc, original_values, monthly_gross_pay,
 
         # Verifikasi annual_taxable_amount
         if hasattr(doc, 'annual_taxable_amount'):
-            expected_annual = flt(monthly_gross_pay * 12)
+            expected_annual = flt(monthly_gross_pay * MONTHS_PER_YEAR)
             if abs(flt(doc.annual_taxable_amount) - expected_annual) > 0.01:
                 errors.append(
                     f"annual_taxable_amount mismatch: expected {expected_annual}, "
@@ -265,7 +273,7 @@ def get_ter_rate(ter_category, income):
     try:
         # Validate inputs
         if not ter_category:
-            ter_category = "TER C"  # Default to highest category if not specified
+            ter_category = TER_CATEGORY_C  # Default to highest category if not specified
             
         if not income or income <= 0:
             return 0
@@ -293,7 +301,7 @@ def get_ter_rate(ter_category, income):
         if ter:
             # Cache the result before returning
             rate_value = float(ter[0].rate) / 100.0
-            cache_value(cache_key, rate_value, 1800)  # 30 minutes
+            cache_value(cache_key, rate_value, CACHE_SHORT)  # 30 minutes
             return rate_value
         else:
             # Try to find using highest available bracket
@@ -308,7 +316,7 @@ def get_ter_rate(ter_category, income):
             if ter:
                 # Cache the highest bracket result
                 rate_value = float(ter[0].rate) / 100.0
-                cache_value(cache_key, rate_value, 1800)  # 30 minutes
+                cache_value(cache_key, rate_value, CACHE_SHORT)  # 30 minutes
                 return rate_value
             else:
                 # As a last resort, use default rate from settings or hardcoded value
@@ -326,12 +334,12 @@ def get_ter_rate(ter_category, income):
                         
                         if highest_rate > 0:
                             rate_value = highest_rate / 100.0
-                            cache_value(cache_key, rate_value, 1800)  # 30 minutes
+                            cache_value(cache_key, rate_value, CACHE_SHORT)  # 30 minutes
                             return rate_value
                     
                     # PMK 168/2023 highest rate is 34% for all categories
-                    cache_value(cache_key, 0.34, 1800)  # 30 minutes
-                    return 0.34
+                    cache_value(cache_key, TER_MAX_RATE / 100.0, CACHE_SHORT)  # 30 minutes
+                    return TER_MAX_RATE / 100.0
                         
                 except Exception as e:
                     # This is a validation failure - TER rate is critical to tax calculation
@@ -343,8 +351,8 @@ def get_ter_rate(ter_category, income):
                     )
                     # Last resort - use PMK 168/2023 highest rate
                     frappe.msgprint(_("Warning: Using default TER rate (34%) due to lookup failure"), indicator="red")
-                    cache_value(cache_key, 0.34, 1800)  # 30 minutes
-                    return 0.34
+                    cache_value(cache_key, TER_MAX_RATE / 100.0, CACHE_SHORT)  # 30 minutes
+                    return TER_MAX_RATE / 100.0
         
     except Exception as e:
         # Handle ValidationError separately
@@ -393,12 +401,12 @@ def should_use_ter_method(employee, pph_settings=None):
                 ) or {}
                 
                 # Cache settings for 1 hour
-                cache_value(settings_cache_key, pph_settings, 3600)
+                cache_value(settings_cache_key, pph_settings, CACHE_MEDIUM)
         
         # Fast path for global TER setting disabled
         if (pph_settings.get('calculation_method') != "TER" or 
             not pph_settings.get('use_ter')):
-            cache_value(cache_key, False, 3600)  # Cache for 1 hour
+            cache_value(cache_key, False, CACHE_MEDIUM)  # Cache for 1 hour
             return False
             
         # Special cases
@@ -407,20 +415,20 @@ def should_use_ter_method(employee, pph_settings=None):
         # Check if current month is December
         current_month = getdate().month
         if current_month == 12:
-            cache_value(cache_key, False, 3600)  # Cache for 1 hour
+            cache_value(cache_key, False, CACHE_MEDIUM)  # Cache for 1 hour
             return False
             
         # Fast path for employee exclusions
         if hasattr(employee, 'tipe_karyawan') and employee.tipe_karyawan == "Freelance":
-            cache_value(cache_key, False, 3600)  # Cache for 1 hour
+            cache_value(cache_key, False, CACHE_MEDIUM)  # Cache for 1 hour
             return False
             
         if hasattr(employee, 'override_tax_method') and employee.override_tax_method == "Progressive":
-            cache_value(cache_key, False, 3600)  # Cache for 1 hour
+            cache_value(cache_key, False, CACHE_MEDIUM)  # Cache for 1 hour
             return False
             
         # If we made it here, use TER method
-        cache_value(cache_key, True, 3600)  # Cache for 1 hour
+        cache_value(cache_key, True, CACHE_MEDIUM)  # Cache for 1 hour
         return True
             
     except Exception as e:
@@ -459,7 +467,7 @@ def get_ytd_totals_from_tax_summary(employee, year, month):
         return cached_result
     
     try:
-        # Use a single efficient SQL query to get all needed data
+        # Use a parameterized query to get all needed data
         ytd_data = frappe.db.sql("""
             SELECT 
                 ETS.ytd_tax,
@@ -485,13 +493,13 @@ def get_ytd_totals_from_tax_summary(employee, year, month):
             }
             
             # Cache the result (for 1 hour)
-            cache_value(cache_key, result, 3600)
+            cache_value(cache_key, result, CACHE_MEDIUM)
             
             return result
         else:
             # No data found, return zeros
             result = {'ytd_gross': 0, 'ytd_tax': 0, 'ytd_bpjs': 0}
-            cache_value(cache_key, result, 3600)
+            cache_value(cache_key, result, CACHE_MEDIUM)
             return result
     
     except Exception as e:
@@ -547,7 +555,7 @@ def get_ytd_totals_from_tax_summary_legacy(employee, year, month):
         
         # Cache the result
         cache_key = f"ytd:{employee}:{year}:{month}"
-        cache_value(cache_key, result, 3600)
+        cache_value(cache_key, result, CACHE_MEDIUM)
         
         return result
         

@@ -1,30 +1,25 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last updated: 2025-05-06 03:08:34 by dannyaudian
+# Last updated: 2025-05-11 10:08:25 by dannyaudianlanjutkan
 
 import frappe
 from frappe import _
 from frappe.utils import flt, cint, now_datetime
 from payroll_indonesia.payroll_indonesia.utils import get_bpjs_settings
 
-# Constants - used for safe defaults
-DEFAULT_UMR = 4900000  # Jakarta UMR as default
-DEFAULT_BPJS_RATES = {
-    "kesehatan_employee_percent": 1.0,
-    "kesehatan_employer_percent": 4.0,
-    "kesehatan_max_salary": 12000000,
-    "jht_employee_percent": 2.0,
-    "jht_employer_percent": 3.7,
-    "jp_employee_percent": 1.0,
-    "jp_employer_percent": 2.0,
-    "jp_max_salary": 9077600,
-    "jkk_percent": 0.24,
-    "jkm_percent": 0.3
-}
+# Import constants
+from payroll_indonesia.constants import (
+    DEFAULT_UMR, DEFAULT_BPJS_RATES, MAX_LOG_LENGTH,
+    BPJS_KESEHATAN_EMPLOYEE_PERCENT, BPJS_KESEHATAN_EMPLOYER_PERCENT,
+    BPJS_KESEHATAN_MAX_SALARY, BPJS_JHT_EMPLOYEE_PERCENT,
+    BPJS_JHT_EMPLOYER_PERCENT, BPJS_JP_EMPLOYEE_PERCENT,
+    BPJS_JP_EMPLOYER_PERCENT, BPJS_JP_MAX_SALARY,
+    BPJS_JKK_PERCENT, BPJS_JKM_PERCENT
+)
 
 
-def debug_log(message, module_name="BPJS Calculation", employee=None, trace=False, max_length=500):
+def debug_log(message, module_name="BPJS Calculation", employee=None, trace=False, max_length=MAX_LOG_LENGTH):
     """
     Log debug message with timestamp and limited length
     
@@ -98,29 +93,29 @@ def check_bpjs_enrollment(employee_doc):
         # Configure BPJS Kesehatan if enrolled
         if kesehatan_enrolled:
             config["kesehatan"] = {
-                "employee_percent": settings.get("kesehatan_employee_percent", 1.0),
-                "employer_percent": settings.get("kesehatan_employer_percent", 4.0),
-                "max_salary": settings.get("kesehatan_max_salary", 12000000),
+                "employee_percent": settings.get("kesehatan_employee_percent", BPJS_KESEHATAN_EMPLOYEE_PERCENT),
+                "employer_percent": settings.get("kesehatan_employer_percent", BPJS_KESEHATAN_EMPLOYER_PERCENT),
+                "max_salary": settings.get("kesehatan_max_salary", BPJS_KESEHATAN_MAX_SALARY),
             }
             debug_log(f"Added BPJS Kesehatan config for {employee_name}")
 
         # Configure BPJS Ketenagakerjaan components if enrolled
         if ketenagakerjaan_enrolled:
             config["jht"] = {
-                "employee_percent": settings.get("jht_employee_percent", 2.0),
-                "employer_percent": settings.get("jht_employer_percent", 3.7),
+                "employee_percent": settings.get("jht_employee_percent", BPJS_JHT_EMPLOYEE_PERCENT),
+                "employer_percent": settings.get("jht_employer_percent", BPJS_JHT_EMPLOYER_PERCENT),
             }
             debug_log(f"Added BPJS JHT config for {employee_name}")
 
             config["jp"] = {
-                "employee_percent": settings.get("jp_employee_percent", 1.0),
-                "employer_percent": settings.get("jp_employer_percent", 2.0),
-                "max_salary": settings.get("jp_max_salary", 9077600),
+                "employee_percent": settings.get("jp_employee_percent", BPJS_JP_EMPLOYEE_PERCENT),
+                "employer_percent": settings.get("jp_employer_percent", BPJS_JP_EMPLOYER_PERCENT),
+                "max_salary": settings.get("jp_max_salary", BPJS_JP_MAX_SALARY),
             }
             debug_log(f"Added BPJS JP config for {employee_name}")
 
-            config["jkk"] = {"percent": settings.get("jkk_percent", 0.24)}
-            config["jkm"] = {"percent": settings.get("jkm_percent", 0.3)}
+            config["jkk"] = {"percent": settings.get("jkk_percent", BPJS_JKK_PERCENT)}
+            config["jkm"] = {"percent": settings.get("jkm_percent", BPJS_JKM_PERCENT)}
             debug_log(f"Added BPJS JKK and JKM config for {employee_name}")
             
         # Log final enrollment status
@@ -280,7 +275,7 @@ def hitung_bpjs(employee, base_salary=0, settings=None):
                  
         # Apply rounding to all result values for consistent calculation
         for key in result:
-            result[key] = round(flt(result[key]), 2)
+            result[key] = round(flt(result[key]), CURRENCY_PRECISION)
             
         return result
         
