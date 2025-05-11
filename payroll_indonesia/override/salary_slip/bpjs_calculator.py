@@ -5,7 +5,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt, now_datetime
+from frappe.utils import flt
 
 from .base import update_component_amount
 
@@ -13,7 +13,6 @@ from .base import update_component_amount
 from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import (
     hitung_bpjs,
     check_bpjs_enrollment,
-    debug_log,
 )
 
 # Define exports for proper importing by other modules

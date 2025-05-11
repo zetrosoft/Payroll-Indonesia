@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 
-import frappe
-
 
 def on_app_init():
     """Jalankan saat app diinisialisasi"""

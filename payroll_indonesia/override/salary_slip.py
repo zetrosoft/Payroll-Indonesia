@@ -5,11 +5,11 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, now_datetime, add_to_date, date_diff
+from frappe.utils import flt, getdate, add_to_date, date_diff
 from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
 
 # Import BPJS calculation module
-from payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
+# from payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
 from payroll_indonesia.override.salary_slip.bpjs_calculator import calculate_bpjs_components
 
 # Import centralized tax calculation

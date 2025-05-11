@@ -5,7 +5,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, money_in_words
+from frappe.utils import flt, money_in_words
 
 
 # Fungsi pembantu yang akan digunakan di beberapa file

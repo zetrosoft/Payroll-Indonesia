@@ -53,7 +53,7 @@ from payroll_indonesia.tax.ter_logic import (
 )
 
 # Import TER functions from pph_ter (single source of truth)
-from payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
+# from payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 
 
 def calculate_tax_components(doc, employee):

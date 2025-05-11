@@ -15,7 +15,6 @@ from payroll_indonesia.constants import (
     CACHE_MEDIUM,
     CACHE_SHORT,
     CACHE_LONG,
-    MONTHS_PER_YEAR,
     BIAYA_JABATAN_PERCENT,
     BIAYA_JABATAN_MAX,
     TER_CATEGORY_A,

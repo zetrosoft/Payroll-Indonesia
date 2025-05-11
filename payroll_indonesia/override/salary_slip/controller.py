@@ -179,7 +179,7 @@ def setup_fiscal_year_if_missing(date_str=None):
         dict: Result of the fiscal year creation
     """
     try:
-        from frappe.utils import add_days
+        # from frappe.utils import add_days
 
         test_date = getdate(date_str) if date_str else getdate()
 

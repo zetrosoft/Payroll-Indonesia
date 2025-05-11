@@ -4,7 +4,6 @@
 # Last modified: 2025-05-11 08:09:23 by dannyaudian
 
 import frappe
-from frappe import _
 
 
 def on_session_creation(login_manager):

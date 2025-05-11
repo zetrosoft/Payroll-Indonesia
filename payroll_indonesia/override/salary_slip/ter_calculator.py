@@ -5,7 +5,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate
+from frappe.utils import flt
 
 from .base import update_component_amount
 
@@ -296,20 +296,20 @@ def get_ytd_totals_from_tax_summary(employee, year, month):
         ytd_data = frappe.db.sql(
             """
             SELECT 
-                ETS.ytd_tax,
-                SUM(ETSD.gross_pay) as ytd_gross,
-                SUM(ETSD.bpjs_deductions) as ytd_bpjs
+            ETS.ytd_tax,
+            SUM(ETSD.gross_pay) as ytd_gross,
+            SUM(ETSD.bpjs_deductions) as ytd_bpjs
             FROM 
-                `tabEmployee Tax Summary` ETS
+            tabEmployee Tax Summary` ETS
             LEFT JOIN
-                `tabEmployee Tax Summary Detail` ETSD ON ETS.name = ETSD.parent
+            `tabEmployee Tax Summary Detail` ETSD ON ETS.name = ETSD.parent
             WHERE 
-                ETS.employee = %s
-                AND ETS.year = %s
-                AND ETSD.month < %s
+            ETS.employee = %s
+            AND ETS.year = %s
+            AND ETSD.month < %s
             GROUP BY
-                ETS.name
-        """,
+            ETS.name
+            """,
             (employee, year, month),
             as_dict=1,
         )

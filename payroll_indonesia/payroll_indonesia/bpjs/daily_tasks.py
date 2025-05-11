@@ -1,5 +1,4 @@
 import frappe
-from frappe import _
 
 
 def check_bpjs_settings():
