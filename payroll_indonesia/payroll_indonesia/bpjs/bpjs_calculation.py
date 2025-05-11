@@ -25,6 +25,19 @@ from payroll_indonesia.constants import (
     BPJS_JKM_PERCENT,
 )
 
+# Define CURRENCY_PRECISION constant
+# Using standard Indonesian Rupiah precision (0 decimal places)
+CURRENCY_PRECISION = 0
+
+# Try to import from constants.py if available
+try:
+    from payroll_indonesia.constants import CURRENCY_PRECISION as IMPORTED_PRECISION
+
+    CURRENCY_PRECISION = IMPORTED_PRECISION
+except ImportError:
+    # Keep default value if import fails
+    pass
+
 
 def debug_log(
     message, module_name="BPJS Calculation", employee=None, trace=False, max_length=MAX_LOG_LENGTH
@@ -328,8 +341,15 @@ def hitung_bpjs(employee, base_salary=0, settings=None):
         )
 
         # Apply rounding to all result values for consistent calculation
+        # Make sure we have a fallback value for CURRENCY_PRECISION if it's somehow not defined
+        currency_precision = getattr(
+            frappe.utils, "get_currency_precision", lambda: CURRENCY_PRECISION
+        )()
+        if currency_precision is None:
+            currency_precision = 0  # Default to integer precision (Rupiah standard)
+
         for key in result:
-            result[key] = round(flt(result[key]), CURRENCY_PRECISION)
+            result[key] = round(flt(result[key]), currency_precision)
 
         return result
 

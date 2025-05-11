@@ -4,10 +4,7 @@
 # Last modified: 2025-05-08 09:58:46 by dannyaudian
 
 import frappe
-from frappe import _
-from frappe.utils import getdate, flt, now_datetime
-import json
-import os
+from frappe.utils import getdate, flt
 
 # Import utility functions from centralized utils module
 from payroll_indonesia.payroll_indonesia.utils import (
@@ -330,14 +327,14 @@ def check_system_readiness():
         )
 
     # Check if company exists
-    companies = frappe.get_all("Company")
-    if not companies:
+    company_records = frappe.get_all("Company")
+    if not company_records:
         debug_log("No company found. Some setup steps may fail.", "System Readiness Check")
         frappe.log_error("No company found", "System Readiness Check")
         debug_log("No company found", "System Readiness Check", trace=True)
     else:
         # Check if each company has an abbreviation
-        for company in companies:
+        for company in company_records:
             abbr = frappe.get_cached_value("Company", company.name, "abbr")
             if not abbr:
                 debug_log(
@@ -386,8 +383,8 @@ def setup_accounts(config):
             accounts.append(account_info)
 
     # Get all companies
-    companies = frappe.get_all("Company", pluck="name")
-    if not companies:
+    company_records = frappe.get_all("Company", pluck="name")
+    if not company_records:
         debug_log("No company found. Cannot create accounts.", "Account Setup")
         return False
 
@@ -395,7 +392,7 @@ def setup_accounts(config):
     overall_success = True
 
     # Process each company
-    for company in companies:
+    for company in company_records:
         try:
             # Get company abbreviation
             company_abbr = frappe.db.get_value("Company", company, "abbr")
@@ -1054,7 +1051,7 @@ def setup_salary_components(config):
         total_count = 0
 
         # Get all companies for account assignment
-        companies = frappe.get_all("Company", pluck="name")
+        company_records = frappe.get_all("Company", pluck="name")
 
         # Process all component types
         for component_type in ["earnings", "deductions"]:

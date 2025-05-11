@@ -5,9 +5,9 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, get_first_day, get_last_day, add_months, date_diff, cint
+from frappe.utils import flt, cint
 from datetime import datetime
-from payroll_indonesia.payroll_indonesia.utils import get_ptkp_settings, get_spt_month
+from payroll_indonesia.payroll_indonesia.utils import get_ptkp_settings
 
 # Import necessary functions for TER mapping
 from payroll_indonesia.override.salary_slip.ter_calculator import map_ptkp_to_ter_category

@@ -5,11 +5,9 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt, cint, getdate, now_datetime, add_to_date
+from frappe.utils import flt, now_datetime, add_to_date
 from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
-from frappe.utils.background_jobs import get_jobs, enqueue
 import json
-import hashlib
 
 
 class IndonesiaPayrollSalarySlip(SalarySlip):

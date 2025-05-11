@@ -6,13 +6,12 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, cstr, now_datetime
+from frappe.utils import flt, now_datetime
 
 # Import from centralized utils module
 from payroll_indonesia.payroll_indonesia.utils import (
     get_default_config,
     debug_log,
-    find_parent_account,
     create_account,
     create_parent_liability_account,
     create_parent_expense_account,
@@ -153,10 +152,10 @@ def create_default_mapping(company):
         # Check BPJS Settings and create if not exists
         bpjs_settings = None
         if not frappe.db.exists("BPJS Settings", None):
-            debug_log(f"BPJS Settings not found, creating default settings", "BPJS Mapping")
+            debug_log("BPJS Settings not found, creating default settings", "BPJS Mapping")
             bpjs_settings = create_bpjs_settings()
             if not bpjs_settings:
-                error_msg = f"Failed to create default BPJS Settings"
+                error_msg = "Failed to create default BPJS Settings"
                 debug_log(error_msg, "BPJS Mapping Error", trace=True)
                 frappe.throw(_(error_msg))
         else:
@@ -164,7 +163,6 @@ def create_default_mapping(company):
 
         # Get account mapping configuration from defaults.json
         config = get_default_config()
-        account_mapping = config.get("gl_accounts", {}).get("bpjs_account_mapping", {})
 
         # Create new mapping with ignore_validate flag
         debug_log(f"Creating new BPJS Account Mapping for company {company}", "BPJS Mapping")

@@ -5,7 +5,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, get_first_day, get_last_day, add_months, add_days, flt, today
+from frappe.utils import getdate, get_first_day, get_last_day, flt, today
 from datetime import datetime
 from collections import Counter
 
@@ -14,8 +14,6 @@ from payroll_indonesia.constants import (
     CACHE_MEDIUM,
     CACHE_SHORT,
     CACHE_LONG,
-    MONTHS_PER_YEAR,
-    VALID_TAX_STATUS,
     TER_CATEGORIES,
 )
 
@@ -26,7 +24,7 @@ from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_cate
 from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
 
 # Import shared utilities
-from payroll_indonesia.payroll_indonesia.utils import get_ytd_totals, get_employee_details
+from payroll_indonesia.payroll_indonesia.utils import get_employee_details
 
 
 def update_tax_summaries(month=None, year=None, company=None):

@@ -5,8 +5,7 @@
 import frappe
 import json
 import os
-from frappe import _
-from frappe.utils import getdate, get_datetime_str, flt
+from frappe.utils import get_datetime_str, flt
 import logging
 
 logger = logging.getLogger(__name__)
@@ -225,9 +224,8 @@ def migrate_from_json_to_doctype():
 
         # Migrate TER rates to PPh 21 TER Table
         # This assumes PPh 21 TER Table DocType already exists
-        ter_success = False
         if frappe.db.exists("DocType", "PPh 21 TER Table"):
-            ter_success = migrate_ter_rates(config.get("ter_rates", {}))
+            migrate_ter_rates(config.get("ter_rates", {}))
 
         frappe.db.commit()
         logger.info(

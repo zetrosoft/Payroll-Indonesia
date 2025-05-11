@@ -6,8 +6,8 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import today, flt, fmt_money, getdate, now_datetime, add_months, format_date
-from .bpjs_payment_utils import get_formatted_currency, debug_log
+from frappe.utils import today, flt, now_datetime
+from .bpjs_payment_utils import debug_log
 from .bpjs_payment_validation import create_bpjs_supplier
 
 
@@ -754,247 +754,6 @@ class BPJSPaymentSummary(Document):
                         },
                     )
 
-            # Hitung total dan set amount
-            total_amount = 0
-            if employees_processed:
-                # Regenerate components and account details from employee_details
-                self.populate_from_employee_details()
-
-                # Hitung total dari komponen
-                if self.komponen:
-                    total_amount = sum(flt(d.amount) for d in self.komponen)
-
-                # Set account details
-                try:
-                    self.set_account_details()
-                except Exception as e:
-                    debug_log(f"Error setting account details: {str(e)}", "BPJS Payment Summary")
-
-                    # Jika terjadi error, coba tambahkan default account detail
-                    if not hasattr(self, "account_details") or not self.account_details:
-                        company_abbr = frappe.get_cached_value("Company", self.company, "abbr")
-                        default_account = frappe.db.get_value(
-                            "Account", {"account_type": "Payable", "company": self.company}, "name"
-                        )
-                        if default_account:
-                            if total_amount <= 0:
-                                total_amount = 1.0
-                            self._add_account_detail("JHT", default_account, total_amount)
-
-                # Ensure total and amount are set
-                if total_amount <= 0:
-                    total_amount = 1.0
-
-                self.total = total_amount
-                self.amount = total_amount
-
-                # Ensure there's at least one component
-                if not self.komponen or len(self.komponen) == 0:
-                    self.append(
-                        "komponen",
-                        {"component": "BPJS JHT", "component_type": "JHT", "amount": total_amount},
-                    )
-
-                debug_log(
-                    f"Setting amount to {self.amount} and total to {self.total} before save",
-                    "BPJS Payment Summary",
-                )
-
-                # Set last_synced timestamp
-                self.last_synced = now_datetime()
-
-                # Tambahkan flags untuk menghindari validasi yang mungkin gagal
-                self.flags.ignore_validate_update_after_submit = True
-                self.flags.ignore_validate = True
-                self.flags.ignore_mandatory = True
-
-                # Pastikan semua field mandatory terpenuhi
-                if not hasattr(self, "posting_date") or not self.posting_date:
-                    self.posting_date = today()
-
-                # Double-check account_details
-                if (
-                    not hasattr(self, "account_details")
-                    or not self.account_details
-                    or len(self.account_details) == 0
-                ):
-                    frappe.msgprint(
-                        _("Warning: No account details found. Using default."), indicator="orange"
-                    )
-                    # Coba tambahkan default account lagi
-                    default_account = frappe.db.get_value(
-                        "Account", {"account_type": "Payable", "company": self.company}, "name"
-                    )
-                    if default_account:
-                        self._add_account_detail("JHT", default_account, total_amount)
-
-                # Directly save to DB for consistency
-                try:
-                    self.save(ignore_permissions=True)
-
-                    # Double-check if save succeeded and account_details still missing
-                    if frappe.db.exists("BPJS Payment Summary", self.name):
-                        doc = frappe.get_doc("BPJS Payment Summary", self.name)
-                        if not doc.account_details or len(doc.account_details) == 0:
-                            frappe.db.set_value(
-                                "BPJS Payment Summary",
-                                self.name,
-                                {"amount": total_amount, "total": total_amount},
-                            )
-                            frappe.msgprint(
-                                _("Used direct DB update to ensure amount and total are set.")
-                            )
-
-                    debug_log(f"Document {self.name} saved successfully", "BPJS Payment Summary")
-                except Exception as save_error:
-                    debug_log(f"Error saving document: {str(save_error)}", "BPJS Payment Summary")
-                    frappe.log_error(
-                        f"Error saving BPJS Payment Summary {self.name}: {str(save_error)}\n\n"
-                        f"Traceback: {frappe.get_traceback()}",
-                        "BPJS Save Error",
-                    )
-                    # Try direct DB update as last resort
-                    try:
-                        frappe.db.set_value(
-                            "BPJS Payment Summary",
-                            self.name,
-                            {"amount": total_amount, "total": total_amount},
-                        )
-                        frappe.msgprint(_("Used direct DB update as fallback method."))
-                    except:
-                        pass
-
-                return {"success": True, "count": len(employees_processed)}
-            else:
-                return {"success": False, "count": 0, "message": "No valid BPJS data found"}
-
-        except frappe.MandatoryError as e:
-            # Handle mandatory field error - REMOVED trace parameter
-            debug_log(f"Missing mandatory field: {str(e)}", "BPJS Salary Slip Fetch Error")
-
-            # Set nilai default untuk field yang required
-            self.amount = 1.0
-            self.total = 1.0
-
-            # Tambahkan komponen default jika tidak ada
-            if not self.komponen or len(self.komponen) == 0:
-                self.append(
-                    "komponen", {"component": "BPJS JHT", "component_type": "JHT", "amount": 1.0}
-                )
-
-            # Tambahkan account detail jika tidak ada
-            if (
-                not hasattr(self, "account_details")
-                or not self.account_details
-                or len(self.account_details) == 0
-            ):
-                company_abbr = frappe.get_cached_value("Company", self.company, "abbr")
-                default_account = frappe.db.get_value(
-                    "Account", {"account_type": "Payable", "company": self.company}, "name"
-                )
-                if default_account:
-                    self._add_account_detail("JHT", default_account, 1.0)
-
-            # Tambahkan flags untuk bypass validasi
-            self.flags.ignore_validate = True
-            self.flags.ignore_mandatory = True
-            self.flags.ignore_validate_update_after_submit = True
-
-            # Simpan dengan ignore_permissions
-            try:
-                self.save(ignore_permissions=True)
-            except Exception as save_error:
-                debug_log(
-                    f"Error saving document after MandatoryError: {str(save_error)}",
-                    "BPJS Payment Summary",
-                )
-                # Try direct DB update as last resort
-                try:
-                    frappe.db.set_value(
-                        "BPJS Payment Summary", self.name, {"amount": 1.0, "total": 1.0}
-                    )
-                except:
-                    pass
-
-            frappe.msgprint(
-                _("Warning: Missing required fields. Default values set."), indicator="orange"
-            )
-            return {
-                "success": True,
-                "error": str(e),
-                "message": "Missing required fields fixed automatically",
-            }
-
-        except Exception as e:
-            frappe.log_error(
-                f"Error fetching data from salary slips for {self.name}: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}",
-                "BPJS Salary Slip Fetch Error",
-            )
-            frappe.msgprint(
-                _("Error fetching data from salary slips: {0}").format(str(e)), indicator="red"
-            )
-            return {"success": False, "error": str(e)}
-
-    @frappe.whitelist()
-    def get_from_salary_slip(self):
-        """Get BPJS data from salary slips for the specified period"""
-        if self.docstatus > 0:
-            frappe.throw(_("Cannot fetch data after submission"))
-
-        # Validate required fields
-        if not self.company:
-            frappe.throw(_("Company is required"))
-
-        if not self.month or not self.year:
-            frappe.throw(_("Month and Year are required"))
-
-        try:
-            # Clear existing employee details
-            self.employee_details = []
-
-            # Get salary slips based on filter
-            salary_slips = self._get_filtered_salary_slips()
-
-            if not salary_slips:
-                frappe.msgprint(_("No salary slips found for the selected period"))
-                return {"success": False, "count": 0}
-
-            # Process each salary slip
-            employees_processed = []
-
-            for slip in salary_slips:
-                # Skip if employee already processed (to avoid duplicates)
-                if slip.employee in employees_processed:
-                    continue
-
-                # Extract BPJS data from salary slip
-                bpjs_data = self._extract_bpjs_from_salary_slip(slip)
-
-                if bpjs_data:
-                    # Add employee to processed list
-                    employees_processed.append(slip.employee)
-
-                    # Add to employee_details table
-                    self.append(
-                        "employee_details",
-                        {
-                            "employee": slip.employee,
-                            "employee_name": slip.employee_name,
-                            "salary_slip": slip.name,
-                            "jht_employee": bpjs_data.get("jht_employee", 0),
-                            "jp_employee": bpjs_data.get("jp_employee", 0),
-                            "kesehatan_employee": bpjs_data.get("kesehatan_employee", 0),
-                            "jht_employer": bpjs_data.get("jht_employer", 0),
-                            "jp_employer": bpjs_data.get("jp_employer", 0),
-                            "kesehatan_employer": bpjs_data.get("kesehatan_employer", 0),
-                            "jkk": bpjs_data.get("jkk", 0),
-                            "jkm": bpjs_data.get("jkm", 0),
-                            "last_updated": now_datetime(),
-                            "is_synced": 1,
-                        },
-                    )
-
             # Regenerate components and account details from employee_details
             if employees_processed:
                 self.populate_from_employee_details()
@@ -1081,7 +840,23 @@ class BPJSPaymentSummary(Document):
             self.flags.ignore_validate_update_after_submit = True
 
             # Simpan dengan ignore_permissions
-            self.save(ignore_permissions=True)
+            try:
+                self.save(ignore_permissions=True)
+            except Exception as save_error:
+                debug_log(
+                    f"Error saving document after MandatoryError: {str(save_error)}",
+                    "BPJS Payment Summary",
+                )
+                # Try direct DB update as last resort
+                try:
+                    frappe.db.set_value(
+                        "BPJS Payment Summary", self.name, {"amount": 1.0, "total": 1.0}
+                    )
+                except Exception as db_error:
+                    frappe.log_error(
+                        f"Failed to update DB directly: {str(db_error)}",
+                        "BPJS Payment Summary DB Update Error",
+                    )
 
             frappe.msgprint(
                 _("Warning: Missing required fields. Default values set."), indicator="orange"

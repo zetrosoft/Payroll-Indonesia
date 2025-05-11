@@ -4,12 +4,10 @@
 # Last modified: 2025-05-04 01:41:20 by dannyaudian
 
 import frappe
-from frappe import _
-from frappe.utils import getdate, now_datetime
+from frappe.utils import now_datetime
 
 # Import functions from tax_slab.py to avoid duplication
 from payroll_indonesia.utilities.tax_slab import (
-    create_income_tax_slab,
     get_default_tax_slab,
     update_salary_structures as update_structures,
     update_existing_assignments as update_assignments,

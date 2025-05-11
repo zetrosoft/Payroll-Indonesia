@@ -17,13 +17,12 @@ and other TER-related utilities.
 
 import frappe
 from frappe import _
-from frappe.utils import flt, cint, getdate
-from datetime import datetime
+from frappe.utils import flt
 import json
-from typing import Dict, Any, Optional, List, Tuple, Union
+from typing import Dict, Any, List, Tuple
 
 # Import the cache utilities
-from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
 
 # Import constants
 from payroll_indonesia.constants import (
@@ -34,7 +33,6 @@ from payroll_indonesia.constants import (
     TER_CATEGORY_B,
     TER_CATEGORY_C,
     TER_CATEGORIES,
-    TER_MAX_RATE,
 )
 
 

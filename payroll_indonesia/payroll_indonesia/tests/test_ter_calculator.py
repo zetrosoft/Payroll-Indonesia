@@ -7,7 +7,6 @@ import frappe
 from frappe.utils import flt, getdate, add_months
 from payroll_indonesia.override.salary_slip.ter_calculator import (
     calculate_monthly_pph_with_ter,
-    get_ter_rate,
     get_ptkp_category,
 )
 
@@ -68,12 +67,11 @@ class TestTERCalculator(unittest.TestCase):
 
     def test_ter_calculation_basic(self):
         """Test basic TER calculation for TK0 with NPWP"""
-        ter_result = calculate_monthly_pph_with_ter(self.test_salary_slip, self.test_employee)
+        calculate_monthly_pph_with_ter(self.test_salary_slip, self.test_employee)
 
         # Assert TER calculation results
-        self.assertTrue(ter_result.get("success"))
-        self.assertEqual(ter_result.get("ter_category"), "A")  # For income < 13jt
-        self.assertEqual(flt(ter_result.get("ter_rate"), 2), 5.00)  # 5% for Category A
+        self.assertEqual(self.test_salary_slip.ter_category, "A")  # For income < 13jt
+        self.assertEqual(flt(self.test_salary_slip.ter_rate, 2), 5.00)  # 5% for Category A
 
         # Verify salary slip fields are updated
         self.assertEqual(self.test_salary_slip.ter_category, "A")
@@ -87,7 +85,7 @@ class TestTERCalculator(unittest.TestCase):
         self.test_employee.npwp = ""
         self.test_employee.save()
 
-        ter_result = calculate_monthly_pph_with_ter(self.test_salary_slip, self.test_employee)
+        calculate_monthly_pph_with_ter(self.test_salary_slip, self.test_employee)
 
         base_tax = self.test_salary_slip.gross_pay * 0.05
         expected_tax = base_tax * 1.2  # 120% penalty
@@ -103,17 +101,17 @@ class TestTERCalculator(unittest.TestCase):
         self.test_salary_slip.gross_pay = 35000000  # 35 juta rupiah
         self.test_salary_slip.save()
 
-        ter_result = calculate_monthly_pph_with_ter(self.test_salary_slip, self.test_employee)
+        calculate_monthly_pph_with_ter(self.test_salary_slip, self.test_employee)
 
-        self.assertEqual(ter_result.get("ter_category"), "C")  # For income > 32jt
-        self.assertEqual(flt(ter_result.get("ter_rate"), 2), 15.00)  # 15% for Category C
+        self.assertEqual(self.test_salary_slip.ter_category, "C")  # For income > 32jt
+        self.assertEqual(flt(self.test_salary_slip.ter_rate, 2), 15.00)  # 15% for Category C
 
     def test_ter_annual_projection(self):
         """Test annual taxable amount projection"""
         self.test_salary_slip.gross_pay = 20000000  # 20 juta rupiah
         self.test_salary_slip.save()
 
-        ter_result = calculate_monthly_pph_with_ter(self.test_salary_slip, self.test_employee)
+        calculate_monthly_pph_with_ter(self.test_salary_slip, self.test_employee)
 
         expected_annual = self.test_salary_slip.gross_pay * 12
         self.assertEqual(flt(self.test_salary_slip.annual_taxable_amount), flt(expected_annual))
@@ -152,10 +150,9 @@ class TestTERCalculator(unittest.TestCase):
         self.test_salary_slip.gross_pay = 0
         self.test_salary_slip.save()
 
-        ter_result = calculate_monthly_pph_with_ter(self.test_salary_slip, self.test_employee)
+        calculate_monthly_pph_with_ter(self.test_salary_slip, self.test_employee)
 
         self.assertEqual(flt(self.test_salary_slip.monthly_tax), 0)
-        self.assertTrue(ter_result.get("success"))
 
 
 def run_ter_calculator_tests():

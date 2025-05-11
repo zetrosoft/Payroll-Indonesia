@@ -5,27 +5,19 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, cint, now_datetime
-import hashlib
+from frappe.utils import flt, getdate
 
 from .base import update_component_amount
 
 # Import cache utilities
-from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
 
 # Import constants
 from payroll_indonesia.constants import (
     MONTHS_PER_YEAR,
     CACHE_SHORT,
     CACHE_LONG,
-    ANNUAL_DETECTION_FACTOR,
-    SALARY_BASIC_FACTOR,
-    TAX_DETECTION_THRESHOLD,
     CACHE_MEDIUM,
-    TER_CATEGORY_A,
-    TER_CATEGORY_B,
-    TER_CATEGORY_C,
-    TER_CATEGORIES,
 )
 
 # Import centralized logic functions
@@ -131,7 +123,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
         # Calculate monthly tax with TER
         try:
             monthly_tax, ter_rate = calculate_monthly_tax_with_ter(monthly_gross_pay, ter_category)
-        except Exception as e:
+        except Exception:
             # Fallback to direct calculation if centralized function fails
             # This adds a layer of resilience
             cache_key = f"ter_rate:{ter_category}:{round(monthly_gross_pay, -3)}"

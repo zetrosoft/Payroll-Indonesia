@@ -19,7 +19,7 @@ and can be imported by other modules without causing circular dependencies.
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, cint
+from frappe.utils import flt, getdate
 
 # Import cache utilities
 from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
@@ -42,12 +42,8 @@ from payroll_indonesia.constants import (
     SALARY_BASIC_FACTOR,
 )
 
-# Import TER category mapping and rate calculation from pph_ter (single source of truth)
-from payroll_indonesia.payroll_indonesia.tax.pph_ter import (
-    map_ptkp_to_ter_category,
-    get_ter_rate,
-    calculate_monthly_tax_with_ter,
-)
+# Import TER category mapping from pph_ter (single source of truth)
+from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 
 
 def calculate_progressive_tax(pkp, pph_settings=None):
@@ -369,16 +365,20 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
         dict: Tax calculation data
     """
     try:
+        # Get translation function early to avoid F823
+        translation_function = _
+
         # Validate parameters
         if not employee:
             frappe.throw(
-                _("Employee ID is required for annual PPh calculation"),
-                title=_("Missing Parameter"),
+                translation_function("Employee ID is required for annual PPh calculation"),
+                title=translation_function("Missing Parameter"),
             )
 
         if not year:
             frappe.throw(
-                _("Tax year is required for annual PPh calculation"), title=_("Missing Parameter")
+                translation_function("Tax year is required for annual PPh calculation"),
+                title=translation_function("Missing Parameter"),
             )
 
         # Get employee document if not provided
@@ -388,8 +388,10 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
                 emp_doc = frappe.get_doc("Employee", employee)
             except Exception as e:
                 frappe.throw(
-                    _("Error retrieving employee {0}: {1}").format(employee, str(e)),
-                    title=_("Employee Not Found"),
+                    translation_function("Error retrieving employee {0}: {1}").format(
+                        employee, str(e)
+                    ),
+                    title=translation_function("Employee Not Found"),
                 )
 
         # Get all salary slips for the year

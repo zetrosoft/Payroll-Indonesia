@@ -8,7 +8,7 @@ import json
 import os
 from frappe import _
 from frappe.utils import flt, cint, getdate, now_datetime
-from typing import Dict, Any, Optional, Union, List
+from typing import Dict, Any, Optional, List
 
 # Import constants
 from payroll_indonesia.constants import (

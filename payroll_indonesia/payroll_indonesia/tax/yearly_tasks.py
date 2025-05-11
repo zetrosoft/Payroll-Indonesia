@@ -5,20 +5,18 @@
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, nowdate, flt, add_days
+from frappe.utils import nowdate, flt
 from datetime import datetime
-from typing import Dict, Optional, Union, List, Any
+from typing import Dict, Optional, Any
 
 # Import constants
 from payroll_indonesia.constants import (
     CACHE_MEDIUM,
     CACHE_SHORT,
     CACHE_LONG,
-    MONTHS_PER_YEAR,
     TER_CATEGORY_A,
     TER_CATEGORY_B,
     TER_CATEGORY_C,
-    TER_CATEGORIES,
 )
 
 # Import from pph_ter directly rather than ter_calculator
@@ -28,10 +26,10 @@ from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_cate
 from payroll_indonesia.payroll_indonesia.tax.ter_logic import hitung_pph_tahunan
 
 # Import cache utilities
-from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
 
 # Import shared YTD functions
-from payroll_indonesia.payroll_indonesia.utils import get_ytd_totals, get_employee_details
+from payroll_indonesia.payroll_indonesia.utils import get_employee_details
 
 
 def prepare_tax_report(year: Optional[int] = None, company: Optional[str] = None) -> Dict[str, Any]:

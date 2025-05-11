@@ -20,9 +20,7 @@ Tax calculation methods:
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, cint, now_datetime
-
-from .base import update_component_amount, get_component_amount
+from frappe.utils import flt, getdate, cint
 
 # Import TER calculation function from ter_calculator
 from payroll_indonesia.override.salary_slip.ter_calculator import calculate_monthly_pph_with_ter
@@ -31,13 +29,12 @@ from payroll_indonesia.override.salary_slip.ter_calculator import calculate_mont
 from payroll_indonesia.override.salary_slip.ter_calculator import get_ytd_totals_from_tax_summary
 
 # Import standardized cache utilities
-from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value, clear_cache
+from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
 
 # Import constants
 from payroll_indonesia.constants import (
     MONTHS_PER_YEAR,
     CACHE_SHORT,
-    CACHE_LONG,
     CACHE_MEDIUM,
     BIAYA_JABATAN_PERCENT,
     BIAYA_JABATAN_MAX,
@@ -420,12 +417,12 @@ def get_ytd_totals(doc, year):
         try:
             salary_slips = frappe.db.sql(
                 """
-                SELECT 
+                SELECT
                     name,
                     gross_pay
-                FROM 
+                FROM
                     `tabSalary Slip`
-                WHERE 
+                WHERE
                     employee = %s
                     AND YEAR(start_date) = %s
                     AND start_date < %s
@@ -457,12 +454,12 @@ def get_ytd_totals(doc, year):
                 # Get BPJS and PPh 21 components in a more efficient way
                 components = frappe.db.sql(
                     """
-                    SELECT 
+                    SELECT
                         salary_component,
                         amount
-                    FROM 
+                    FROM
                         `tabSalary Detail`
-                    WHERE 
+                    WHERE
                         parent = %s
                         AND parentfield = 'deductions'
                         AND salary_component IN ('BPJS JHT Employee', 'BPJS JP Employee', 'BPJS Kesehatan Employee', 'PPh 21')

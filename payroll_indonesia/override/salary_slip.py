@@ -5,10 +5,8 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt, cint, getdate, now_datetime, add_to_date, date_diff
+from frappe.utils import flt, getdate, now_datetime, add_to_date, date_diff
 from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
-import json
-import hashlib
 
 # Import BPJS calculation module
 from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
@@ -24,10 +22,8 @@ from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_valu
 from payroll_indonesia.constants import (
     CACHE_MEDIUM,
     CACHE_LONG,
-    MONTHS_PER_YEAR,
     MAX_DATE_DIFF,
     VALID_TAX_STATUS,
-    THIRTY_MIN,
 )
 
 # Define exports for proper importing by other modules
@@ -58,12 +54,6 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         Validate salary slip and calculate Indonesian components.
         Handles BPJS and tax calculations with appropriate error handling.
         """
-        employee_info = (
-            f"{self.employee} ({self.employee_name})"
-            if hasattr(self, "employee_name")
-            else self.employee
-        )
-
         try:
             # Additional validations for Indonesian payroll
             self._validate_input_data()
@@ -100,7 +90,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
 
             # For other errors, log and re-raise
             frappe.log_error(
-                "Error validating salary slip for {0}: {1}".format(employee_info, str(e)),
+                f"Error validating salary slip for {self.employee}: {str(e)}",
                 "Salary Slip Validation Error",
             )
             frappe.throw(
@@ -153,7 +143,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                     raise
 
                 frappe.log_error(
-                    "Error validating posting date: {0}".format(str(e)),
+                    f"Error validating posting date: {str(e)}",
                     "Posting Date Validation Error",
                 )
                 frappe.throw(
@@ -235,9 +225,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         except Exception as e:
             # This is a critical initialization step - throw
             frappe.log_error(
-                "Error initializing payroll fields for {0}: {1}".format(
-                    self.name if hasattr(self, "name") else "New Salary Slip", str(e)
-                ),
+                f"Error initializing payroll fields for {self.name if hasattr(self, 'name') else 'New Salary Slip'}: {str(e)}",
                 "Payroll Field Initialization Error",
             )
             frappe.throw(
@@ -275,9 +263,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         except Exception as e:
             # Critical error - can't continue without employee
             frappe.log_error(
-                "Error retrieving employee {0} for salary slip {1}: {2}".format(
-                    self.employee, self.name if hasattr(self, "name") else "New", str(e)
-                ),
+                f"Error retrieving employee {self.employee} for salary slip {self.name if hasattr(self, 'name') else 'New'}: {str(e)}",
                 "Employee Retrieval Error",
             )
             frappe.throw(
@@ -302,7 +288,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         except Exception as e:
             # Critical error - BPJS calculation is required
             frappe.log_error(
-                "Error calculating BPJS for {0}: {1}".format(self.employee, str(e)),
+                f"Error calculating BPJS for {self.employee}: {str(e)}",
                 "BPJS Calculation Error",
             )
             frappe.throw(
@@ -335,9 +321,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         except Exception as e:
             # Non-critical error - log and return 0
             frappe.log_error(
-                "Error calculating base salary for BPJS in {0}: {1}".format(
-                    self.name if hasattr(self, "name") else "New", str(e)
-                ),
+                f"Error calculating base salary for BPJS in {self.name if hasattr(self, 'name') else 'New'}: {str(e)}",
                 "Base Salary Calculation Error",
             )
             frappe.msgprint(
@@ -364,9 +348,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         except Exception as e:
             # Non-critical error - log and continue
             frappe.log_error(
-                "Error verifying TER settings for {0}: {1}".format(
-                    self.name if hasattr(self, "name") else "New", str(e)
-                ),
+                f"Error verifying TER settings for {self.name if hasattr(self, 'name') else 'New'}: {str(e)}",
                 "TER Verification Warning",
             )
             frappe.msgprint(_("Warning: Could not verify TER settings."), indicator="orange")
@@ -389,9 +371,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         except Exception as e:
             # Non-critical error - log and continue
             frappe.log_error(
-                "Error extracting tax IDs from employee {0} for salary slip {1}: {2}".format(
-                    employee.name, self.name if hasattr(self, "name") else "New", str(e)
-                ),
+                f"Error extracting tax IDs from employee {employee.name} for salary slip {self.name if hasattr(self, 'name') else 'New'}: {str(e)}",
                 "Tax ID Extraction Warning",
             )
             frappe.msgprint(
@@ -429,9 +409,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         except Exception as e:
             # Non-critical error - log and continue
             frappe.log_error(
-                "Error checking or creating fiscal year for {0}: {1}".format(
-                    self.start_date if hasattr(self, "start_date") else "unknown date", str(e)
-                ),
+                f"Error checking or creating fiscal year for {self.start_date if hasattr(self, 'start_date') else 'unknown date'}: {str(e)}",
                 "Fiscal Year Check Warning",
             )
             frappe.msgprint(
@@ -467,9 +445,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
         except Exception as e:
             # Non-critical error - log and continue
             frappe.log_error(
-                "Error adding payroll note to {0}: {1}".format(
-                    self.name if hasattr(self, "name") else "New", str(e)
-                ),
+                f"Error adding payroll note to {self.name if hasattr(self, 'name') else 'New'}: {str(e)}",
                 "Payroll Note Warning",
             )
             # No msgprint here since this is a background operation
@@ -495,9 +471,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
 
             # Critical error during submission - throw
             frappe.log_error(
-                "Error during salary slip submission for {0}: {1}".format(
-                    self.name if hasattr(self, "name") else "New", str(e)
-                ),
+                f"Error during salary slip submission for {self.name if hasattr(self, 'name') else 'New'}: {str(e)}",
                 "Submission Error",
             )
             frappe.throw(
@@ -541,7 +515,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
 
             # Critical error during cancellation - throw
             frappe.log_error(
-                "Error during salary slip cancellation for {0}: {1}".format(self.name, str(e)),
+                f"Error during salary slip cancellation for {self.name}: {str(e)}",
                 "Cancellation Error",
             )
             frappe.throw(
@@ -604,7 +578,7 @@ def extend_salary_slip_functionality():
     except Exception as e:
         # Non-critical error with monkey patching - log but don't throw
         frappe.log_error(
-            "Error enhancing SalarySlip controller: {0}".format(str(e)),
+            f"Error enhancing SalarySlip controller: {str(e)}",
             "Controller Enhancement Error",
         )
         frappe.msgprint(
@@ -646,9 +620,7 @@ def _create_enhanced_method(original_method, enhancement_func):
         except Exception as e:
             # Log error but don't break the original functionality
             frappe.log_error(
-                "Error in enhancement for {0}: {1}".format(
-                    self.name if hasattr(self, "name") else "New Document", str(e)
-                ),
+                f"Error in enhancement for {self.name if hasattr(self, 'name') else 'New Document'}: {str(e)}",
                 "Enhancement Function Error",
             )
             frappe.msgprint(
@@ -719,7 +691,7 @@ def _validate_input_data_standalone(doc):
                 raise
 
             frappe.log_error(
-                "Error validating posting date: {0}".format(str(e)), "Posting Date Validation Error"
+                f"Error validating posting date: {str(e)}", "Posting Date Validation Error"
             )
             frappe.throw(
                 _("Error validating posting date: {0}").format(str(e)), title=_("Validation Error")
@@ -747,9 +719,7 @@ def _get_employee_doc_standalone(doc):
             return employee_doc
         except Exception as e:
             frappe.log_error(
-                "Error retrieving employee {0} for standalone validation: {1}".format(
-                    doc.employee, str(e)
-                ),
+                f"Error retrieving employee {doc.employee} for standalone validation: {str(e)}",
                 "Employee Retrieval Warning",
             )
     return None
@@ -815,13 +785,6 @@ def _enhance_validate(doc, *args, **kwargs):
         # Only proceed for the correct doctype
         if doc.doctype != "Salary Slip":
             return
-
-        # Get employee info for logging
-        employee_info = (
-            f"{doc.employee} ({doc.employee_name})"
-            if hasattr(doc, "employee_name")
-            else doc.employee
-        )
 
         # Create a temporary IndonesiaPayrollSalarySlip to use its methods
         temp = IndonesiaPayrollSalarySlip(doc.as_dict())
@@ -904,9 +867,7 @@ def _enhance_validate(doc, *args, **kwargs):
     except Exception as e:
         # Non-critical error in enhancement - log and continue
         frappe.log_error(
-            "Error in _enhance_validate for {0}: {1}".format(
-                doc.name if hasattr(doc, "name") else "New Salary Slip", str(e)
-            ),
+            f"Error in _enhance_validate for {doc.name if hasattr(doc, 'name') else 'New Salary Slip'}: {str(e)}",
             "Salary Slip Enhancement Error",
         )
         frappe.msgprint(
@@ -947,7 +908,7 @@ def _enhance_on_submit(doc, *args, **kwargs):
     except Exception as e:
         # Non-critical error in enhancement - log and continue
         frappe.log_error(
-            "Error in _enhance_on_submit for {0}: {1}".format(doc.name, str(e)),
+            f"Error in _enhance_on_submit for {doc.name}: {str(e)}",
             "Submit Enhancement Error",
         )
         frappe.msgprint(
@@ -985,7 +946,7 @@ def _enhance_on_cancel(doc, *args, **kwargs):
     except Exception as e:
         # Non-critical error in enhancement - log and continue
         frappe.log_error(
-            "Error in _enhance_on_cancel for {0}: {1}".format(doc.name, str(e)),
+            f"Error in _enhance_on_cancel for {doc.name}: {str(e)}",
             "Cancel Enhancement Error",
         )
         frappe.msgprint(
@@ -1000,30 +961,52 @@ def _enhance_on_cancel(doc, *args, **kwargs):
 def clear_salary_slip_caches():
     """
     Clear salary slip related caches to prevent memory bloat.
-    Schedules itself to run periodically.
+
+    This function is designed to be called by the scheduler (daily or cron) only.
+    It does NOT schedule itself to avoid race conditions.
+
+    If you need to call this function manually, use:
+
+        frappe.enqueue(method="payroll_indonesia.override.salary_slip.clear_salary_slip_caches",
+                      queue='long', job_name='clear_payroll_caches')
+
+    The function is configured in hooks.py to run automatically at scheduled intervals.
     """
     try:
         # Clear caches using standardized cache_utils
-        prefixes_to_clear = ["employee_doc:", "fiscal_year:", "salary_slip:", "ytd_tax:"]
+        prefixes_to_clear = [
+            "employee_doc:",
+            "fiscal_year:",
+            "salary_slip:",
+            "ytd_tax:",
+            "ter_category:",
+            "ter_rate:",
+        ]
 
-        for prefix in prefixes_to_clear:
-            clear_cache(prefix)
-
-        # Schedule next cleanup in 30 minutes
-        frappe.enqueue(
-            clear_salary_slip_caches,
-            queue="long",
-            job_name="clear_payroll_caches",
-            is_async=True,
-            now=False,
-            enqueue_after=add_to_date(now_datetime(), minutes=30),
+        # Log the start of cache clearing operation
+        frappe.log_error(
+            f"Starting cache clearing operation for prefixes: {', '.join(prefixes_to_clear)}",
+            "Salary Slip Cache Clearing",
         )
+
+        cleared_count = 0
+        for prefix in prefixes_to_clear:
+            count = clear_cache(prefix)
+            cleared_count += count or 0
+
+        # Log completion
+        frappe.log_error(
+            f"Cleared {cleared_count} cached items from salary slip caches",
+            "Salary Slip Cache Clearing Complete",
+        )
+
+        return {"status": "success", "cleared_count": cleared_count, "prefixes": prefixes_to_clear}
+
     except Exception as e:
         # Non-critical error - log and continue
-        frappe.log_error(
-            "Error clearing salary slip caches: {0}".format(str(e)), "Cache Clearing Error"
-        )
-        # No msgprint here since this runs as a background job
+        frappe.log_error(f"Error clearing salary slip caches: {str(e)}", "Cache Clearing Error")
+
+        return {"status": "error", "message": str(e)}
 
 
 # Helper function for fiscal year management
@@ -1071,9 +1054,7 @@ def check_fiscal_year_setup(date_str=None):
     except Exception as e:
         # Non-critical error - return error status
         frappe.log_error(
-            "Error checking fiscal year setup for date {0}: {1}".format(
-                date_str if date_str else "current date", str(e)
-            ),
+            f"Error checking fiscal year setup for date {date_str if date_str else 'current date'}: {str(e)}",
             "Fiscal Year Check Error",
         )
         return {"status": "error", "message": str(e)}
@@ -1154,9 +1135,7 @@ def setup_fiscal_year_if_missing(date_str=None):
     except Exception as e:
         # This is a critical operation for payroll - throw if user invoked
         # but just return error if called programmatically
-        frappe.log_error(
-            "Error setting up fiscal year: {0}".format(str(e)), "Fiscal Year Setup Error"
-        )
+        frappe.log_error(f"Error setting up fiscal year: {str(e)}", "Fiscal Year Setup Error")
         if (
             frappe.local.form_dict.cmd
             == "payroll_indonesia.override.salary_slip.setup_fiscal_year_if_missing"
@@ -1165,60 +1144,6 @@ def setup_fiscal_year_if_missing(date_str=None):
                 _("Failed to set up fiscal year: {0}").format(str(e)),
                 title=_("Fiscal Year Setup Failed"),
             )
-        return {"status": "error", "message": str(e)}
-
-
-# Cache management functions - REWRITTEN to avoid race conditions
-def clear_salary_slip_caches():
-    """
-    Clear salary slip related caches to prevent memory bloat.
-
-    This function is designed to be called by the scheduler (daily or cron) only.
-    It does NOT schedule itself to avoid race conditions.
-
-    If you need to call this function manually, use:
-
-        frappe.enqueue(method="payroll_indonesia.override.salary_slip.clear_salary_slip_caches",
-                      queue='long', job_name='clear_payroll_caches')
-
-    The function is configured in hooks.py to run automatically at scheduled intervals.
-    """
-    try:
-        # Clear caches using standardized cache_utils
-        prefixes_to_clear = [
-            "employee_doc:",
-            "fiscal_year:",
-            "salary_slip:",
-            "ytd_tax:",
-            "ter_category:",
-            "ter_rate:",
-        ]
-
-        # Log the start of cache clearing operation
-        frappe.log_error(
-            f"Starting cache clearing operation for prefixes: {', '.join(prefixes_to_clear)}",
-            "Salary Slip Cache Clearing",
-        )
-
-        cleared_count = 0
-        for prefix in prefixes_to_clear:
-            count = clear_cache(prefix)
-            cleared_count += count or 0
-
-        # Log completion
-        frappe.log_error(
-            f"Cleared {cleared_count} cached items from salary slip caches",
-            "Salary Slip Cache Clearing Complete",
-        )
-
-        return {"status": "success", "cleared_count": cleared_count, "prefixes": prefixes_to_clear}
-
-    except Exception as e:
-        # Non-critical error - log and continue
-        frappe.log_error(
-            "Error clearing salary slip caches: {0}".format(str(e)), "Cache Clearing Error"
-        )
-
         return {"status": "error", "message": str(e)}
 
 
@@ -1231,9 +1156,7 @@ def setup_hooks():
         # It's now managed by the scheduler in hooks.py
     except Exception as e:
         # Non-critical error during setup - log but continue
-        frappe.log_error(
-            "Error setting up hooks for salary slip: {0}".format(str(e)), "Hook Setup Error"
-        )
+        frappe.log_error(f"Error setting up hooks for salary slip: {str(e)}", "Hook Setup Error")
 
 
 # Apply extensions

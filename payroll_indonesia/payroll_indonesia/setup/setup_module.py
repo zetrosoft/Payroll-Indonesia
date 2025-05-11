@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """setup_module.py – consolidated post‑migration setup
 This file merges the previous *setup_module_part1.py* (BPJS helpers)
-and *setup_module_part2.py* (PPh 21 / TER helpers) into a single, clearer
-module < 500 LOC. It is hooked via **after_migrate** in hooks.py.
+and *setup_module_part2.py* (PPh 21 / TER helpers) into a single, clearer
+module < 500 LOC. It is hooked via **after_migrate** in hooks.py.
 """
 
 from __future__ import unicode_literals
@@ -20,7 +20,7 @@ from payroll_indonesia.utils import (
 )
 
 # ---------------------------------------------------------------------------
-# BPJS helpers (ex‑Part 1)
+# BPJS helpers (ex‑Part 1)
 # ---------------------------------------------------------------------------
 
 
@@ -61,7 +61,7 @@ def schedule_mapping_retry() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PPh 21 / TER setup helpers (ex‑Part 2)
+# PPh 21 / TER setup helpers (ex‑Part 2)
 # ---------------------------------------------------------------------------
 
 
@@ -80,11 +80,11 @@ def _run_bpjs_setup() -> None:
 
 
 def _run_pph21_setup() -> None:
-    debug_log("Starting PPh 21 TER setup for PMK 168/2023", "PPh 21 Setup")
+    debug_log("Starting PPh 21 TER setup for PMK 168/2023", "PPh 21 Setup")
     if _setup_pph21_ter_categories():
-        debug_log("PPh 21 TER setup completed successfully", "PPh 21 Setup")
+        debug_log("PPh 21 TER setup completed successfully", "PPh 21 Setup")
     else:
-        debug_log("PPh 21 TER setup completed with warnings", "PPh 21 Setup")
+        debug_log("PPh 21 TER setup completed with warnings", "PPh 21 Setup")
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ def _run_pph21_setup() -> None:
 
 
 def _setup_pph21_ter_categories() -> bool:
-    """Create TER A/B/C rates if not present."""
+    """Create TER A/B/C rates if not present."""
     try:
         ter_exists = all(
             frappe.db.exists("PPh 21 TER Table", {"status_pajak": s})
@@ -104,7 +104,7 @@ def _setup_pph21_ter_categories() -> bool:
 
         ter_rates = get_default_config().get("ter_rates", {})
         if not ter_rates:
-            debug_log("TER rates missing in defaults.json", "PPh 21 Setup")
+            debug_log("TER rates missing in defaults.json", "PPh 21 Setup")
             return False
 
         _create_ter_rates(ter_rates)
@@ -113,7 +113,7 @@ def _setup_pph21_ter_categories() -> bool:
 
     except Exception as e:
         frappe.db.rollback()
-        frappe.log_error(f"Error during TER setup: {str(e)}", "PPh 21 Setup")
+        frappe.log_error("Error during TER setup: {}".format(str(e)), "PPh 21 Setup")
         return False
 
 
@@ -149,8 +149,8 @@ def _build_description(status: str, row: dict) -> str:
     inc_from = flt(row.get("income_from", 0))
     inc_to = flt(row.get("income_to", 0))
     if row.get("is_highest_bracket") or inc_to == 0:
-        return f"{status} > {inc_from:,.0f}"
-    return f"{status} {inc_from:,.0f} – {inc_to:,.0f}"
+        return "{} > {:,.0f}".format(status, inc_from)
+    return "{} {:,.0f} – {:,.0f}".format(status, inc_from, inc_to)
 
 
 # ---------------------------------------------------------------------------

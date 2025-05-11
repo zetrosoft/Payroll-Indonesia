@@ -85,8 +85,12 @@ class BPJSPaymentAccountDetail(Document):
                 parent_doc_name = self.get("parent")
                 if parent_doc_name:
                     parent_doc = frappe.get_doc(self.get("parenttype"), parent_doc_name)
-            except:
-                pass
+            except Exception as e:
+                frappe.log_error(
+                    f"Error retrieving parent document: {str(e)}\n"
+                    f"Parent name: {self.get('parent')}, Parent type: {self.get('parenttype')}",
+                    "BPJS Payment Account Parent Retrieval Error",
+                )
 
             # Generate reference number using parent info if available
             if parent_doc and hasattr(parent_doc, "month") and hasattr(parent_doc, "year"):

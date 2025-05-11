@@ -5,17 +5,14 @@
 
 from __future__ import unicode_literals
 import frappe
-import os
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, getdate, now_datetime
+from frappe.utils import flt, now_datetime
 
 # Import utility functions from central utils module
 from payroll_indonesia.payroll_indonesia.utils import (
     get_settings,
-    get_default_config,
     debug_log,
-    find_parent_account,
     create_account,
     create_parent_liability_account,
     create_parent_expense_account,
@@ -225,24 +222,6 @@ class BPJSSettings(Document):
                         frappe.throw(_(error_msg))
         else:
             # Fallback to hardcoded validations
-            # Get BPJS defaults from central settings
-            bpjs_defaults = {}
-            if pi_settings:
-                bpjs_defaults = {
-                    "kesehatan_employee_percent": getattr(
-                        pi_settings, "kesehatan_employee_percent", 1.0
-                    ),
-                    "kesehatan_employer_percent": getattr(
-                        pi_settings, "kesehatan_employer_percent", 4.0
-                    ),
-                    "jht_employee_percent": getattr(pi_settings, "jht_employee_percent", 2.0),
-                    "jht_employer_percent": getattr(pi_settings, "jht_employer_percent", 3.7),
-                    "jp_employee_percent": getattr(pi_settings, "jp_employee_percent", 1.0),
-                    "jp_employer_percent": getattr(pi_settings, "jp_employer_percent", 2.0),
-                    "jkk_percent": getattr(pi_settings, "jkk_percent", 0.24),
-                    "jkm_percent": getattr(pi_settings, "jkm_percent", 0.3),
-                }
-
             validations = [
                 (
                     "kesehatan_employee_percent",
@@ -306,7 +285,6 @@ class BPJSSettings(Document):
                         frappe.throw(_(error_msg))
         else:
             # Fallback to hardcoded validations
-            # Get BPJS defaults from central settings
             for field, label in [
                 ("kesehatan_max_salary", "BPJS Kesehatan maximum salary"),
                 ("jp_max_salary", "JP maximum salary"),
