@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-26 12:01:45 by dannyaudian
 
 import frappe
 from frappe import _
@@ -10,11 +9,12 @@ from hrms.payroll.doctype.payroll_entry.payroll_entry import PayrollEntry
 
 class CustomPayrollEntry(PayrollEntry):
     def validate(self):
-        """Validasi tambahan untuk Payroll Entry"""
+        """Validasi untuk Payroll Entry"""
         super().validate()
-        self.validate_payroll_dates()
+        self._validate_payroll_dates()
+        self._validate_employee_list()
         
-    def validate_payroll_dates(self):
+    def _validate_payroll_dates(self):
         """Validasi tanggal payroll untuk konteks Indonesia"""
         # Validasi bahwa tanggal berada dalam bulan yang sama
         start_month = getdate(self.start_date).month
@@ -22,6 +22,42 @@ class CustomPayrollEntry(PayrollEntry):
         
         if start_month != end_month:
             frappe.throw(_("Untuk perhitungan pajak Indonesia, periode payroll harus berada dalam bulan yang sama"))
+    
+    def _validate_employee_list(self):
+        """Validasi daftar karyawan"""
+        if hasattr(self, 'employees') and self.employees:
+            # Periksa apakah ada employee yang tidak valid
+            invalid_employees = [emp for emp in self.employees if not emp.employee]
+            
+            if invalid_employees:
+                frappe.msgprint(
+                    _("Ditemukan {0} data karyawan yang tidak valid. Data ini akan diabaikan saat pemrosesan.").format(len(invalid_employees)),
+                    title=_("Perhatian"),
+                    indicator="orange"
+                )
+                
+                # Hapus employee yang tidak valid
+                self.employees = [emp for emp in self.employees if emp.employee]
+    
+    def on_submit(self):
+        """Handler untuk proses saat Payroll Entry disubmit"""
+        super().on_submit()
+        
+        # Cek apakah periode adalah Desember (untuk koreksi tahunan)
+        is_december = getdate(self.end_date).month == 12
+        
+        if is_december:
+            frappe.msgprint(
+                _("Periode Desember terdeteksi. Sistem akan otomatis melakukan perhitungan koreksi pajak tahunan."),
+                title=_("Koreksi Pajak Tahunan"),
+                indicator="blue"
+            )
+            
+        # Tambahkan log
+        frappe.log_error(
+            f"Payroll Entry {self.name} for period {self.start_date} to {self.end_date} submitted by {frappe.session.user}",
+            "Payroll Entry Submission"
+        )
     
     def get_emp_list(self):
         """Override untuk mendapatkan daftar karyawan yang valid"""
@@ -76,6 +112,50 @@ class CustomPayrollEntry(PayrollEntry):
             frappe.msgprint(_("Tidak ada karyawan yang memenuhi kriteria untuk payroll ini"))
         
         return filtered_emp_list
+    
+    def before_validate(self):
+        """Fungsi yang dijalankan sebelum validasi"""
+        # Debug untuk memeriksa filters yang digunakan
+        if hasattr(self, 'employees') and not self.employees:
+            frappe.msgprint(_("Tidak ada karyawan yang ditemukan. Memeriksa filter..."))
+            
+            # Cek karyawan aktif di perusahaan
+            active_employees = frappe.db.sql("""
+                SELECT name, employee_name
+                FROM `tabEmployee`
+                WHERE status = 'Active' AND company = %s
+            """, (self.company), as_dict=True)
+            
+            if not active_employees:
+                frappe.msgprint(_("Tidak ada karyawan aktif di perusahaan {0}").format(self.company))
+            else:
+                # Cek salary structure assignment
+                employees_with_structure = []
+                for emp in active_employees:
+                    has_structure = frappe.db.exists("Salary Structure Assignment", {
+                        "employee": emp.name,
+                        "docstatus": 1
+                    })
+                    
+                    if has_structure:
+                        employees_with_structure.append(emp)
+                
+                if not employees_with_structure:
+                    frappe.msgprint(_("Karyawan aktif tidak memiliki Salary Structure Assignment"))
+                else:
+                    # Cek karyawan dengan slip gaji yang sudah ada
+                    for emp in employees_with_structure:
+                        existing_slip = frappe.db.exists("Salary Slip", {
+                            "employee": emp.name,
+                            "start_date": self.start_date,
+                            "end_date": self.end_date,
+                            "docstatus": ["!=", 2]  # Not cancelled
+                        })
+                        
+                        if existing_slip:
+                            frappe.msgprint(_(
+                                "Karyawan {0} sudah memiliki slip gaji untuk periode ini: {1}"
+                            ).format(emp.employee_name, existing_slip))
     
     def get_existing_salary_slips(self, employees):
         """
@@ -225,5 +305,12 @@ class CustomPayrollEntry(PayrollEntry):
         # Add Indonesia specific fields
         if hasattr(self, "use_ter_method"):
             args["use_ter_method"] = self.use_ter_method
+            
+        # Add TER category and TER rate if they exist
+        if hasattr(self, "ter_category"):
+            args["ter_category"] = self.ter_category
+            
+        if hasattr(self, "ter_rate"):
+            args["ter_rate"] = self.ter_rate
             
         return args
