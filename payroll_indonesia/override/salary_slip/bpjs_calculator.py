@@ -16,7 +16,7 @@ from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import (
 )
 
 # Define exports for proper importing by other modules
-__all__ = ["calculate_bpjs_components", "verify_bpjs_components"]
+__all__ = ["calculate_bpjs_components", "verify_bpjs_components", "debug_log"]
 
 
 def calculate_bpjs_components(doc, employee, base_salary):
@@ -255,3 +255,16 @@ def add_bpjs_info_to_note(doc, bpjs_values):
             "BPJS Note Error",
         )
         # No msgprint needed as this is a background operation
+
+
+def debug_log(*args):
+    """
+    Simple debug logger for development use.
+    Prints to console and optionally logs to Frappe if available.
+    """
+    try:
+        print("[DEBUG]", *args)
+        if hasattr(frappe, "log_error"):
+            frappe.log_error(" ".join(str(a) for a in args), "Debug Log")
+    except Exception:
+        pass  # Fallback silently if frappe not initialized
