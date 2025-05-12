@@ -26,18 +26,22 @@ class TestPayrollIntegration(unittest.TestCase):
     @classmethod
     def setup_company(cls):
         """Setup test company with required accounts"""
-        cls.company = frappe.get_doc(
-            {
-                "doctype": "Company",
-                "company_name": "Test Payroll Company",
-                "country": "Indonesia",
-                "default_currency": "IDR",
-                "abbr": "TPC",
-                "domain": "Manufacturing",
-            }
-        )
-
-        if not frappe.db.exists("Company", cls.company.name):
+        # Check if company already exists
+        if frappe.db.exists("Company", "Test Payroll Company"):
+            # Fetch existing company
+            cls.company = frappe.get_doc("Company", "Test Payroll Company")
+        else:
+            # Create new company
+            cls.company = frappe.get_doc(
+                {
+                    "doctype": "Company",
+                    "company_name": "Test Payroll Company",
+                    "country": "Indonesia",
+                    "default_currency": "IDR",
+                    "abbr": "TPC",
+                    "domain": "Manufacturing",
+                }
+            )
             cls.company.insert()
 
         # Setup accounts
@@ -49,27 +53,50 @@ class TestPayrollIntegration(unittest.TestCase):
         ]
 
         for acc in accounts:
-            if not frappe.db.exists("Account", f"{acc['account_name']} - {cls.company.abbr}"):
+            account_name = f"{acc['account_name']} - {cls.company.abbr}"
+            if not frappe.db.exists("Account", account_name):
+                # Determine parent account based on account type
+                parent_account = (
+                    f"Accounts Payable - {cls.company.abbr}"
+                    if acc["account_type"] == "Payable"
+                    else f"Expenses - {cls.company.abbr}"
+                )
+
+                # Check if parent account exists
+                if not frappe.db.exists("Account", parent_account):
+                    frappe.msgprint(
+                        f"Parent account {parent_account} does not exist. Skipping {account_name}"
+                    )
+                    continue
+
                 account = frappe.get_doc(
                     {
                         "doctype": "Account",
                         "account_name": acc["account_name"],
-                        "parent_account": (
-                            f"Accounts Payable - {cls.company.abbr}"
-                            if acc["account_type"] == "Payable"
-                            else f"Expenses - {cls.company.abbr}"
-                        ),
+                        "parent_account": parent_account,
                         "account_type": acc["account_type"],
                         "company": cls.company.name,
                     }
                 )
                 account.insert()
 
-        # Set default accounts
-        cls.company.default_payroll_payable_account = f"Payroll Payable - {cls.company.abbr}"
-        cls.company.default_bpjs_payable_account = f"BPJS Payable - {cls.company.abbr}"
-        cls.company.default_pph21_payable_account = f"PPh 21 Payable - {cls.company.abbr}"
-        cls.company.save()
+        # Update default accounts only if they're different from current values
+        update_needed = False
+        default_accounts = {
+            "default_payroll_payable_account": f"Payroll Payable - {cls.company.abbr}",
+            "default_bpjs_payable_account": f"BPJS Payable - {cls.company.abbr}",
+            "default_pph21_payable_account": f"PPh 21 Payable - {cls.company.abbr}",
+        }
+
+        for field, account in default_accounts.items():
+            # Only update if account exists and current value differs
+            if frappe.db.exists("Account", account) and cls.company.get(field) != account:
+                cls.company.set(field, account)
+                update_needed = True
+
+        # Save only if changes were made
+        if update_needed:
+            cls.company.save()
 
     @classmethod
     def setup_test_employees(cls):

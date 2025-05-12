@@ -56,6 +56,31 @@ from payroll_indonesia.payroll_indonesia.tax.ter_logic import (
 # from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 
 
+def safe_log_error(title, message=None, **kwargs):
+    """
+    Safely log an error with title truncated to max 140 characters
+
+    Args:
+        title (str): Error title (will be truncated to 140 chars)
+        message (str, optional): Error message. Defaults to None.
+        **kwargs: Additional arguments to pass to frappe.log_error
+    """
+    # Ensure title exists and is a string
+    if not title:
+        title = "Unknown Error"
+
+    # Truncate title to 140 characters if needed
+    if len(title) > 140:
+        title = title[:137] + "..."
+
+    # Use message if provided, otherwise use the title as the message
+    if message is None:
+        message = title
+
+    # Call frappe.log_error with the truncated title
+    return frappe.log_error(message=message, title=title, **kwargs)
+
+
 def calculate_tax_components(doc, employee):
     """
     Central entry point for all tax calculations - decides between TER or progressive methods
@@ -118,12 +143,9 @@ def calculate_tax_components(doc, employee):
 
     except Exception as e:
         # This is a critical error in the main tax calculation function
-        frappe.log_error(
-            "Tax Calculation Error for Employee {0}: {1}".format(
-                employee.name if hasattr(employee, "name") else "unknown", str(e)
-            ),
-            "Tax Calculation Error",
-        )
+        emp_name = employee.name if hasattr(employee, "name") else "unknown"
+        message = f"Tax Calculation Error for Employee {emp_name}: {str(e)}"
+        safe_log_error("Tax Calculation Error", message)
         # Use throw for validation failures
         frappe.throw(_("Error calculating tax components: {0}").format(str(e)))
 
@@ -198,12 +220,9 @@ def calculate_monthly_pph_progressive(doc, employee):
 
     except Exception as e:
         # This is a critical error in a tax calculation function
-        frappe.log_error(
-            "Progressive Tax Calculation Error for Employee {0}: {1}".format(
-                employee.name if hasattr(employee, "name") else "unknown", str(e)
-            ),
-            "Progressive Tax Calculation Error",
-        )
+        emp_name = employee.name if hasattr(employee, "name") else "unknown"
+        message = f"Progressive Tax Calculation Error for Employee {emp_name}: {str(e)}"
+        safe_log_error("Progressive Tax Calculation Error", message)
         frappe.throw(_("Error calculating PPh 21 with progressive method: {0}").format(str(e)))
 
 
@@ -229,10 +248,8 @@ def calculate_december_pph(doc, employee):
                 cache_value(cache_key, pph_settings, CACHE_MEDIUM)
             except Exception as e:
                 # This is a critical validation error - can't proceed without settings
-                frappe.log_error(
-                    "Error retrieving PPh 21 Settings: {0}".format(str(e)),
-                    "December PPh Settings Error",
-                )
+                message = f"Error retrieving PPh 21 Settings: {str(e)}"
+                safe_log_error("December PPh Settings Error", message)
                 frappe.throw(
                     _(
                         "Error retrieving PPh 21 Settings: {0}. Please configure PPh 21 Settings properly."
@@ -309,12 +326,9 @@ def calculate_december_pph(doc, employee):
 
     except Exception as e:
         # This is a critical error in a tax calculation function
-        frappe.log_error(
-            "December PPh Calculation Error for Employee {0}: {1}".format(
-                employee.name if hasattr(employee, "name") else "unknown", str(e)
-            ),
-            "December PPh Error",
-        )
+        emp_name = employee.name if hasattr(employee, "name") else "unknown"
+        message = f"December PPh Calculation Error for Employee {emp_name}: {str(e)}"
+        safe_log_error("December PPh Error", message)
         frappe.throw(_("Error calculating December PPh 21 correction: {0}").format(str(e)))
 
 
@@ -352,10 +366,8 @@ def set_basic_payroll_note(doc, employee):
         )
     except Exception as e:
         # This is not a critical error - the note is mostly informational
-        frappe.log_error(
-            "Error setting basic payroll note for {0}: {1}".format(doc.employee, str(e)),
-            "Payroll Note Error",
-        )
+        message = f"Error setting basic payroll note for {doc.employee}: {str(e)}"
+        safe_log_error("Payroll Note Error", message)
         # Just set a basic note
         doc.payroll_note = f"Penghasilan Bruto: Rp {doc.gross_pay:,.0f}"
         # Inform the user but don't block processing
@@ -376,12 +388,9 @@ def is_december(doc):
         return getdate(doc.end_date).month == DECEMBER_MONTH
     except Exception as e:
         # Non-critical error - log and default to False
-        frappe.log_error(
-            "Error checking if salary slip {0} is for December: {1}".format(
-                doc.name if hasattr(doc, "name") else "unknown", str(e)
-            ),
-            "Date Check Error",
-        )
+        doc_name = doc.name if hasattr(doc, "name") else "unknown"
+        message = f"Error checking if salary slip {doc_name} is for December: {str(e)}"
+        safe_log_error("Date Check Error", message)
         return False
 
 
@@ -436,10 +445,8 @@ def get_ytd_totals(doc, year):
             )
         except Exception as e:
             # Non-critical database error - we can return zeros
-            frappe.log_error(
-                "Error querying salary slips for {0}: {1}".format(doc.employee, str(e)),
-                "Salary Slip Query Error",
-            )
+            message = f"Error querying salary slips for {doc.employee}: {str(e)}"
+            safe_log_error("Salary Slip Query Error", message)
             frappe.msgprint(
                 _(
                     "Warning: Could not retrieve previous salary slips. YTD calculations may be incorrect."
@@ -479,10 +486,8 @@ def get_ytd_totals(doc, year):
 
             except Exception as e:
                 # Non-critical error processing a salary slip - continue with next one
-                frappe.log_error(
-                    "Error processing Salary Slip {0}: {1}".format(slip.name, str(e)),
-                    "Salary Slip Processing Error",
-                )
+                message = f"Error processing Salary Slip {slip.name}: {str(e)}"
+                safe_log_error("Salary Slip Processing Error", message)
                 continue
 
         # Cache the result for 30 minutes
@@ -491,10 +496,8 @@ def get_ytd_totals(doc, year):
 
     except Exception as e:
         # Non-critical error - we can return zeros
-        frappe.log_error(
-            "Error calculating YTD totals for {0}: {1}".format(doc.employee, str(e)),
-            "YTD Totals Error",
-        )
+        message = f"Error calculating YTD totals for {doc.employee}: {str(e)}"
+        safe_log_error("YTD Totals Error", message)
         frappe.msgprint(
             _("Error calculating YTD totals: {0}. Using zero values as fallback.").format(str(e)),
             indicator="red",
