@@ -64,6 +64,7 @@ def safe_log_error(title, message=None, **kwargs):
         title (str): Error title (will be truncated to 140 chars)
         message (str, optional): Error message. Defaults to None.
         **kwargs: Additional arguments to pass to frappe.log_error
+                  (valid: reference_doctype, reference_name, traceback)
     """
     # Ensure title exists and is a string
     if not title:
@@ -76,40 +77,22 @@ def safe_log_error(title, message=None, **kwargs):
     if message is None:
         message = title
 
-    # Set method field to short_title to avoid CharacterLengthExceededError
-    # Only if method isn't explicitly provided
-    if "method" not in kwargs:
-        kwargs["method"] = short_title[:140]
+    # Filter kwargs to only include valid parameters
+    valid_kwargs = {}
+    for key in ["reference_doctype", "reference_name", "traceback"]:
+        if key in kwargs:
+            valid_kwargs[key] = kwargs[key]
 
     try:
-        # Call frappe.log_error with the truncated title
-        return frappe.log_error(message=message, title=short_title, **kwargs)
-    except frappe.exceptions.CharacterLengthExceededError:
-        # If we still get a CharacterLengthExceededError, create the log document manually
+        # Call frappe.log_error with the truncated title and valid kwargs
+        return frappe.log_error(message=message, title=short_title, **valid_kwargs)
+    except Exception:
+        # If any error occurs, try with minimal info
         try:
-            log = frappe.new_doc("Error Log")
-            log.method = short_title[:140]
-            log.title = short_title
-            log.error = message
-
-            # Add traceback if provided
-            if "traceback" in kwargs:
-                log.traceback = kwargs["traceback"]
-
-            # Add reference if provided
-            if "reference_doctype" in kwargs and "reference_name" in kwargs:
-                log.reference_doctype = kwargs["reference_doctype"]
-                log.reference_name = kwargs["reference_name"]
-
-            log.insert(ignore_permissions=True)
-            return log
+            return frappe.log_error(message="Error occurred (details too long)", title="Tax Error")
         except Exception:
-            # Last resort - simplest possible error log
-            return frappe.log_error(
-                message="Error occurred (details too long)",
-                title="Error Logging Failed",
-                method="safe_log_error",
-            )
+            # If all else fails, silently fail
+            pass
 
 
 def calculate_tax_components(doc, employee):

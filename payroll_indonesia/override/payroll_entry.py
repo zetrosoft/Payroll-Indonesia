@@ -1,12 +1,47 @@
 # -*- coding: utf-8 -*-
-# Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
+# Copyright (c) 2023, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 08:11:32 by dannyaudian
 
 import frappe
 from frappe import _
 from frappe.utils import getdate
 from hrms.payroll.doctype.payroll_entry.payroll_entry import PayrollEntry
+
+
+def safe_log_error(message, title=None, **kwargs):
+    """
+    Safely log an error with title truncated to max 140 characters
+
+    Args:
+        message (str): Error message
+        title (str, optional): Error title (will be truncated to 140 chars)
+        **kwargs: Additional arguments to pass to frappe.log_error
+                  (valid: reference_doctype, reference_name, traceback)
+    """
+    if not title:
+        title = "Payroll Error"
+
+    # Truncate title to 140 characters if needed
+    short_title = title[:137] + "..." if len(title) > 140 else title
+
+    # Filter kwargs to only include valid parameters
+    valid_kwargs = {}
+    for key in ["reference_doctype", "reference_name", "traceback"]:
+        if key in kwargs:
+            valid_kwargs[key] = kwargs[key]
+
+    try:
+        # Call frappe.log_error with the truncated title and valid kwargs
+        return frappe.log_error(message=message, title=short_title, **valid_kwargs)
+    except Exception:
+        # If we still get an error, try with minimal info
+        try:
+            return frappe.log_error(
+                message="Error occurred (details too long)", title="Payroll Log Error"
+            )
+        except Exception:
+            # If all else fails, silently fail
+            pass
 
 
 class CustomPayrollEntry(PayrollEntry):
@@ -79,9 +114,9 @@ class CustomPayrollEntry(PayrollEntry):
                                     )
                 except Exception as e:
                     # Non-critical error during filter checking - log and continue
-                    frappe.log_error(
-                        "Error checking employee filters for {0}: {1}".format(self.name, str(e)),
-                        "Payroll Entry Filter Check Error",
+                    safe_log_error(
+                        f"Error checking employee filters for {self.name}: {str(e)}",
+                        "Payroll Entry Filter Check",
                     )
                     frappe.msgprint(
                         _("Error checking employee filters. See error log for details."),
@@ -93,9 +128,8 @@ class CustomPayrollEntry(PayrollEntry):
                 raise
 
             # For other errors, log and re-raise as validation error
-            frappe.log_error(
-                "Error validating Payroll Entry {0}: {1}".format(self.name, str(e)),
-                "Payroll Entry Validation Error",
+            safe_log_error(
+                f"Error validating Payroll Entry {self.name}: {str(e)}", "Payroll Entry Validation"
             )
             frappe.throw(_("Error validating Payroll Entry: {0}").format(str(e)))
 
@@ -118,9 +152,9 @@ class CustomPayrollEntry(PayrollEntry):
             if isinstance(e, frappe.exceptions.ValidationError):
                 raise
 
-            frappe.log_error(
-                "Error validating payroll dates for {0}: {1}".format(self.name, str(e)),
-                "Payroll Date Validation Error",
+            safe_log_error(
+                f"Error validating payroll dates for {self.name}: {str(e)}",
+                "Payroll Date Validation",
             )
             frappe.throw(_("Error validating payroll dates: {0}").format(str(e)))
 
@@ -145,9 +179,9 @@ class CustomPayrollEntry(PayrollEntry):
                     self.employees = [emp for emp in self.employees if emp.employee]
         except Exception as e:
             # Non-critical error during employee validation - log and continue
-            frappe.log_error(
-                "Error validating employee list for {0}: {1}".format(self.name, str(e)),
-                "Employee List Validation Error",
+            safe_log_error(
+                f"Error validating employee list for {self.name}: {str(e)}",
+                "Employee List Validation",
             )
             frappe.msgprint(
                 _(
@@ -174,10 +208,8 @@ class CustomPayrollEntry(PayrollEntry):
                 )
 
             # Tambahkan log
-            frappe.log_error(
-                "Payroll Entry {0} for period {1} to {2} submitted by {3}".format(
-                    self.name, self.start_date, self.end_date, frappe.session.user
-                ),
+            safe_log_error(
+                f"Payroll Entry {self.name} for period {self.start_date} to {self.end_date} submitted by {frappe.session.user}",
                 "Payroll Entry Submission",
             )
         except Exception as e:
@@ -186,8 +218,8 @@ class CustomPayrollEntry(PayrollEntry):
                 raise
 
             # Critical error during submission - must stop
-            frappe.log_error(
-                "Error submitting Payroll Entry {0}: {1}".format(self.name, str(e)),
+            safe_log_error(
+                f"Error submitting Payroll Entry {self.name}: {str(e)}",
                 "Payroll Entry Submission Error",
             )
             frappe.throw(_("Error submitting Payroll Entry: {0}").format(str(e)))
@@ -211,7 +243,7 @@ class CustomPayrollEntry(PayrollEntry):
             )
 
             # Log jumlah karyawan bukan seluruh data untuk menghindari error truncated
-            frappe.log_error("Employee count: {0}".format(len(minimal_emp_list)), "Employee Query")
+            safe_log_error(f"Employee count: {len(minimal_emp_list)}", "Employee Query")
 
             # Filter karyawan yang memiliki salary structure assignment
             emp_list_with_structure = []
@@ -266,9 +298,8 @@ class CustomPayrollEntry(PayrollEntry):
 
         except Exception as e:
             # This is a critical error - can't continue without employee list
-            frappe.log_error(
-                "Error retrieving employee list for {0}: {1}".format(self.name, str(e)),
-                "Employee List Error",
+            safe_log_error(
+                f"Error retrieving employee list for {self.name}: {str(e)}", "Employee List Error"
             )
             frappe.throw(_("Error retrieving employee list: {0}").format(str(e)))
 
@@ -313,9 +344,9 @@ class CustomPayrollEntry(PayrollEntry):
 
         except Exception as e:
             # Non-critical error - log and return empty list
-            frappe.log_error(
-                "Error retrieving existing salary slips for {0}: {1}".format(self.name, str(e)),
-                "Existing Slip Retrieval Error",
+            safe_log_error(
+                f"Error retrieving existing salary slips for {self.name}: {str(e)}",
+                "Existing Slip Retrieval",
             )
             frappe.msgprint(
                 _("Warning: Could not check for existing salary slips. Duplicates may be created."),
@@ -351,8 +382,8 @@ class CustomPayrollEntry(PayrollEntry):
                 raise
 
             # Critical error - can't create salary slips
-            frappe.log_error(
-                "Error creating salary slips for {0}: {1}".format(self.name, str(e)),
+            safe_log_error(
+                f"Error creating salary slips for {self.name}: {str(e)}",
                 "Salary Slip Creation Error",
             )
             frappe.throw(_("Error creating salary slips: {0}").format(str(e)))
@@ -419,7 +450,7 @@ class CustomPayrollEntry(PayrollEntry):
                 except Exception as e:
                     # Non-critical error - can continue with other employees
                     error_count += 1
-                    error_msg = "Gagal membuat Salary Slip untuk {0}: {1}".format(employee, str(e))
+                    error_msg = f"Gagal membuat Salary Slip untuk {employee}: {str(e)}"
 
                     # Batasi panjang error message untuk log
                     if len(error_msg) > 900:  # Batas aman untuk field `message` pada Error Log
@@ -430,11 +461,11 @@ class CustomPayrollEntry(PayrollEntry):
                         title=_("Salary Slip Creation Failed"),
                         indicator="orange",
                     )
-                    frappe.log_error(message=error_msg, title="Salary Slip Creation Error")
+                    safe_log_error(error_msg, "Salary Slip Creation Error")
 
             # Log ringkasan hasil
-            result_msg = "Created {0} salary slips, {1} errors".format(count, error_count)
-            frappe.log_error(message=result_msg, title="Salary Slip Creation Summary")
+            result_msg = f"Created {count} salary slips, {error_count} errors"
+            safe_log_error(result_msg, "Salary Slip Creation Summary")
 
             # Show summary to user
             if error_count > 0:
@@ -457,9 +488,8 @@ class CustomPayrollEntry(PayrollEntry):
                 raise
 
             # Critical error - can't create salary slips
-            frappe.log_error(
-                "Error creating salary slips for employees: {0}".format(str(e)),
-                "Salary Slip Creation Error",
+            safe_log_error(
+                f"Error creating salary slips for employees: {str(e)}", "Salary Slip Creation Error"
             )
             frappe.throw(_("Error creating salary slips: {0}").format(str(e)))
 
@@ -517,8 +547,8 @@ class CustomPayrollEntry(PayrollEntry):
                 raise
 
             # Critical error - can't create salary slip args
-            frappe.log_error(
-                "Error getting salary slip args for employee {0}: {1}".format(employee, str(e)),
+            safe_log_error(
+                f"Error getting salary slip args for employee {employee}: {str(e)}",
                 "Salary Slip Args Error",
             )
             frappe.throw(

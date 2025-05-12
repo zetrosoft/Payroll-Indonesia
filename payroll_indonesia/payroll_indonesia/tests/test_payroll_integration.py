@@ -98,6 +98,26 @@ class TestPayrollIntegration(unittest.TestCase):
         if update_needed:
             cls.company.save()
 
+        # Tambah Holiday List
+        if not frappe.db.exists("Holiday List", "Test Payroll Holidays"):
+            holiday_list = frappe.new_doc("Holiday List")
+            holiday_list.name = "Test Payroll Holidays"
+            holiday_list.holiday_list_name = "Test Payroll Holidays"
+            holiday_list.from_date = "2025-01-01"
+            holiday_list.to_date = "2025-12-31"
+            holiday_list.append(
+                "holidays", {"holiday_date": "2025-08-17", "description": "Independence Day"}
+            )
+            holiday_list.save()
+
+        cls.company.default_holiday_list = "Test Payroll Holidays"
+        cls.company.save()
+
+        # Set default untuk Employee juga
+        frappe.db.set_value(
+            "Employee", {"company": cls.company.name}, "holiday_list", "Test Payroll Holidays"
+        )
+
     @classmethod
     def setup_test_employees(cls):
         """Create test employees with different configurations"""
