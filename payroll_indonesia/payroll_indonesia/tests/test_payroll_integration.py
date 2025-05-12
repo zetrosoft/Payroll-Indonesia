@@ -117,7 +117,6 @@ class TestPayrollIntegration(unittest.TestCase):
                 "date_of_birth": add_months(getdate(), -(30 * 12)),  # 30 years old
                 "date_of_joining": add_months(getdate(), -12),
                 "department": "All Departments",
-                "employment_type": "Permanent",
                 "gender": "Male",
                 "npwp": "123456789012345",
                 # Configuration from params
