@@ -741,19 +741,29 @@ class BPJSAccountMapping(Document):
 
         # Employer expense accounts should be expense accounts
         self.validate_account_type(
-            self.kesehatan_employer_debit_account, ["Expense"], "BPJS Kesehatan Employer Expense"
+            self.kesehatan_employer_debit_account,
+            ["Expense Account", "Direct Expense", "Indirect Expense"],
+            "BPJS Kesehatan Employer Expense",
         )
         self.validate_account_type(
-            self.jht_employer_debit_account, ["Expense"], "BPJS JHT Employer Expense"
+            self.jht_employer_debit_account,
+            ["Expense Account", "Direct Expense", "Indirect Expense"],
+            "BPJS JHT Employer Expense",
         )
         self.validate_account_type(
-            self.jp_employer_debit_account, ["Expense"], "BPJS JP Employer Expense"
+            self.jp_employer_debit_account,
+            ["Expense Account", "Direct Expense", "Indirect Expense"],
+            "BPJS JP Employer Expense",
         )
         self.validate_account_type(
-            self.jkk_employer_debit_account, ["Expense"], "BPJS JKK Employer Expense"
+            self.jkk_employer_debit_account,
+            ["Expense Account", "Direct Expense", "Indirect Expense"],
+            "BPJS JKK Employer Expense",
         )
         self.validate_account_type(
-            self.jkm_employer_debit_account, ["Expense"], "BPJS JKM Employer Expense"
+            self.jkm_employer_debit_account,
+            ["Expense Account", "Direct Expense", "Indirect Expense"],
+            "BPJS JKM Employer Expense",
         )
 
         # Employer liability accounts should be liability accounts
@@ -869,7 +879,7 @@ class BPJSAccountMapping(Document):
                 field,
                 account_name
                 or field.replace("_debit_account", " Expense").replace("_", " ").title(),
-                "Expense",
+                "Expense Account",  # Changed from "Expense" to "Expense Account"
                 expense_parent,
                 bpjs_settings_accounts.get(field),
             )
@@ -924,6 +934,10 @@ class BPJSAccountMapping(Document):
 
         # Create new account if needed using centralized utility function
         try:
+            # Convert 'Expense' to 'Expense Account' for compatibility
+            if account_type == "Expense":
+                account_type = "Expense Account"
+
             account_name = create_account(
                 company=self.company,
                 account_name=description,
