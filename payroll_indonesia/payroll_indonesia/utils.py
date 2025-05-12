@@ -1479,6 +1479,10 @@ def create_account(
         str: Full account name if created or already exists, None otherwise
     """
     try:
+        # Normalize invalid account_type
+        if account_type == "Expense":
+            account_type = "Expense Account"
+
         # Validate inputs
         if not company or not account_name or not account_type or not parent:
             frappe.throw(_("Missing required parameters for account creation"))
@@ -1526,7 +1530,7 @@ def create_account(
         # Determine root_type based on account_type if not provided
         if not root_type:
             root_type = "Liability"  # Default
-            if account_type in ["Direct Expense", "Indirect Expense", "Expense Account"]:
+            if account_type in ["Direct Expense", "Indirect Expense", "Expense Account", "Expense"]:
                 root_type = "Expense"
             elif account_type == "Asset":
                 root_type = "Asset"
