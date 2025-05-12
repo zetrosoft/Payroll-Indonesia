@@ -402,6 +402,8 @@ def setup_expense_accounts(mapping_doc, expense_parent):
 
             if not frappe.db.exists("Account", full_account_name):
                 account_type = account_info.get("account_type", "Expense Account")
+                if account_type == "Expense":
+                    account_type = "Expense Account"
                 root_type = account_info.get("root_type", "Expense")
 
                 try:
