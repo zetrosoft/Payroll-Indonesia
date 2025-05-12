@@ -33,6 +33,7 @@ from payroll_indonesia.utilities.cache_utils import (
 __all__ = [
     "debug_log",
     "get_settings",
+    "get_default_config",
     "find_parent_account",
     "create_account",
     "create_parent_liability_account",
@@ -86,6 +87,65 @@ def get_settings():
         frappe.log_error(f"Error getting Payroll Indonesia Settings: {str(e)}", "Settings Error")
         # If settings can't be loaded, return an empty doc as fallback
         return frappe.get_doc({"doctype": "Payroll Indonesia Settings"})
+
+def get_default_config(section=None) -> dict:
+    """
+    Returns configuration values for payroll Indonesia from settings.
+
+    Args:
+        section (str, optional): Specific configuration section to return.
+                               If None, returns the entire config.
+
+    Returns:
+        dict: Configuration settings or specific section
+    """
+    # Get settings document
+    settings = get_settings()
+
+    # Build config dictionary from settings
+    config = {
+        "bpjs_kesehatan": {
+            "employee_contribution": settings.kesehatan_employee_percent,
+            "employer_contribution": settings.kesehatan_employer_percent,
+        },
+        "bpjs_ketenagakerjaan": {
+            "jht": {
+                "employee_contribution": getattr(settings, "jht_employee_percent", 2.0),
+                "employer_contribution": getattr(settings, "jht_employer_percent", 3.7),
+            },
+            "jkk": {
+                "employer_contribution": getattr(settings, "jkk_employer_percent", 0.24),
+            },
+            "jkm": {
+                "employer_contribution": getattr(settings, "jkm_employer_percent", 0.3),
+            },
+            "jp": {
+                "employee_contribution": getattr(settings, "jp_employee_percent", 1.0),
+                "employer_contribution": getattr(settings, "jp_employer_percent", 2.0),
+            },
+        },
+        "ptkp_values": settings.get_ptkp_values_dict(),
+        "ptkp_to_ter_mapping": settings.get_ptkp_ter_mapping_dict(),
+        "tax_brackets": settings.get_tax_brackets_list(),
+        "tipe_karyawan": settings.get_tipe_karyawan_list(),
+        "gl_accounts": {
+            # You would need to expand this based on what's available in your settings
+            "bpjs_expense_accounts": {}
+        },
+    }
+
+    # Add any default account settings that might not be in the document
+    config["bpjs_payable_parent_account"] = getattr(
+        settings, "bpjs_payable_parent_account", "Current Liabilities"
+    )
+    config["bpjs_expense_parent_account"] = getattr(
+        settings, "bpjs_expense_parent_account", "Expenses"
+    )
+
+    if section:
+        return config.get(section, {})
+
+    return config
 
 
 def create_default_settings():
