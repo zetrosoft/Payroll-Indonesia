@@ -1807,6 +1807,8 @@ def create_parent_expense_account(company: str) -> Optional[str]:
                 try:
                     account_doc = frappe.get_doc("Account", parent_name)
                     account_doc.is_group = 1
+                    # Remove account_type as it's not allowed for group accounts
+                    account_doc.account_type = None
                     account_doc.flags.ignore_permissions = True
                     account_doc.save()
                     frappe.db.commit()
@@ -1860,20 +1862,20 @@ def create_parent_expense_account(company: str) -> Optional[str]:
                 "Account Creation",
             )
 
-            doc = frappe.get_doc(
-                {
-                    "doctype": "Account",
-                    "account_name": account_name,
-                    "parent_account": parent_account,
-                    "company": company,
-                    "account_type": "Expense",
-                    "account_currency": frappe.get_cached_value(
-                        "Company", company, "default_currency"
-                    ),
-                    "is_group": 1,
-                    "root_type": "Expense",
-                }
-            )
+            # Create account dictionary without account_type for group account
+            account_dict = {
+                "doctype": "Account",
+                "account_name": account_name,
+                "parent_account": parent_account,
+                "company": company,
+                "account_currency": frappe.get_cached_value("Company", company, "default_currency"),
+                "is_group": 1,
+                "root_type": "Expense",
+            }
+
+            # Note: No account_type since this is a group account
+
+            doc = frappe.get_doc(account_dict)
 
             # Bypass permissions and mandatory checks during setup
             doc.flags.ignore_permissions = True
