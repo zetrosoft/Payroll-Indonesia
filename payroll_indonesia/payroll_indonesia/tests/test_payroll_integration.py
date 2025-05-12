@@ -170,6 +170,12 @@ class TestPayrollIntegration(unittest.TestCase):
                 "start_date": start_date,
                 "end_date": end_date,
                 "payment_account": f"Cash - {self.company.abbr}",
+                # Add the missing mandatory fields
+                "exchange_rate": 1.0,
+                "payroll_payable_account": self.company.default_payroll_payable_account,
+                # Set other useful fields
+                "currency": self.company.default_currency,
+                "cost_center": self.get_or_create_cost_center(),
             }
         )
 
@@ -181,6 +187,31 @@ class TestPayrollIntegration(unittest.TestCase):
 
         payroll_entry.insert()
         return payroll_entry
+
+    def get_or_create_cost_center(self):
+        """Get or create a cost center for the company"""
+        cost_center_name = f"Main - {self.company.abbr}"
+
+        if not frappe.db.exists("Cost Center", cost_center_name):
+            # Create cost center
+            cost_center = frappe.get_doc(
+                {
+                    "doctype": "Cost Center",
+                    "cost_center_name": "Main",
+                    "company": self.company.name,
+                    "is_group": 0,
+                    "parent_cost_center": f"{self.company.name} - {self.company.abbr}",
+                }
+            )
+
+            try:
+                cost_center.insert()
+                return cost_center.name
+            except frappe.exceptions.DuplicateEntryError:
+                # In case another process created it
+                return cost_center_name
+
+        return cost_center_name
 
     def test_ter_with_bpjs_december(self):
         """Test TER calculation with BPJS in December"""
