@@ -665,27 +665,110 @@ class PayrollIndonesiaSettings(Document):
 
     def _ensure_child_doctypes_exist(self):
         """Ensure all required child DocTypes exist, try to create them if missing"""
-        # Check for Tipe Karyawan Entry
-        if not frappe.db.exists("DocType", "Tipe Karyawan Entry"):
-            doctype = frappe.new_doc("DocType")
-            doctype.name = "Tipe Karyawan Entry"
-            doctype.module = "Payroll Indonesia"
-            doctype.istable = 1
-            doctype.editable_grid = 1
 
-            field = {
-                "fieldname": "tipe_karyawan",
-                "fieldtype": "Data",
-                "label": "Tipe Karyawan",
-                "in_list_view": 1,
-                "reqd": 1,
-            }
+        # Dictionary of DocTypes to check/create with their fields
+        child_doctypes = {
+            "Tipe Karyawan Entry": [
+                {
+                    "fieldname": "tipe_karyawan",
+                    "fieldtype": "Data",
+                    "label": "Tipe Karyawan",
+                    "in_list_view": 1,
+                    "reqd": 1,
+                }
+            ],
+            "PTKP Table Entry": [
+                {
+                    "fieldname": "status_pajak",
+                    "fieldtype": "Data",
+                    "label": "PTKP Status",
+                    "in_list_view": 1,
+                    "reqd": 1,
+                },
+                {
+                    "fieldname": "ptkp_amount",
+                    "fieldtype": "Currency",
+                    "label": "PTKP Amount",
+                    "in_list_view": 1,
+                    "reqd": 1,
+                    "default": 0.0,
+                },
+            ],
+            "Tax Bracket Entry": [
+                {
+                    "fieldname": "income_from",
+                    "fieldtype": "Currency",
+                    "label": "Income From",
+                    "in_list_view": 1,
+                    "reqd": 1,
+                    "default": 0.0,
+                },
+                {
+                    "fieldname": "income_to",
+                    "fieldtype": "Currency",
+                    "label": "Income To",
+                    "in_list_view": 1,
+                    "reqd": 1,
+                    "default": 0.0,
+                },
+                {
+                    "fieldname": "tax_rate",
+                    "fieldtype": "Float",
+                    "label": "Tax Rate (%)",
+                    "in_list_view": 1,
+                    "reqd": 1,
+                    "default": 0.0,
+                    "precision": 2,
+                },
+            ],
+            "PTKP TER Mapping Entry": [
+                {
+                    "fieldname": "ptkp_status",
+                    "fieldtype": "Data",
+                    "label": "PTKP Status",
+                    "in_list_view": 1,
+                    "reqd": 1,
+                },
+                {
+                    "fieldname": "ter_category",
+                    "fieldtype": "Select",
+                    "label": "TER Category",
+                    "options": "TER A\nTER B\nTER C",
+                    "in_list_view": 1,
+                    "reqd": 1,
+                },
+            ],
+        }
 
-            doctype.append("fields", field)
-            doctype.flags.ignore_permissions = True
-            doctype.insert(ignore_permissions=True)
-            frappe.db.commit()
+        # Check and create each missing DocType
+        for doctype_name, fields in child_doctypes.items():
+            if not frappe.db.exists("DocType", doctype_name):
+                try:
+                    # Create new DocType
+                    doctype = frappe.new_doc("DocType")
+                    doctype.name = doctype_name
+                    doctype.module = "Payroll Indonesia"
+                    doctype.istable = 1
+                    doctype.editable_grid = 1
 
-            frappe.log_error("Created missing Tipe Karyawan Entry DocType", "Setup Info")
+                    # Add all fields to the DocType
+                    for field_def in fields:
+                        doctype.append("fields", field_def)
 
-        # Add code for other child DocTypes if needed
+                    # Insert with admin privileges
+                    doctype.flags.ignore_permissions = True
+                    doctype.insert(ignore_permissions=True)
+                    frappe.db.commit()
+
+                    # Log successful creation
+                    frappe.log_error(
+                        message=f"Successfully created missing DocType: {doctype_name}",
+                        title="Setup Info",
+                    )
+
+                except Exception as e:
+                    # Log detailed error information
+                    frappe.log_error(
+                        message=f"Failed to create DocType {doctype_name}: {str(e)}",
+                        title="Setup Error",
+                    )
