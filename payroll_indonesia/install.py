@@ -80,6 +80,12 @@ def migrate_from_json_to_doctype():
     """
     Migrate settings from defaults.json to the Payroll Indonesia Settings DocType
 
+    This function is idempotent and will:
+    - Skip if DocType doesn't exist (with warning)
+    - Skip if settings already exist with the same version
+    - Create settings if DocType exists but settings don't
+    - Update settings if they exist but have a different version
+
     Returns:
         bool: True if migration was successful, False otherwise
     """
@@ -89,148 +95,57 @@ def migrate_from_json_to_doctype():
             logger.warning("Payroll Indonesia Settings DocType not found, skipping migration")
             return False
 
-        # Check if already migrated to prevent duplication
+        # Check if settings document already exists
         settings_exists = frappe.db.exists(
             "Payroll Indonesia Settings", "Payroll Indonesia Settings"
         )
+
+        # Get config data regardless of whether we'll use it
+        config = get_default_config()
+        if not config:
+            logger.warning("Could not load defaults.json, skipping migration")
+            return False
+
+        # If settings already exist, check version
         if settings_exists:
             settings = frappe.get_doc("Payroll Indonesia Settings", "Payroll Indonesia Settings")
-            if (
-                settings.app_updated_by
-                and settings.app_updated_by == "dannyaudian"
-                and settings.app_version == "1.0.0"
+            app_info = config.get("app_info", {})
+            config_version = app_info.get("version", "1.0.0")
+
+            # Skip if version matches
+            if settings.app_version == config_version and settings.app_updated_by == app_info.get(
+                "updated_by", "dannyaudian"
             ):
-                logger.info("Settings already migrated, skipping")
+                logger.info("Settings already exist with matching version, skipping migration")
                 return True
 
-        # Get path to defaults.json
-        config_path = frappe.get_app_path(
-            "payroll_indonesia", "payroll_indonesia", "config", "defaults.json"
-        )
-        if not os.path.exists(config_path):
-            # Try alternative path
-            config_path = frappe.get_app_path("payroll_indonesia", "config", "defaults.json")
-            if not os.path.exists(config_path):
-                logger.warning("defaults.json not found, skipping migration")
-                return False
-
-        # Load the config
-        with open(config_path) as f:
-            config = json.load(f)
-
-        # Create or get settings document
-        if settings_exists:
-            settings = frappe.get_doc("Payroll Indonesia Settings", "Payroll Indonesia Settings")
+            logger.info(
+                f"Updating existing settings from version {settings.app_version} to {config_version}"
+            )
         else:
+            logger.info("Creating new Payroll Indonesia Settings")
             settings = frappe.new_doc("Payroll Indonesia Settings")
 
-        # App info
-        app_info = config.get("app_info", {})
-        settings.app_version = app_info.get("version", "1.0.0")
-        settings.app_last_updated = app_info.get("last_updated", get_datetime_str())
-        settings.app_updated_by = app_info.get("updated_by", "dannyaudian")
+        # Update settings with values from config
+        update_settings_from_config(settings, config)
 
-        # BPJS settings
-        bpjs = config.get("bpjs", {})
-        settings.kesehatan_employee_percent = flt(bpjs.get("kesehatan_employee_percent", 1.0))
-        settings.kesehatan_employer_percent = flt(bpjs.get("kesehatan_employer_percent", 4.0))
-        settings.kesehatan_max_salary = flt(bpjs.get("kesehatan_max_salary", 12000000.0))
-        settings.jht_employee_percent = flt(bpjs.get("jht_employee_percent", 2.0))
-        settings.jht_employer_percent = flt(bpjs.get("jht_employer_percent", 3.7))
-        settings.jp_employee_percent = flt(bpjs.get("jp_employee_percent", 1.0))
-        settings.jp_employer_percent = flt(bpjs.get("jp_employer_percent", 2.0))
-        settings.jp_max_salary = flt(bpjs.get("jp_max_salary", 9077600.0))
-        settings.jkk_percent = flt(bpjs.get("jkk_percent", 0.24))
-        settings.jkm_percent = flt(bpjs.get("jkm_percent", 0.3))
-
-        # Tax settings
-        tax = config.get("tax", {})
-        settings.umr_default = flt(tax.get("umr_default", 4900000.0))
-        settings.biaya_jabatan_percent = flt(tax.get("biaya_jabatan_percent", 5.0))
-        settings.biaya_jabatan_max = flt(tax.get("biaya_jabatan_max", 500000.0))
-        settings.npwp_mandatory = tax.get("npwp_mandatory", 0)
-        settings.tax_calculation_method = tax.get("tax_calculation_method", "TER")
-        settings.use_ter = tax.get("use_ter", 1)
-        settings.use_gross_up = tax.get("use_gross_up", 0)
-
-        # Clear existing tables to prevent duplicates
-        settings.ptkp_table = []
-        settings.ptkp_ter_mapping_table = []
-        settings.tax_brackets_table = []
-        settings.tipe_karyawan = []
-
-        # PTKP values
-        ptkp = config.get("ptkp", {})
-        for status, amount in ptkp.items():
-            settings.append("ptkp_table", {"status_pajak": status, "ptkp_amount": flt(amount)})
-
-        # PTKP to TER mapping
-        ptkp_ter_mapping = config.get("ptkp_to_ter_mapping", {})
-        for status, category in ptkp_ter_mapping.items():
-            settings.append(
-                "ptkp_ter_mapping_table", {"ptkp_status": status, "ter_category": category}
-            )
-
-        # Tax brackets
-        tax_brackets = config.get("tax_brackets", [])
-        for bracket in tax_brackets:
-            settings.append(
-                "tax_brackets_table",
-                {
-                    "income_from": flt(bracket.get("income_from", 0)),
-                    "income_to": flt(bracket.get("income_to", 0)),
-                    "tax_rate": flt(bracket.get("tax_rate", 0)),
-                },
-            )
-
-        # Defaults
-        defaults = config.get("defaults", {})
-        settings.default_currency = defaults.get("currency", "IDR")
-        settings.attendance_based_on_timesheet = defaults.get("attendance_based_on_timesheet", 0)
-        settings.payroll_frequency = defaults.get("payroll_frequency", "Monthly")
-        settings.salary_slip_based_on = defaults.get("salary_slip_based_on", "Leave Policy")
-        settings.max_working_days_per_month = defaults.get("max_working_days_per_month", 22)
-        settings.include_holidays_in_total_working_days = defaults.get(
-            "include_holidays_in_total_working_days", 0
-        )
-        settings.working_hours_per_day = flt(defaults.get("working_hours_per_day", 8))
-
-        # Struktur gaji
-        struktur_gaji = config.get("struktur_gaji", {})
-        settings.basic_salary_percent = flt(struktur_gaji.get("basic_salary_percent", 75))
-        settings.meal_allowance = flt(struktur_gaji.get("meal_allowance", 750000.0))
-        settings.transport_allowance = flt(struktur_gaji.get("transport_allowance", 900000.0))
-        settings.struktur_gaji_umr_default = flt(struktur_gaji.get("umr_default", 4900000.0))
-        settings.position_allowance_percent = flt(
-            struktur_gaji.get("position_allowance_percent", 7.5)
-        )
-        settings.hari_kerja_default = struktur_gaji.get("hari_kerja_default", 22)
-
-        # Tipe karyawan
-        tipe_karyawan = config.get("tipe_karyawan", [])
-        for tipe in tipe_karyawan:
-            settings.append("tipe_karyawan", {"tipe_karyawan": tipe})
-
-        # Save the settings
+        # Save with safe flags
         settings.flags.ignore_validate = True
         settings.flags.ignore_permissions = True
         settings.flags.ignore_mandatory = True
 
-        # Use insert or save as appropriate
         if settings_exists:
             settings.save(ignore_permissions=True)
+            logger.info("Updated existing Payroll Indonesia Settings")
         else:
             settings.insert(ignore_permissions=True)
+            logger.info("Created new Payroll Indonesia Settings")
 
-        # Migrate TER rates to PPh 21 TER Table
-        # This assumes PPh 21 TER Table DocType already exists
+        # Migrate TER rates to PPh 21 TER Table if that DocType exists
         if frappe.db.exists("DocType", "PPh 21 TER Table"):
             migrate_ter_rates(config.get("ter_rates", {}))
 
         frappe.db.commit()
-        logger.info(
-            "Successfully migrated settings from defaults.json to Payroll Indonesia Settings"
-        )
 
         # Update BPJS Settings if it exists
         sync_to_bpjs_settings(settings)
@@ -239,8 +154,130 @@ def migrate_from_json_to_doctype():
 
     except Exception as e:
         frappe.db.rollback()
-        logger.exception(f"Error migrating settings: {str(e)}")
+        logger.exception(f"Error in migrate_from_json_to_doctype: {str(e)}")
         return False
+
+
+def get_default_config():
+    """
+    Load the defaults.json configuration file
+
+    Returns:
+        dict: Configuration data or None if file not found
+    """
+    try:
+        # Try primary location
+        config_path = frappe.get_app_path(
+            "payroll_indonesia", "payroll_indonesia", "config", "defaults.json"
+        )
+
+        if not os.path.exists(config_path):
+            # Try alternative location
+            config_path = frappe.get_app_path("payroll_indonesia", "config", "defaults.json")
+
+            if not os.path.exists(config_path):
+                logger.warning("defaults.json not found in expected locations")
+                return None
+
+        # Load and return config
+        with open(config_path) as f:
+            return json.load(f)
+
+    except Exception as e:
+        logger.exception(f"Error loading defaults.json: {str(e)}")
+        return None
+
+
+def update_settings_from_config(settings, config):
+    """
+    Update settings document with values from config
+
+    Args:
+        settings: Payroll Indonesia Settings document
+        config: Configuration data from defaults.json
+    """
+    # App info
+    app_info = config.get("app_info", {})
+    settings.app_version = app_info.get("version", "1.0.0")
+    settings.app_last_updated = app_info.get("last_updated", get_datetime_str())
+    settings.app_updated_by = app_info.get("updated_by", "dannyaudian")
+
+    # BPJS settings
+    bpjs = config.get("bpjs", {})
+    settings.kesehatan_employee_percent = flt(bpjs.get("kesehatan_employee_percent", 1.0))
+    settings.kesehatan_employer_percent = flt(bpjs.get("kesehatan_employer_percent", 4.0))
+    settings.kesehatan_max_salary = flt(bpjs.get("kesehatan_max_salary", 12000000.0))
+    settings.jht_employee_percent = flt(bpjs.get("jht_employee_percent", 2.0))
+    settings.jht_employer_percent = flt(bpjs.get("jht_employer_percent", 3.7))
+    settings.jp_employee_percent = flt(bpjs.get("jp_employee_percent", 1.0))
+    settings.jp_employer_percent = flt(bpjs.get("jp_employer_percent", 2.0))
+    settings.jp_max_salary = flt(bpjs.get("jp_max_salary", 9077600.0))
+    settings.jkk_percent = flt(bpjs.get("jkk_percent", 0.24))
+    settings.jkm_percent = flt(bpjs.get("jkm_percent", 0.3))
+
+    # Tax settings
+    tax = config.get("tax", {})
+    settings.umr_default = flt(tax.get("umr_default", 4900000.0))
+    settings.biaya_jabatan_percent = flt(tax.get("biaya_jabatan_percent", 5.0))
+    settings.biaya_jabatan_max = flt(tax.get("biaya_jabatan_max", 500000.0))
+    settings.npwp_mandatory = tax.get("npwp_mandatory", 0)
+    settings.tax_calculation_method = tax.get("tax_calculation_method", "TER")
+    settings.use_ter = tax.get("use_ter", 1)
+    settings.use_gross_up = tax.get("use_gross_up", 0)
+
+    # Clear existing tables to prevent duplicates
+    settings.ptkp_table = []
+    settings.ptkp_ter_mapping_table = []
+    settings.tax_brackets_table = []
+    settings.tipe_karyawan = []
+
+    # PTKP values
+    ptkp = config.get("ptkp", {})
+    for status, amount in ptkp.items():
+        settings.append("ptkp_table", {"status_pajak": status, "ptkp_amount": flt(amount)})
+
+    # PTKP to TER mapping
+    ptkp_ter_mapping = config.get("ptkp_to_ter_mapping", {})
+    for status, category in ptkp_ter_mapping.items():
+        settings.append("ptkp_ter_mapping_table", {"ptkp_status": status, "ter_category": category})
+
+    # Tax brackets
+    tax_brackets = config.get("tax_brackets", [])
+    for bracket in tax_brackets:
+        settings.append(
+            "tax_brackets_table",
+            {
+                "income_from": flt(bracket.get("income_from", 0)),
+                "income_to": flt(bracket.get("income_to", 0)),
+                "tax_rate": flt(bracket.get("tax_rate", 0)),
+            },
+        )
+
+    # Defaults
+    defaults = config.get("defaults", {})
+    settings.default_currency = defaults.get("currency", "IDR")
+    settings.attendance_based_on_timesheet = defaults.get("attendance_based_on_timesheet", 0)
+    settings.payroll_frequency = defaults.get("payroll_frequency", "Monthly")
+    settings.salary_slip_based_on = defaults.get("salary_slip_based_on", "Leave Policy")
+    settings.max_working_days_per_month = defaults.get("max_working_days_per_month", 22)
+    settings.include_holidays_in_total_working_days = defaults.get(
+        "include_holidays_in_total_working_days", 0
+    )
+    settings.working_hours_per_day = flt(defaults.get("working_hours_per_day", 8))
+
+    # Struktur gaji
+    struktur_gaji = config.get("struktur_gaji", {})
+    settings.basic_salary_percent = flt(struktur_gaji.get("basic_salary_percent", 75))
+    settings.meal_allowance = flt(struktur_gaji.get("meal_allowance", 750000.0))
+    settings.transport_allowance = flt(struktur_gaji.get("transport_allowance", 900000.0))
+    settings.struktur_gaji_umr_default = flt(struktur_gaji.get("umr_default", 4900000.0))
+    settings.position_allowance_percent = flt(struktur_gaji.get("position_allowance_percent", 7.5))
+    settings.hari_kerja_default = struktur_gaji.get("hari_kerja_default", 22)
+
+    # Tipe karyawan
+    tipe_karyawan = config.get("tipe_karyawan", [])
+    for tipe in tipe_karyawan:
+        settings.append("tipe_karyawan", {"tipe_karyawan": tipe})
 
 
 def sync_to_bpjs_settings(pi_settings):
