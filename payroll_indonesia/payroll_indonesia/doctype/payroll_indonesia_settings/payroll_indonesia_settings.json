@@ -2,13 +2,13 @@
   "doctype": "DocType",
   "module": "Payroll Indonesia",
   "name": "Payroll Indonesia Settings",
-  "issingle": 1,
+  "isSingle": 1,
   "editable_grid": 1,
   "custom": 0,
-  "modified": "2025-05-11 09:24:57",
-  "modified_by": "dannyaudian",
-  "owner": "dannyaudian",
-  "creation": "2025-05-11 09:24:57",
+  "modified": "2023-05-11 09:24:57",
+  "modified_by": "Administrator",
+  "owner": "Administrator",
+  "creation": "2023-05-11 09:24:57",
   "idx": 0,
   "fields": [
     {
@@ -21,26 +21,30 @@
       "fieldtype": "Data",
       "label": "Version",
       "default": "1.0.0",
-      "reqd": 1
+      "reqd": 1,
+      "read_only": 1
     },
     {
       "fieldname": "app_last_updated",
       "fieldtype": "Datetime",
       "label": "Last Updated",
-      "default": "2025-05-11 09:24:57",
-      "reqd": 1
+      "default": "Now",
+      "reqd": 1,
+      "read_only": 1
     },
     {
       "fieldname": "app_updated_by",
       "fieldtype": "Data",
       "label": "Updated By",
-      "default": "dannyaudian",
-      "reqd": 1
+      "default": "Administrator",
+      "reqd": 1,
+      "read_only": 1
     },
     {
       "fieldname": "bpjs_section",
       "fieldtype": "Section Break",
-      "label": "BPJS Settings"
+      "label": "BPJS Settings",
+      "collapsible": 1
     },
     {
       "fieldname": "kesehatan_employee_percent",
@@ -123,7 +127,8 @@
     {
       "fieldname": "tax_section",
       "fieldtype": "Section Break",
-      "label": "Tax Settings"
+      "label": "Tax Settings",
+      "collapsible": 1
     },
     {
       "fieldname": "umr_default",
@@ -162,21 +167,28 @@
       "reqd": 1
     },
     {
+      "fieldname": "column_break_tax",
+      "fieldtype": "Column Break"
+    },
+    {
       "fieldname": "use_ter",
       "fieldtype": "Check",
       "label": "Use TER",
-      "default": 1
+      "default": 1,
+      "depends_on": "eval:doc.tax_calculation_method === 'TER'"
     },
     {
       "fieldname": "use_gross_up",
       "fieldtype": "Check",
       "label": "Use Gross-up",
-      "default": 0
+      "default": 0,
+      "depends_on": "eval:doc.tax_calculation_method === 'Gross-up'"
     },
     {
       "fieldname": "ptkp_section",
       "fieldtype": "Section Break",
-      "label": "PTKP Settings"
+      "label": "PTKP Settings",
+      "collapsible": 1
     },
     {
       "fieldname": "ptkp_table",
@@ -188,7 +200,8 @@
     {
       "fieldname": "ter_mapping_section",
       "fieldtype": "Section Break",
-      "label": "PTKP to TER Mapping"
+      "label": "PTKP to TER Mapping",
+      "collapsible": 1
     },
     {
       "fieldname": "ptkp_ter_mapping_table",
@@ -200,7 +213,8 @@
     {
       "fieldname": "tax_brackets_section",
       "fieldtype": "Section Break",
-      "label": "Tax Brackets"
+      "label": "Tax Brackets",
+      "collapsible": 1
     },
     {
       "fieldname": "tax_brackets_table",
@@ -212,67 +226,78 @@
     {
       "fieldname": "ter_rates_section",
       "fieldtype": "Section Break",
-      "label": "TER Rates"
+      "label": "TER Rates",
+      "collapsible": 1
     },
     {
       "fieldname": "ter_rates_description",
       "fieldtype": "HTML",
       "label": "TER Rates Description",
-      "options": "<p>TER rates are configured separately in PPh 21 TER Table entries for each TER category (TER A, TER B, TER C)</p>"
+      "options": "<div class='alert alert-info'>TER rates are configured separately in PPh 21 TER Table entries for each TER category (TER A, TER B, TER C)</div>"
     },
     {
       "fieldname": "ter_rate_tables_section",
       "fieldtype": "Section Break",
-      "label": "TER Rate Tables"
+      "label": "TER Rate Tables",
+      "collapsible": 1
     },
     {
       "fieldname": "ter_rate_ter_a_json",
       "fieldtype": "Code",
-      "label": "TER A Rates (JSON)"
+      "label": "TER A Rates (JSON)",
+      "options": "JSON"
     },
     {
       "fieldname": "ter_rate_ter_b_json",
       "fieldtype": "Code",
-      "label": "TER B Rates (JSON)"
+      "label": "TER B Rates (JSON)",
+      "options": "JSON"
     },
     {
       "fieldname": "ter_rate_ter_c_json",
       "fieldtype": "Code",
-      "label": "TER C Rates (JSON)"
+      "label": "TER C Rates (JSON)",
+      "options": "JSON"
     },
     {
       "fieldname": "account_settings_section",
       "fieldtype": "Section Break",
-      "label": "Account Settings"
+      "label": "Account Settings",
+      "collapsible": 1
     },
     {
       "fieldname": "bpjs_account_mapping_json",
       "fieldtype": "Code",
       "label": "BPJS Account Mapping (JSON)",
-      "description": "Mapping akun debit/kredit untuk semua komponen BPJS"
+      "description": "Mapping akun debit/kredit untuk semua komponen BPJS",
+      "options": "JSON"
     },
     {
       "fieldname": "expense_accounts_json",
       "fieldtype": "Code",
       "label": "Expense Accounts (JSON)",
-      "description": "Daftar akun untuk gaji pokok, tunjangan, bonus, dll"
+      "description": "Daftar akun untuk gaji pokok, tunjangan, bonus, dll",
+      "options": "JSON"
     },
     {
       "fieldname": "payable_accounts_json",
       "fieldtype": "Code",
       "label": "Payable Accounts (JSON)",
-      "description": "Daftar akun hutang pajak dan BPJS"
+      "description": "Daftar akun hutang pajak dan BPJS",
+      "options": "JSON"
     },
     {
       "fieldname": "parent_accounts_json",
       "fieldtype": "Code",
       "label": "Parent GL Accounts (JSON)",
-      "description": "Akun induk seperti Direct Expenses dan Duties and Taxes"
+      "description": "Akun induk seperti Direct Expenses dan Duties and Taxes",
+      "options": "JSON"
     },
     {
       "fieldname": "fallback_parent_accounts_section",
       "fieldtype": "Section Break",
-      "label": "Fallback Parent Accounts"
+      "label": "Fallback Parent Accounts",
+      "collapsible": 1
     },
     {
       "fieldname": "parent_account_candidates_expense",
@@ -289,7 +314,8 @@
     {
       "fieldname": "defaults_section",
       "fieldtype": "Section Break",
-      "label": "Payroll Defaults"
+      "label": "Payroll Defaults",
+      "collapsible": 1
     },
     {
       "fieldname": "default_currency",
@@ -304,6 +330,10 @@
       "fieldtype": "Check",
       "label": "Attendance Based on Timesheet",
       "default": 0
+    },
+    {
+      "fieldname": "column_break_defaults",
+      "fieldtype": "Column Break"
     },
     {
       "fieldname": "payroll_frequency",
@@ -322,6 +352,11 @@
       "reqd": 1
     },
     {
+      "fieldname": "working_days_section",
+      "fieldtype": "Section Break",
+      "label": "Working Days Settings"
+    },
+    {
       "fieldname": "max_working_days_per_month",
       "fieldtype": "Int",
       "label": "Max Working Days per Month",
@@ -335,6 +370,10 @@
       "default": 0
     },
     {
+      "fieldname": "column_break_working_days",
+      "fieldtype": "Column Break"
+    },
+    {
       "fieldname": "working_hours_per_day",
       "fieldtype": "Float",
       "label": "Working Hours per Day",
@@ -342,9 +381,17 @@
       "reqd": 1
     },
     {
+      "fieldname": "hari_kerja_default",
+      "fieldtype": "Int",
+      "label": "Default Working Days",
+      "default": 22,
+      "reqd": 1
+    },
+    {
       "fieldname": "struktur_gaji_section",
       "fieldtype": "Section Break",
-      "label": "Struktur Gaji Defaults"
+      "label": "Struktur Gaji Defaults",
+      "collapsible": 1
     },
     {
       "fieldname": "basic_salary_percent",
@@ -353,6 +400,18 @@
       "default": 75,
       "precision": 2,
       "reqd": 1
+    },
+    {
+      "fieldname": "position_allowance_percent",
+      "fieldtype": "Float",
+      "label": "Position Allowance Percentage",
+      "default": 7.5,
+      "precision": 2,
+      "reqd": 1
+    },
+    {
+      "fieldname": "column_break_struktur",
+      "fieldtype": "Column Break"
     },
     {
       "fieldname": "meal_allowance",
@@ -376,24 +435,10 @@
       "reqd": 1
     },
     {
-      "fieldname": "position_allowance_percent",
-      "fieldtype": "Float",
-      "label": "Position Allowance Percentage",
-      "default": 7.5,
-      "precision": 2,
-      "reqd": 1
-    },
-    {
-      "fieldname": "hari_kerja_default",
-      "fieldtype": "Int",
-      "label": "Default Working Days",
-      "default": 22,
-      "reqd": 1
-    },
-    {
       "fieldname": "tipe_karyawan_section",
       "fieldtype": "Section Break",
-      "label": "Employee Types"
+      "label": "Employee Types",
+      "collapsible": 1
     },
     {
       "fieldname": "tipe_karyawan",
@@ -402,5 +447,43 @@
       "options": "Tipe Karyawan Entry",
       "reqd": 1
     }
-  ]
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "submit": 0,
+      "cancel": 0,
+      "amend": 0,
+      "report": 1,
+      "import": 0,
+      "export": 1,
+      "print": 0,
+      "email": 0,
+      "share": 1
+    },
+    {
+      "role": "HR Manager",
+      "read": 1,
+      "write": 1,
+      "create": 0,
+      "delete": 0,
+      "submit": 0,
+      "cancel": 0,
+      "amend": 0,
+      "report": 1,
+      "import": 0,
+      "export": 1,
+      "print": 0,
+      "email": 0,
+      "share": 1
+    }
+  ],
+  "quick_entry": 0,
+  "track_changes": 1,
+  "sort_field": "modified",
+  "sort_order": "DESC"
 }
