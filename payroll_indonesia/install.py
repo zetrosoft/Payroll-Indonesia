@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and Contributors
+# Copyright (c) 2023, PT. Innovasi Terbaik Bangsa and Contributors
 # See license.txt
 
 import frappe
@@ -37,7 +37,6 @@ def after_migrate():
 
 def setup_payroll_components():
     """Set up required payroll components if missing"""
-    # Create required salary components if they don't exist
     components = [
         # Earnings
         {"name": "Gaji Pokok", "type": "Earning", "abbr": "GP", "is_tax_applicable": 1},
@@ -67,12 +66,11 @@ def setup_payroll_components():
             # Add optional fields
             for field in ["is_tax_applicable", "variable_based_on_taxable_salary"]:
                 if field in comp:
-                    doc.set(field, comp[field])
+                    setattr(doc, field, comp[field])
 
             doc.insert()
 
     frappe.db.commit()
-
     logger.info("Payroll Indonesia components setup completed")
 
 
@@ -95,20 +93,19 @@ def migrate_from_json_to_doctype():
             logger.warning("Payroll Indonesia Settings DocType not found, skipping migration")
             return False
 
-        # Check if settings document already exists
-        settings_exists = frappe.db.exists(
-            "Payroll Indonesia Settings", "Payroll Indonesia Settings"
-        )
-
-        # Get config data regardless of whether we'll use it
+        # Get config data
         config = get_default_config()
         if not config:
             logger.warning("Could not load defaults.json, skipping migration")
             return False
 
-        # If settings already exist, check version
-        if settings_exists:
+        # Use safer check for settings existence
+        try:
+            # Try to get the document - will raise DoesNotExistError if not found
             settings = frappe.get_doc("Payroll Indonesia Settings", "Payroll Indonesia Settings")
+            settings_exists = True
+
+            # If settings exists, check version for idempotency
             app_info = config.get("app_info", {})
             config_version = app_info.get("version", "1.0.0")
 
@@ -122,9 +119,12 @@ def migrate_from_json_to_doctype():
             logger.info(
                 f"Updating existing settings from version {settings.app_version} to {config_version}"
             )
-        else:
+
+        except frappe.exceptions.DoesNotExistError:
+            # Settings doesn't exist, we'll create a new one
             logger.info("Creating new Payroll Indonesia Settings")
             settings = frappe.new_doc("Payroll Indonesia Settings")
+            settings_exists = False
 
         # Update settings with values from config
         update_settings_from_config(settings, config)
@@ -134,6 +134,7 @@ def migrate_from_json_to_doctype():
         settings.flags.ignore_permissions = True
         settings.flags.ignore_mandatory = True
 
+        # Save or insert based on existence
         if settings_exists:
             settings.save(ignore_permissions=True)
             logger.info("Updated existing Payroll Indonesia Settings")
