@@ -340,60 +340,84 @@ def migrate_ter_rates(ter_rates):
         bool: True if migration was successful, False otherwise
     """
     try:
-        # Check if PPh 21 TER Table exists
+        # Check if PPh 21 TER Table DocType exists
         if not frappe.db.exists("DocType", "PPh 21 TER Table"):
             logger.warning("PPh 21 TER Table DocType not found, skipping TER rates migration")
             return False
 
-        # Get PPh 21 Settings
-        if not frappe.db.exists("DocType", "PPh 21 Settings"):
-            logger.warning("PPh 21 Settings DocType not found, skipping TER rates migration")
+        # Check if table exists in database by safely trying to count records
+        try:
+            existing_entries = frappe.db.count("PPh 21 TER Table")
+        except Exception as e:
+            logger.warning(f"PPh 21 TER Table not yet created in database: {str(e)}")
             return False
 
-        # Check if PPh 21 Settings exists
-        pph21_settings_list = frappe.db.get_all("PPh 21 Settings")
-        if not pph21_settings_list:
-            logger.warning("PPh 21 Settings not found, skipping TER rates migration")
-            return False
-
-        # Count existing entries
-        existing_entries = frappe.db.count("PPh 21 TER Table")
+        # Skip if we already have enough entries
         if existing_entries > 10:  # Arbitrary threshold to check if migration is needed
             logger.info(
                 f"Found {existing_entries} existing TER entries, skipping TER rates migration"
             )
             return True
 
+        # Check if PPh 21 Settings exists, but do it safely
+        pph21_settings_exists = False
+        try:
+            # Check if the DocType exists first
+            if frappe.db.exists("DocType", "PPh 21 Settings"):
+                # Then check if the table exists in database by attempting a count
+                # This will raise an exception if the table doesn't exist
+                frappe.db.sql("SELECT COUNT(*) FROM `tabPPh 21 Settings`")
+                pph21_settings_exists = True
+            else:
+                logger.warning("PPh 21 Settings DocType not found, skipping TER rates migration")
+                return False
+        except Exception as e:
+            logger.warning(f"PPh 21 Settings table not yet created in database: {str(e)}")
+            return False
+
+        if not pph21_settings_exists:
+            logger.warning("PPh 21 Settings not found, skipping TER rates migration")
+            return False
+
         # Clear existing TER entries to prevent duplicates
-        frappe.db.sql("DELETE FROM `tabPPh 21 TER Table`")
+        # Do this safely in case the table doesn't exist yet
+        try:
+            frappe.db.sql("DELETE FROM `tabPPh 21 TER Table`")
+        except Exception as e:
+            logger.warning(f"Could not clear existing TER entries: {str(e)}")
+            # Continue anyway as the table might be empty or not exist yet
 
         # Process each TER category
         count = 0
         for category, rates in ter_rates.items():
             for rate_data in rates:
-                # Create TER entry
-                ter_entry = frappe.new_doc("PPh 21 TER Table")
-                ter_entry.status_pajak = category
-                ter_entry.income_from = flt(rate_data.get("income_from", 0))
-                ter_entry.income_to = flt(rate_data.get("income_to", 0))
-                ter_entry.rate = flt(rate_data.get("rate", 0))
-                ter_entry.is_highest_bracket = rate_data.get("is_highest_bracket", 0)
+                try:
+                    # Create TER entry
+                    ter_entry = frappe.new_doc("PPh 21 TER Table")
+                    ter_entry.status_pajak = category
+                    ter_entry.income_from = flt(rate_data.get("income_from", 0))
+                    ter_entry.income_to = flt(rate_data.get("income_to", 0))
+                    ter_entry.rate = flt(rate_data.get("rate", 0))
+                    ter_entry.is_highest_bracket = rate_data.get("is_highest_bracket", 0)
 
-                # Create description
-                if rate_data.get("is_highest_bracket", 0) or rate_data.get("income_to", 0) == 0:
-                    description = f"{category} > {flt(rate_data.get('income_from', 0)):,.0f}"
-                else:
-                    description = f"{category} {flt(rate_data.get('income_from', 0)):,.0f} - {flt(rate_data.get('income_to', 0)):,.0f}"
+                    # Create description
+                    if rate_data.get("is_highest_bracket", 0) or rate_data.get("income_to", 0) == 0:
+                        description = f"{category} > {flt(rate_data.get('income_from', 0)):,.0f}"
+                    else:
+                        description = f"{category} {flt(rate_data.get('income_from', 0)):,.0f} - {flt(rate_data.get('income_to', 0)):,.0f}"
 
-                ter_entry.description = description
+                    ter_entry.description = description
 
-                # Insert with permission bypass
-                ter_entry.flags.ignore_permissions = True
-                ter_entry.flags.ignore_validate = True
-                ter_entry.flags.ignore_mandatory = True
-                ter_entry.insert(ignore_permissions=True)
+                    # Insert with permission bypass
+                    ter_entry.flags.ignore_permissions = True
+                    ter_entry.flags.ignore_validate = True
+                    ter_entry.flags.ignore_mandatory = True
+                    ter_entry.insert(ignore_permissions=True)
 
-                count += 1
+                    count += 1
+                except Exception as e:
+                    logger.warning(f"Error creating TER entry for {category}: {str(e)}")
+                    # Continue with next entry
 
         frappe.db.commit()
         logger.info(f"Successfully migrated {count} TER rates from defaults.json")
