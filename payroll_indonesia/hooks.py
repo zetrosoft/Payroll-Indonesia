@@ -19,7 +19,7 @@ before_install = "payroll_indonesia.install.before_install"
 after_install = "payroll_indonesia.install.after_install"
 after_migrate = [
     "payroll_indonesia.install.after_migrate",
-    "payroll_indonesia.setup.setup_module.after_sync",
+    "payroll_indonesia.payroll_indonesia.setup.setup_module.after_sync",
 ]
 
 # JS files for doctypes
@@ -148,8 +148,8 @@ fixtures = [
 scheduler_events = {
     "daily": ["payroll_indonesia.utilities.cache_utils.clear_all_caches"],
     "cron": {"0 */4 * * *": ["payroll_indonesia.utilities.cache_utils.clear_all_caches"]},
-    "monthly": ["payroll_indonesia.tax.monthly_tasks.update_tax_summaries"],
-    "yearly": ["payroll_indonesia.tax.yearly_tasks.prepare_tax_report"],
+    "monthly": ["payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries"],
+    "yearly": ["payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"],
 }
 
 # Jinja template methods - only expose read-only and safe functions
