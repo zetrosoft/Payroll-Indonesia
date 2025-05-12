@@ -17,7 +17,7 @@ required_apps = ["erpnext", "hrms"]
 # Setup functions
 before_install = "payroll_indonesia.install.before_install"
 after_install = "payroll_indonesia.install.after_install"
-before_migrate = "payroll_indonesia.install.create_required_doctypes"
+# before_migrate = "payroll_indonesia.install.create_required_doctypes"
 after_migrate = [
     "payroll_indonesia.install.after_migrate",
     "payroll_indonesia.payroll_indonesia.setup.setup_module.after_sync",
