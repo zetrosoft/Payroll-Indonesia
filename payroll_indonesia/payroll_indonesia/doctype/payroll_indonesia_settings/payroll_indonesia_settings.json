@@ -2,7 +2,7 @@
   "doctype": "DocType",
   "module": "Payroll Indonesia",
   "name": "Payroll Indonesia Settings",
-  "isSingle": 1,
+  "issingle": 1,
   "editable_grid": 1,
   "custom": 0,
   "modified": "2023-05-11 09:24:57",
