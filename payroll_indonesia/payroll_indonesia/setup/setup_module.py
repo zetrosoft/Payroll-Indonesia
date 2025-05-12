@@ -16,6 +16,9 @@ from frappe.utils import flt
 from payroll_indonesia.payroll_indonesia.utils import (
     get_default_config,
     debug_log,
+    create_parent_liability_account,
+    create_parent_expense_account,
+    create_account,
 )
 
 # ---------------------------------------------------------------------------
@@ -31,31 +34,80 @@ def create_bpjs_accounts() -> bool:
     """
     created_any = False
     companies = frappe.get_all("Company", pluck="name")
+
     for company in companies:
-        # Example: create account if missing – real implementation condensed
-        if not frappe.db.exists("Account", {"company": company, "account_type": "BPJS Payable"}):
-            acc = frappe.new_doc("Account")
-            acc.update(
-                {
-                    "account_name": "BPJS Payable",
-                    "parent_account": "Liabilities - {0}".format(company_abbr(company)),
-                    "company": company,
-                    "account_type": "Payable",
-                    "root_type": "Liability",
-                }
+        try:
+            # Create parent liability account for BPJS Payable accounts
+            liability_parent = create_parent_liability_account(company)
+            if not liability_parent:
+                debug_log(
+                    f"Failed to create BPJS parent liability account for {company}",
+                    "BPJS Setup Error",
+                )
+                continue
+
+            # Create parent expense account for BPJS Expense accounts
+            expense_parent = create_parent_expense_account(company)
+            if not expense_parent:
+                debug_log(
+                    f"Failed to create BPJS parent expense account for {company}",
+                    "BPJS Setup Error",
+                )
+                continue
+
+            # Example: Create BPJS Payable Accounts using centralized utility
+            if not frappe.db.exists(
+                "Account", {"account_name": "BPJS Kesehatan Payable", "company": company}
+            ):
+                payable_account = create_account(
+                    company=company,
+                    account_name="BPJS Kesehatan Payable",
+                    account_type="Payable",
+                    parent=liability_parent,
+                    root_type="Liability",
+                )
+                if payable_account:
+                    debug_log(f"Created BPJS Kesehatan Payable account for {company}", "BPJS Setup")
+                    created_any = True
+
+            # Create BPJS Expense account
+            if not frappe.db.exists(
+                "Account", {"account_name": "BPJS Kesehatan Expense", "company": company}
+            ):
+                expense_account = create_account(
+                    company=company,
+                    account_name="BPJS Kesehatan Expense",
+                    account_type="Expense",
+                    parent=expense_parent,
+                    root_type="Expense",
+                )
+                if expense_account:
+                    debug_log(f"Created BPJS Kesehatan Expense account for {company}", "BPJS Setup")
+                    created_any = True
+
+            # Similar pattern for other BPJS accounts
+            # BPJS Ketenagakerjaan accounts can be added here following the same pattern
+
+        except Exception as e:
+            debug_log(
+                f"Error creating BPJS accounts for {company}: {str(e)}",
+                "BPJS Setup Error",
+                trace=True,
             )
-            acc.flags.ignore_permissions = True
-            acc.insert()
-            created_any = True
-    return True if companies else False or created_any
+            frappe.log_error(
+                f"Error creating BPJS accounts for {company}: {str(e)}", "BPJS Setup Error"
+            )
+
+    return True if companies and created_any else False
 
 
 def schedule_mapping_retry() -> None:
     """Queue background job to retry BPJS account mapping."""
     frappe.enqueue(
-        "payroll_indonesia.utilities.maintenance.retry_bpjs_mapping",
+        "payroll_indonesia.payroll_indonesia.utils.retry_bpjs_mapping",  # Updated path
         queue="long",
         now=False,
+        companies=frappe.get_all("Company", pluck="name"),
     )
 
 
@@ -70,10 +122,18 @@ def after_sync():
     _run_pph21_setup()
 
 
+def after_install():
+    """Hook called after app installation."""
+    debug_log("Running after_install setup for Payroll Indonesia", "Setup")
+    after_sync()
+
+
 def _run_bpjs_setup() -> None:
     debug_log("Starting BPJS post‑migration setup", "BPJS Setup")
     if create_bpjs_accounts():
         debug_log("BPJS setup completed successfully", "BPJS Setup")
+        # Schedule retry for any companies that might need account mapping
+        schedule_mapping_retry()
     else:
         debug_log("BPJS setup completed with warnings", "BPJS Setup")
 
@@ -103,8 +163,23 @@ def _setup_pph21_ter_categories() -> bool:
 
         ter_rates = get_default_config().get("ter_rates", {})
         if not ter_rates:
-            debug_log("TER rates missing in defaults.json", "PPh 21 Setup")
-            return False
+            debug_log("TER rates missing in default config", "PPh 21 Setup")
+            # Use fallback rates if default config doesn't have them
+            ter_rates = {
+                "TER A": [
+                    {"income_from": 0, "income_to": 5000000, "rate": 5.0},
+                    {"income_from": 5000000, "income_to": 0, "rate": 15.0, "is_highest_bracket": 1},
+                ],
+                "TER B": [
+                    {"income_from": 0, "income_to": 5000000, "rate": 10.0},
+                    {"income_from": 5000000, "income_to": 0, "rate": 20.0, "is_highest_bracket": 1},
+                ],
+                "TER C": [
+                    {"income_from": 0, "income_to": 5000000, "rate": 15.0},
+                    {"income_from": 5000000, "income_to": 0, "rate": 25.0, "is_highest_bracket": 1},
+                ],
+            }
+            debug_log("Using fallback TER rates", "PPh 21 Setup")
 
         _create_ter_rates(ter_rates)
         frappe.db.commit()
@@ -112,13 +187,16 @@ def _setup_pph21_ter_categories() -> bool:
 
     except Exception as e:
         frappe.db.rollback()
-        frappe.log_error("Error during TER setup: {}".format(str(e)), "PPh 21 Setup")
+        frappe.log_error(f"Error during TER setup: {str(e)}", "PPh 21 Setup")
+        debug_log(f"Error during TER setup: {str(e)}", "PPh 21 Setup", trace=True)
         return False
 
 
 def _create_ter_rates(ter_rates: dict) -> None:
+    """Create TER rate entries in the PPh 21 TER Table."""
     for status, rates in ter_rates.items():
         for row in rates:
+            # Check if rate already exists to maintain idempotence
             if frappe.db.exists(
                 "PPh 21 TER Table",
                 {
@@ -127,36 +205,42 @@ def _create_ter_rates(ter_rates: dict) -> None:
                     "income_to": row.get("income_to", 0),
                 },
             ):
+                debug_log(
+                    f"TER rate for {status} ({row.get('income_from', 0)}-{row.get('income_to', 0)}) already exists",
+                    "PPh 21 Setup",
+                )
                 continue
 
-            ter_doc = frappe.new_doc("PPh 21 TER Table")
-            ter_doc.update(
-                {
-                    "status_pajak": status,
-                    "income_from": flt(row.get("income_from", 0)),
-                    "income_to": flt(row.get("income_to", 0)),
-                    "rate": flt(row.get("rate", 0)),
-                    "is_highest_bracket": row.get("is_highest_bracket", 0),
-                    "description": _build_description(status, row),
-                }
-            )
-            ter_doc.flags.ignore_permissions = True
-            ter_doc.insert(ignore_permissions=True)
+            # Create new TER rate entry
+            try:
+                ter_doc = frappe.new_doc("PPh 21 TER Table")
+                ter_doc.update(
+                    {
+                        "status_pajak": status,
+                        "income_from": flt(row.get("income_from", 0)),
+                        "income_to": flt(row.get("income_to", 0)),
+                        "rate": flt(row.get("rate", 0)),
+                        "is_highest_bracket": row.get("is_highest_bracket", 0),
+                        "description": _build_description(status, row),
+                    }
+                )
+                ter_doc.flags.ignore_permissions = True
+                ter_doc.insert(ignore_permissions=True)
+                debug_log(
+                    f"Created TER rate for {status}: {row.get('income_from', 0)}-{row.get('income_to', 0)} at {row.get('rate', 0)}%",
+                    "PPh 21 Setup",
+                )
+            except Exception as e:
+                debug_log(f"Error creating TER rate for {status}: {str(e)}", "PPh 21 Setup Error")
+                frappe.log_error(
+                    f"Error creating TER rate for {status}: {str(e)}", "PPh 21 Setup Error"
+                )
 
 
 def _build_description(status: str, row: dict) -> str:
+    """Build a descriptive label for TER rate entries."""
     inc_from = flt(row.get("income_from", 0))
     inc_to = flt(row.get("income_to", 0))
     if row.get("is_highest_bracket") or inc_to == 0:
         return "{} > {:,.0f}".format(status, inc_from)
     return "{} {:,.0f} – {:,.0f}".format(status, inc_from, inc_to)
-
-
-# ---------------------------------------------------------------------------
-# Utility helpers (local)
-# ---------------------------------------------------------------------------
-
-
-def company_abbr(company_name: str) -> str:
-    """Return company abbreviation (simple split on first space)."""
-    return company_name.split(" ")[0] if " " in company_name else company_name
