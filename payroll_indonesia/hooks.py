@@ -55,27 +55,29 @@ doc_events = {
         "on_cancel": "payroll_indonesia.override.salary_slip_functions.on_cancel_salary_slip",
         "after_insert": "payroll_indonesia.override.salary_slip_functions.after_insert_salary_slip",
     },
-    "PPh 21 Settings": {"on_update": "payroll_indonesia.tax.pph21_settings.on_update"},
+    "PPh 21 Settings": {
+        "on_update": "payroll_indonesia.payroll_indonesia.tax.pph21_settings.on_update"
+    },
     "BPJS Settings": {
-        "validate": "payroll_indonesia.doctype.bpjs_settings.bpjs_settings.validate",
-        "on_update": "payroll_indonesia.doctype.bpjs_settings.bpjs_settings.on_update",
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.validate",
+        "on_update": "payroll_indonesia.payroll_indonesia.doctype.bpjs_settings.bpjs_settings.on_update",
     },
     "BPJS Account Mapping": {
-        "validate": "payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.validate",
-        "on_update": "payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.on_update",
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.validate",
+        "on_update": "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.on_update",
     },
     "BPJS Payment Component": {
-        "validate": "payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.validate",
-        "on_submit": "payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.on_submit",
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.validate",
+        "on_submit": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_component.bpjs_payment_component.on_submit",
     },
     "BPJS Payment Summary": {
-        "validate": "payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.validate",
-        "on_submit": "payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.on_submit",
-        "on_cancel": "payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.on_cancel",
+        "validate": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.validate",
+        "on_submit": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.on_submit",
+        "on_cancel": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_summary.on_cancel",
     },
     "Payment Entry": {
-        "on_submit": "payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks.payment_entry_on_submit",
-        "on_cancel": "payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks.payment_entry_on_cancel",
+        "on_submit": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks.payment_entry_on_submit",
+        "on_cancel": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks.payment_entry_on_cancel",
     },
     "Account": {"on_update": "payroll_indonesia.account_hooks.account_on_update"},
 }
@@ -158,7 +160,7 @@ jinja = {
         # BPJS Settings & Functions
         "payroll_indonesia.payroll_indonesia.utils.get_bpjs_settings",
         "payroll_indonesia.payroll_indonesia.utils.calculate_bpjs_contributions",
-        "payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
         "payroll_indonesia.bpjs.bpjs_calculation.hitung_bpjs",
         # PPh 21 Settings & Functions
         "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings",
@@ -171,7 +173,7 @@ jinja = {
         "payroll_indonesia.payroll_indonesia.utils.get_spt_month",
         # Utility Functions
         "payroll_indonesia.override.salary_slip.base.get_formatted_currency",
-        "payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.get_formatted_currency",
+        "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.get_formatted_currency",
     ]
 }
 
@@ -180,13 +182,13 @@ after_app_init = "payroll_indonesia.override.salary_slip.setup_hooks"
 
 # Whitelist for client-side API calls
 whitelist_methods = [
-    "payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.create_payment_entry",
-    "payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_employee_bpjs_details",
-    "payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_summary_for_period",
-    "payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_bpjs_suppliers",
-    "payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.get_ytd_data_until_month",
-    "payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
-    "payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.create_default_mapping",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.create_payment_entry",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_employee_bpjs_details",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_summary_for_period",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_api.get_bpjs_suppliers",
+    "payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.get_ytd_data_until_month",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
+    "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.create_default_mapping",
     "payroll_indonesia.bpjs.bpjs_calculation.update_all_bpjs_components",
     "payroll_indonesia.bpjs.bpjs_calculation.hitung_bpjs",
     "payroll_indonesia.api.diagnose_salary_slip",
