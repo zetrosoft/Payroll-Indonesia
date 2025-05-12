@@ -1526,7 +1526,7 @@ def create_account(
         # Determine root_type based on account_type if not provided
         if not root_type:
             root_type = "Liability"  # Default
-            if account_type in ["Direct Expense", "Indirect Expense", "Expense Account", "Expense"]:
+            if account_type in ["Direct Expense", "Indirect Expense", "Expense Account"]:
                 root_type = "Expense"
             elif account_type == "Asset":
                 root_type = "Asset"
