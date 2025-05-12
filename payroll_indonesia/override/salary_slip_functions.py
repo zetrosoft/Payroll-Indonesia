@@ -12,7 +12,7 @@ from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_
 # Import standardized error logging and cache utilities
 from payroll_indonesia.utilities.cache_utils import clear_all_caches, schedule_cache_clearing
 
-# from payroll_indonesia.utils import log_error
+# from payroll_indonesia.payroll_indonesia.utils import log_error
 
 __all__ = [
     "validate_salary_slip",

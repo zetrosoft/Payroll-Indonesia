@@ -156,19 +156,19 @@ scheduler_events = {
 jinja = {
     "methods": [
         # BPJS Settings & Functions
-        "payroll_indonesia.utils.get_bpjs_settings",
-        "payroll_indonesia.utils.calculate_bpjs_contributions",
+        "payroll_indonesia.payroll_indonesia.utils.get_bpjs_settings",
+        "payroll_indonesia.payroll_indonesia.utils.calculate_bpjs_contributions",
         "payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping.get_mapping_for_company",
         "payroll_indonesia.bpjs.bpjs_calculation.hitung_bpjs",
         # PPh 21 Settings & Functions
-        "payroll_indonesia.utils.get_ptkp_settings",
-        "payroll_indonesia.utils.get_ter_rate",
-        "payroll_indonesia.utils.should_use_ter",
-        "payroll_indonesia.utils.get_pph21_settings",
-        "payroll_indonesia.utils.get_pph21_brackets",
+        "payroll_indonesia.payroll_indonesia.utils.get_ptkp_settings",
+        "payroll_indonesia.payroll_indonesia.utils.get_ter_rate",
+        "payroll_indonesia.payroll_indonesia.utils.should_use_ter",
+        "payroll_indonesia.payroll_indonesia.utils.get_pph21_settings",
+        "payroll_indonesia.payroll_indonesia.utils.get_pph21_brackets",
         # Tax Reporting Functions
-        "payroll_indonesia.utils.get_ytd_tax_info",
-        "payroll_indonesia.utils.get_spt_month",
+        "payroll_indonesia.payroll_indonesia.utils.get_ytd_tax_info",
+        "payroll_indonesia.payroll_indonesia.utils.get_spt_month",
         # Utility Functions
         "payroll_indonesia.override.salary_slip.base.get_formatted_currency",
         "payroll_indonesia.doctype.bpjs_payment_summary.bpjs_payment_utils.get_formatted_currency",

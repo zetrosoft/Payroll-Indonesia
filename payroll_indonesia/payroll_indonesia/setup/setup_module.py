@@ -13,7 +13,7 @@ from frappe.utils import flt
 # ---------------------------------------------------------------------------
 # Central utilities (no duplicate package levels)
 # ---------------------------------------------------------------------------
-from payroll_indonesia.utils import (
+from payroll_indonesia.payroll_indonesia.utils import (
     get_default_config,
     debug_log,
 )
