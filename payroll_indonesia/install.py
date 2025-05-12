@@ -5,7 +5,7 @@
 import frappe
 import json
 import os
-from frappe.utils import get_datetime_str, flt
+from frappe.utils import flt
 import logging
 
 logger = logging.getLogger(__name__)
@@ -200,7 +200,15 @@ def update_settings_from_config(settings, config):
     # App info
     app_info = config.get("app_info", {})
     settings.app_version = app_info.get("version", "1.0.0")
-    settings.app_last_updated = app_info.get("last_updated", get_datetime_str())
+
+    # Fix untuk error get_datetime_str()
+    last_updated = app_info.get("last_updated")
+    if last_updated:
+        settings.app_last_updated = last_updated
+    else:
+        # Gunakan current datetime jika tidak ada last_updated
+        settings.app_last_updated = frappe.utils.now()
+
     settings.app_updated_by = app_info.get("updated_by", "dannyaudian")
 
     # BPJS settings
