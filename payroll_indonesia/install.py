@@ -374,6 +374,13 @@ def after_migrate():
     migrate_from_json_to_doctype()
 
 
+# Add this function to match what's referenced in hooks.py
+def create_required_doctypes():
+    """Create required DocTypes before migration - called from hooks.py"""
+    logger.info("Creating required DocTypes for Payroll Indonesia")
+    return ensure_doctypes_exist()
+
+
 def ensure_doctypes_exist():
     """
     Create necessary DocTypes if they don't exist already
