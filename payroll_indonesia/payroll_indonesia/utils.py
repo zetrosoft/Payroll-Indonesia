@@ -88,6 +88,7 @@ def get_settings():
         # If settings can't be loaded, return an empty doc as fallback
         return frappe.get_doc({"doctype": "Payroll Indonesia Settings"})
 
+
 def get_default_config(section=None) -> dict:
     """
     Returns configuration values for payroll Indonesia from settings.
