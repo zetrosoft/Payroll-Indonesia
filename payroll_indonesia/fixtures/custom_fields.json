@@ -287,12 +287,12 @@
   {
     "doctype": "Custom Field",
     "dt": "Salary Slip",
-    "fieldname": "annual_taxable_amount",
+    "fieldname": "annual_taxable_income",
     "fieldtype": "Currency",
     "insert_after": "monthly_gross_for_ter",
     "label": "Annual Taxable Amount",
     "module": "Payroll Indonesia",
-    "name": "Salary Slip-annual_taxable_amount",
+    "name": "Salary Slip-annual_taxable_income",
     "read_only": 1,
     "default": "0"
   },
@@ -301,7 +301,7 @@
     "dt": "Salary Slip",
     "fieldname": "tax_col_break",
     "fieldtype": "Column Break",
-    "insert_after": "annual_taxable_amount",
+    "insert_after": "annual_taxable_income",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-tax_col_break"
   },

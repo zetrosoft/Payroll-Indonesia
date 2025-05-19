@@ -114,7 +114,7 @@ class TestTERCalculator(unittest.TestCase):
         calculate_monthly_pph_with_ter(self.test_salary_slip, self.test_employee)
 
         expected_annual = self.test_salary_slip.gross_pay * 12
-        self.assertEqual(flt(self.test_salary_slip.annual_taxable_amount), flt(expected_annual))
+        self.assertEqual(flt(self.test_salary_slip.annual_taxable_income), flt(expected_annual))
 
     def test_invalid_tax_status(self):
         """Test handling of invalid tax status"""

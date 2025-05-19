@@ -222,7 +222,7 @@ class TestTaxCalculator(unittest.TestCase):
         monthly_taxable = salary_slip.monthly_taxable_income
         expected_annual = monthly_taxable * 12
 
-        self.assertEqual(flt(salary_slip.annual_taxable_amount, 2), flt(expected_annual, 2))
+        self.assertEqual(flt(salary_slip.annual_taxable_income, 2), flt(expected_annual, 2))
 
     def test_high_income_progressive(self):
         """Test Progressive calculation for high income"""
@@ -246,7 +246,7 @@ class TestTaxCalculator(unittest.TestCase):
 
         # Verify no tax for zero income
         self.assertEqual(salary_slip.monthly_tax, 0)
-        self.assertEqual(salary_slip.annual_taxable_amount, 0)
+        self.assertEqual(salary_slip.annual_taxable_income, 0)
 
 
 def run_tax_calculator_tests():

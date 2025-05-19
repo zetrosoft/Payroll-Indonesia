@@ -36,7 +36,7 @@ from payroll_indonesia.payroll_indonesia.tax.pph_ter import (
 # Default values for required fields
 TER_REQUIRED_FIELDS = {
     "monthly_gross_for_ter": 0,
-    "annual_taxable_amount": 0,
+    "annual_taxable_income": 0,
     "ter_rate": 0,
     "ter_category": "",
     "is_using_ter": 0,
@@ -123,7 +123,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
         original_values = {
             "gross_pay": flt(getattr(doc, "gross_pay", 0)),
             "monthly_gross_for_ter": flt(getattr(doc, "monthly_gross_for_ter", 0)),
-            "annual_taxable_amount": flt(getattr(doc, "annual_taxable_amount", 0)),
+            "annual_taxable_income": flt(getattr(doc, "annual_taxable_income", 0)),
             "ter_rate": flt(getattr(doc, "ter_rate", 0)),
             "ter_category": getattr(doc, "ter_category", "") or "",
         }
@@ -182,7 +182,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
                 doc.payroll_note += f"\n[TER] {reason}. Using monthly value: {monthly_gross_pay}"
 
         # Set and save monthly and annual values safely
-        annual_taxable_amount = flt(monthly_gross_pay * MONTHS_PER_YEAR)
+        annual_taxable_income = flt(monthly_gross_pay * MONTHS_PER_YEAR)
 
         # Save monthly_gross_for_ter with safety checks
         doc.monthly_gross_for_ter = monthly_gross_pay
@@ -191,12 +191,12 @@ def calculate_monthly_pph_with_ter(doc, employee):
         except Exception as e:
             log_ter_error("Field Update", f"Could not save monthly_gross_for_ter: {str(e)}", doc)
 
-        # Save annual_taxable_amount with safety checks
-        doc.annual_taxable_amount = annual_taxable_amount
+        # Save annual_taxable_income with safety checks
+        doc.annual_taxable_income = annual_taxable_income
         try:
-            doc.db_set("annual_taxable_amount", annual_taxable_amount, update_modified=False)
+            doc.db_set("annual_taxable_income", annual_taxable_income, update_modified=False)
         except Exception as e:
-            log_ter_error("Field Update", f"Could not save annual_taxable_amount: {str(e)}", doc)
+            log_ter_error("Field Update", f"Could not save annual_taxable_income: {str(e)}", doc)
 
         # Determine TER category from employee status with error handling
         ter_category = ""
@@ -285,7 +285,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
             doc=doc,
             original_values=original_values,
             monthly_gross_pay=monthly_gross_pay,
-            annual_taxable_amount=annual_taxable_amount,
+            annual_taxable_income=annual_taxable_income,
             ter_rate=ter_rate,
             ter_category=ter_category,
             monthly_tax=monthly_tax,
@@ -305,7 +305,7 @@ def verify_calculation_integrity(
     doc,
     original_values,
     monthly_gross_pay,
-    annual_taxable_amount,
+    annual_taxable_income,
     ter_rate,
     ter_category,
     monthly_tax,
@@ -317,7 +317,7 @@ def verify_calculation_integrity(
         doc: Salary slip document
         original_values: Dict of original values
         monthly_gross_pay: Calculated monthly gross pay
-        annual_taxable_amount: Calculated annual taxable amount
+        annual_taxable_income: Calculated annual taxable amount
         ter_rate: Calculated TER rate (decimal)
         ter_category: Determined TER category
         monthly_tax: Calculated monthly tax amount
@@ -360,17 +360,17 @@ def verify_calculation_integrity(
                     # Continue if db_set fails
                     pass
 
-        # Verify annual_taxable_amount
-        if hasattr(doc, "annual_taxable_amount"):
+        # Verify annual_taxable_income
+        if hasattr(doc, "annual_taxable_income"):
             expected_annual = flt(monthly_gross_pay * MONTHS_PER_YEAR)
-            if abs(flt(doc.annual_taxable_amount) - expected_annual) > 0.01:
+            if abs(flt(doc.annual_taxable_income) - expected_annual) > 0.01:
                 errors.append(
-                    f"annual_taxable_amount mismatch: expected {expected_annual}, "
-                    f"got {doc.annual_taxable_amount}"
+                    f"annual_taxable_income mismatch: expected {expected_annual}, "
+                    f"got {doc.annual_taxable_income}"
                 )
-                doc.annual_taxable_amount = expected_annual
+                doc.annual_taxable_income = expected_annual
                 try:
-                    doc.db_set("annual_taxable_amount", expected_annual, update_modified=False)
+                    doc.db_set("annual_taxable_income", expected_annual, update_modified=False)
                 except Exception:
                     # Continue if db_set fails
                     pass

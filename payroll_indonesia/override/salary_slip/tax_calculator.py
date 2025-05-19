@@ -185,7 +185,7 @@ def _ensure_required_fields(doc):
     # Fields needed for TER calculation
     required_fields = {
         "monthly_gross_for_ter": 0,
-        "annual_taxable_amount": 0,
+        "annual_taxable_income": 0,
         "ter_rate": 0,
         "ter_category": "",
         "is_using_ter": 0,
