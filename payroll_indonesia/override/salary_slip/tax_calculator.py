@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-11 15:01:13 by dannyaudianlanjutkan
+# Last modified: 2025-05-19 08:05:38 by dannyaudian
 
 """
 Implementation of tax calculation as per Indonesian regulations.
@@ -56,43 +56,52 @@ from payroll_indonesia.payroll_indonesia.tax.ter_logic import (
 # from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_category
 
 
-def safe_log_error(title, message=None, **kwargs):
+def log_tax_error(error_type, message, doc=None, employee=None):
     """
-    Safely log an error with title truncated to max 140 characters
+    Improved error logging function specifically for tax errors.
+    Prevents nesting of error messages and creates more concise logs.
 
     Args:
-        title (str): Error title (will be truncated to 140 chars)
-        message (str, optional): Error message. Defaults to None.
-        **kwargs: Additional arguments to pass to frappe.log_error
-                  (valid: reference_doctype, reference_name, traceback)
+        error_type (str): Short type of error (e.g. "TER Calculation", "Progressive Tax")
+        message (str): Error message, will be processed to avoid nesting
+        doc (object, optional): Salary slip document or other relevant document
+        employee (object, optional): Employee document if available
+
+    Returns:
+        str: The error log ID if created
     """
-    # Ensure title exists and is a string
-    if not title:
-        title = "Unknown Error"
-
-    # Truncate title to 140 characters if needed
-    short_title = title[:137] + "..." if len(title) > 140 else title
-
-    # Use message if provided, otherwise use the title as the message
-    if message is None:
-        message = title
-
-    # Filter kwargs to only include valid parameters
-    valid_kwargs = {}
-    for key in ["reference_doctype", "reference_name", "traceback"]:
-        if key in kwargs:
-            valid_kwargs[key] = kwargs[key]
-
     try:
-        # Call frappe.log_error with the truncated title and valid kwargs
-        return frappe.log_error(message=message, title=short_title, **valid_kwargs)
+        # Extract key information for the error title
+        doc_name = getattr(doc, 'name', 'unknown') if doc else 'unknown'
+        emp_name = getattr(employee, 'name', 'unknown') if employee else 'unknown'
+        
+        # Create a short descriptive title with key information
+        title = f"{error_type}: {emp_name}"
+        
+        # Sanitize message to avoid nesting by removing existing error log IDs
+        sanitized_message = message
+        if "Error Log " in sanitized_message:
+            # Remove nested error log references
+            import re
+            sanitized_message = re.sub(r"Error Log [a-z0-9]+:", "", sanitized_message)
+            sanitized_message = re.sub(r"\([^)]*Error Log [^)]*\)", "", sanitized_message)
+        
+        # Keep track of basic context
+        context = f"Document: {doc_name}, Employee: {emp_name}"
+        
+        # Create a clean message that includes context but avoids nesting
+        clean_message = f"{context}\n\nError details: {sanitized_message}"
+        
+        # Create log with clean title and message
+        return frappe.log_error(message=clean_message, title=title)
     except Exception:
-        # If any error occurs, try with minimal info
+        # Fallback to simplest possible logging if the above fails
         try:
-            return frappe.log_error(message="Error occurred (details too long)", title="Tax Error")
+            # Simple non-nested message
+            return frappe.log_error(message=str(message), title="Tax Calculation Error")
         except Exception:
             # If all else fails, silently fail
-            pass
+            return None
 
 
 def calculate_tax_components(doc, employee):
@@ -104,6 +113,9 @@ def calculate_tax_components(doc, employee):
         employee: Employee document
     """
     try:
+        # Ensure required fields exist
+        _ensure_required_fields(doc)
+        
         # Initialize total_bpjs to 0 if None to prevent NoneType subtraction error
         if doc.total_bpjs is None:
             doc.total_bpjs = 0
@@ -156,12 +168,44 @@ def calculate_tax_components(doc, employee):
         return calculate_monthly_pph_progressive(doc, employee)
 
     except Exception as e:
-        # This is a critical error in the main tax calculation function
-        emp_name = employee.name if hasattr(employee, "name") else "unknown"
-        message = f"Tax Calculation Error for Employee {emp_name}: {str(e)}"
-        safe_log_error("Tax Calculation Error", message)
-        # Use throw for validation failures
-        frappe.throw(_("Error calculating tax components: {0}").format(str(e)))
+        # Use new error logging function to avoid nesting
+        log_tax_error("Tax Calculation", str(e), doc, employee)
+        # Use throw for validation failures with simplified message
+        frappe.throw(_("Error calculating tax components. Please check error logs."))
+
+
+def _ensure_required_fields(doc):
+    """
+    Ensure all required fields for tax calculations exist in the document
+    If they don't exist, initialize them with default values.
+    
+    Args:
+        doc: Salary slip document
+    """
+    # Fields needed for TER calculation
+    required_fields = {
+        "monthly_gross_for_ter": 0,
+        "annual_taxable_amount": 0,
+        "ter_rate": 0,
+        "ter_category": "",
+        "is_using_ter": 0,
+        "biaya_jabatan": 0,
+        "netto": 0,
+        "total_bpjs": 0,
+        "koreksi_pph21": 0,
+        "is_final_gabung_suami": 0
+    }
+    
+    # Set defaults for missing fields
+    for field, default_value in required_fields.items():
+        if not hasattr(doc, field) or getattr(doc, field) is None:
+            setattr(doc, field, default_value)
+            # Try to persist to database if possible
+            try:
+                doc.db_set(field, default_value, update_modified=False)
+            except Exception:
+                # If db_set fails, continue with in-memory value
+                pass
 
 
 def calculate_monthly_pph_progressive(doc, employee):
@@ -233,11 +277,9 @@ def calculate_monthly_pph_progressive(doc, employee):
         )
 
     except Exception as e:
-        # This is a critical error in a tax calculation function
-        emp_name = employee.name if hasattr(employee, "name") else "unknown"
-        message = f"Progressive Tax Calculation Error for Employee {emp_name}: {str(e)}"
-        safe_log_error("Progressive Tax Calculation Error", message)
-        frappe.throw(_("Error calculating PPh 21 with progressive method: {0}").format(str(e)))
+        # Use improved error logging to avoid nesting
+        log_tax_error("Progressive Tax", str(e), doc, employee)
+        frappe.throw(_("Error calculating PPh 21 with progressive method. See error log."))
 
 
 def calculate_december_pph(doc, employee):
@@ -261,13 +303,10 @@ def calculate_december_pph(doc, employee):
                 # Cache for 1 hour
                 cache_value(cache_key, pph_settings, CACHE_MEDIUM)
             except Exception as e:
-                # This is a critical validation error - can't proceed without settings
-                message = f"Error retrieving PPh 21 Settings: {str(e)}"
-                safe_log_error("December PPh Settings Error", message)
+                # Log error and throw with simplified message
+                log_tax_error("PPh 21 Settings", str(e), doc, employee)
                 frappe.throw(
-                    _(
-                        "Error retrieving PPh 21 Settings: {0}. Please configure PPh 21 Settings properly."
-                    ).format(str(e))
+                    _("PPh 21 Settings not found. Please configure PPh 21 Settings properly.")
                 )
 
         # For December, always use progressive method even if TER is enabled (PMK 168/2023)
@@ -277,9 +316,13 @@ def calculate_december_pph(doc, employee):
         ytd = get_cached_value(cache_key)
 
         if ytd is None:
-            ytd = get_ytd_totals_from_tax_summary(doc, year)
+            # Make sure we're passing the right parameters
+            ytd = get_ytd_totals_from_tax_summary(doc, year, month)
             # Cache for 30 minutes
             cache_value(cache_key, ytd, CACHE_SHORT)
+
+        # Initialize ytd with default values if not found
+        ytd = ytd or {"gross": 0, "bpjs": 0, "pph21": 0}
 
         # Calculate annual totals
         annual_gross = ytd.get("gross", 0) + doc.gross_pay
@@ -339,11 +382,9 @@ def calculate_december_pph(doc, employee):
         )
 
     except Exception as e:
-        # This is a critical error in a tax calculation function
-        emp_name = employee.name if hasattr(employee, "name") else "unknown"
-        message = f"December PPh Calculation Error for Employee {emp_name}: {str(e)}"
-        safe_log_error("December PPh Error", message)
-        frappe.throw(_("Error calculating December PPh 21 correction: {0}").format(str(e)))
+        # Use improved error logging
+        log_tax_error("December PPh", str(e), doc, employee)
+        frappe.throw(_("Error calculating December PPh 21 correction. See error log."))
 
 
 def set_basic_payroll_note(doc, employee):
@@ -360,30 +401,39 @@ def set_basic_payroll_note(doc, employee):
             # Don't overwrite existing note, add to it
             return
 
+        # Ensure status_pajak exists
         status_pajak = (
             employee.status_pajak
             if hasattr(employee, "status_pajak") and employee.status_pajak
             else "TK0"
         )
 
+        # Format monetary values for better readability
+        gross_pay_formatted = "{:,.0f}".format(doc.gross_pay) if hasattr(doc, "gross_pay") else "0"
+        biaya_jabatan_formatted = "{:,.0f}".format(doc.biaya_jabatan) if hasattr(doc, "biaya_jabatan") else "0"
+        total_bpjs_formatted = "{:,.0f}".format(doc.total_bpjs) if hasattr(doc, "total_bpjs") else "0"
+        netto_formatted = "{:,.0f}".format(doc.netto) if hasattr(doc, "netto") else "0"
+
         doc.payroll_note = "\n".join(
             [
                 "<!-- BASIC_INFO_START -->",
                 "=== Informasi Dasar ===",
                 f"Status Pajak: {status_pajak}",
-                f"Penghasilan Bruto: Rp {doc.gross_pay:,.0f}",
-                f"Biaya Jabatan: Rp {doc.biaya_jabatan:,.0f}",
-                f"BPJS (JHT+JP+Kesehatan): Rp {doc.total_bpjs:,.0f}",
-                f"Penghasilan Neto: Rp {doc.netto:,.0f}",
+                f"Penghasilan Bruto: Rp {gross_pay_formatted}",
+                f"Biaya Jabatan: Rp {biaya_jabatan_formatted}",
+                f"BPJS (JHT+JP+Kesehatan): Rp {total_bpjs_formatted}",
+                f"Penghasilan Neto: Rp {netto_formatted}",
                 "<!-- BASIC_INFO_END -->",
             ]
         )
     except Exception as e:
         # This is not a critical error - the note is mostly informational
-        message = f"Error setting basic payroll note for {doc.employee}: {str(e)}"
-        safe_log_error("Payroll Note Error", message)
+        # Use simpler error logging to avoid nested errors
+        log_tax_error("Payroll Note", str(e), doc, employee)
+        
         # Just set a basic note
         doc.payroll_note = f"Penghasilan Bruto: Rp {doc.gross_pay:,.0f}"
+        
         # Inform the user but don't block processing
         frappe.msgprint(_("Warning: Could not set detailed payroll note."), indicator="orange")
 
@@ -399,12 +449,12 @@ def is_december(doc):
         bool: True if the salary slip is for December
     """
     try:
-        return getdate(doc.end_date).month == DECEMBER_MONTH
+        if hasattr(doc, "end_date") and doc.end_date:
+            return getdate(doc.end_date).month == DECEMBER_MONTH
+        return False
     except Exception as e:
-        # Non-critical error - log and default to False
-        doc_name = doc.name if hasattr(doc, "name") else "unknown"
-        message = f"Error checking if salary slip {doc_name} is for December: {str(e)}"
-        safe_log_error("Date Check Error", message)
+        # Non-critical error - log with simpler method and default to False
+        log_tax_error("Date Check", str(e), doc)
         return False
 
 
@@ -423,16 +473,19 @@ def get_ytd_totals(doc, year):
         # Create a default result with zeros
         result = {"gross": 0, "bpjs": 0, "pph21": 0}
 
-        # Validate year
-        if not year or not isinstance(year, int):
-            year = getdate(doc.end_date).year
-
-        # Validate employee
-        if not doc.employee:
+        # Validate input parameters
+        if not doc or not hasattr(doc, "employee") or not doc.employee:
             return result
 
+        # Validate year
+        if not year or not isinstance(year, int):
+            if hasattr(doc, "end_date") and doc.end_date:
+                year = getdate(doc.end_date).year
+            else:
+                return result
+
         # Check cache for this computation
-        cache_key = f"ytd_traditional:{doc.employee}:{year}:{getdate(doc.start_date).month}"
+        cache_key = f"ytd_traditional:{doc.employee}:{year}:{getdate(doc.start_date).month if hasattr(doc, 'start_date') else 1}"
         cached_result = get_cached_value(cache_key)
 
         if cached_result is not None:
@@ -441,6 +494,9 @@ def get_ytd_totals(doc, year):
         # Get salary slips for the current employee in the current year
         # but before the current month using efficient query
         try:
+            if not hasattr(doc, "start_date") or not doc.start_date:
+                return result
+                
             salary_slips = frappe.db.sql(
                 """
                 SELECT
@@ -457,64 +513,61 @@ def get_ytd_totals(doc, year):
                 (doc.employee, year, doc.start_date),
                 as_dict=1,
             )
-        except Exception as e:
-            # Non-critical database error - we can return zeros
-            message = f"Error querying salary slips for {doc.employee}: {str(e)}"
-            safe_log_error("Salary Slip Query Error", message)
+            
+            # Sum up the values
+            for slip in salary_slips:
+                try:
+                    # Add to gross
+                    result["gross"] += flt(slip.gross_pay)
+
+                    # Get BPJS and PPh 21 components in a more efficient way
+                    components = frappe.db.sql(
+                        """
+                        SELECT
+                            salary_component,
+                            amount
+                        FROM
+                            `tabSalary Detail`
+                        WHERE
+                            parent = %s
+                            AND parentfield = 'deductions'
+                            AND salary_component IN ('BPJS JHT Employee', 'BPJS JP Employee', 'BPJS Kesehatan Employee', 'PPh 21')
+                    """,
+                        slip.name,
+                        as_dict=1,
+                    )
+
+                    for comp in components:
+                        if comp.salary_component == "PPh 21":
+                            result["pph21"] += flt(comp.amount)
+                        else:
+                            result["bpjs"] += flt(comp.amount)
+
+                except Exception:
+                    # Continue with next slip on error
+                    continue
+
+            # Cache the result for 30 minutes
+            cache_value(cache_key, result, CACHE_SHORT)
+            
+        except Exception:
+            # Return default result on database error
             frappe.msgprint(
-                _(
-                    "Warning: Could not retrieve previous salary slips. YTD calculations may be incorrect."
-                ),
-                indicator="red",
+                _("Warning: Could not retrieve previous salary slips. YTD calculations may be incorrect."),
+                indicator="orange"
             )
-            return result
-
-        # Sum up the values
-        for slip in salary_slips:
-            try:
-                # Add to gross
-                result["gross"] += flt(slip.gross_pay)
-
-                # Get BPJS and PPh 21 components in a more efficient way
-                components = frappe.db.sql(
-                    """
-                    SELECT
-                        salary_component,
-                        amount
-                    FROM
-                        `tabSalary Detail`
-                    WHERE
-                        parent = %s
-                        AND parentfield = 'deductions'
-                        AND salary_component IN ('BPJS JHT Employee', 'BPJS JP Employee', 'BPJS Kesehatan Employee', 'PPh 21')
-                """,
-                    slip.name,
-                    as_dict=1,
-                )
-
-                for comp in components:
-                    if comp.salary_component == "PPh 21":
-                        result["pph21"] += flt(comp.amount)
-                    else:
-                        result["bpjs"] += flt(comp.amount)
-
-            except Exception as e:
-                # Non-critical error processing a salary slip - continue with next one
-                message = f"Error processing Salary Slip {slip.name}: {str(e)}"
-                safe_log_error("Salary Slip Processing Error", message)
-                continue
-
-        # Cache the result for 30 minutes
-        cache_value(cache_key, result, CACHE_SHORT)
+            
         return result
 
     except Exception as e:
-        # Non-critical error - we can return zeros
-        message = f"Error calculating YTD totals for {doc.employee}: {str(e)}"
-        safe_log_error("YTD Totals Error", message)
+        # Non-critical error - use simple log and return zeros
+        log_tax_error("YTD Totals", str(e), doc)
+        
+        # Inform the user but don't block processing
         frappe.msgprint(
-            _("Error calculating YTD totals: {0}. Using zero values as fallback.").format(str(e)),
-            indicator="red",
+            _("Warning: Error calculating YTD totals. Using zero values as fallback."),
+            indicator="orange"
         )
+        
         # Return empty result on error
         return {"gross": 0, "bpjs": 0, "pph21": 0}
