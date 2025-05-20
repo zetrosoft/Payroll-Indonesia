@@ -28,7 +28,7 @@
     "dt": "Employee",
     "fieldname": "jabatan",
     "fieldtype": "Link",
-    "insert_after": "golongan",
+    "insert_after": "branch",
     "label": "Jabatan",
     "module": "Payroll Indonesia",
     "name": "Employee-jabatan",
