@@ -2,20 +2,20 @@
   {
     "doctype": "Custom Field",
     "dt": "Employee",
-    "fieldname": "payroll_indonesia_section",
+    "fieldname": "payroll_indo_main_section",
     "fieldtype": "Section Break",
-    "insert_after": "reports_to", 
-    "label": "Payroll Indonesia (HR Extension)",
+    "insert_after": "reports_to",
+    "label": "Payroll Indonesia",
     "module": "Payroll Indonesia",
-    "name": "Employee-payroll_indonesia_section",
-    "collapsible": 1
+    "name": "Employee-payroll_indo_main_section",
+    "collapsible": 0
   },
   {
     "doctype": "Custom Field",
     "dt": "Employee",
     "fieldname": "golongan",
     "fieldtype": "Link",
-    "insert_after": "payroll_indonesia_section",
+    "insert_after": "payroll_indo_main_section",
     "label": "Golongan",
     "module": "Payroll Indonesia",
     "name": "Employee-golongan",
@@ -37,18 +37,9 @@
   {
     "doctype": "Custom Field",
     "dt": "Employee",
-    "fieldname": "col_break_payroll_id",
-    "fieldtype": "Column Break",
-    "insert_after": "jabatan",
-    "module": "Payroll Indonesia",
-    "name": "Employee-col_break_payroll_id"
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Employee",
     "fieldname": "status_pajak",
     "fieldtype": "Select",
-    "insert_after": "col_break_payroll_id",
+    "insert_after": "jabatan",
     "label": "Status Pajak",
     "module": "Payroll Indonesia",
     "name": "Employee-status_pajak",
@@ -79,19 +70,51 @@
   {
     "doctype": "Custom Field",
     "dt": "Employee",
-    "fieldname": "npwp_section",
-    "fieldtype": "Section Break",
+    "fieldname": "payroll_id_col_break_1",
+    "fieldtype": "Column Break",
     "insert_after": "override_tax_method",
-    "label": "Tax Identifiers",
     "module": "Payroll Indonesia",
-    "name": "Employee-npwp_section"
+    "name": "Employee-payroll_id_col_break_1"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Employee",
+    "fieldname": "tipe_karyawan",
+    "fieldtype": "Select",
+    "insert_after": "payroll_id_col_break_1",
+    "label": "Tipe Karyawan",
+    "module": "Payroll Indonesia",
+    "name": "Employee-tipe_karyawan",
+    "options": "Tetap\nTidak Tetap\nFreelance"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Employee",
+    "fieldname": "penghasilan_final",
+    "fieldtype": "Check",
+    "insert_after": "tipe_karyawan",
+    "label": "Penghasilan Final",
+    "module": "Payroll Indonesia",
+    "name": "Employee-penghasilan_final",
+    "default": "0"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Employee",
+    "fieldname": "identifier_section",
+    "fieldtype": "Section Break",
+    "insert_after": "penghasilan_final",
+    "label": "Identifiers & Attachments",
+    "module": "Payroll Indonesia",
+    "name": "Employee-identifier_section",
+    "collapsible": 0
   },
   {
     "doctype": "Custom Field",
     "dt": "Employee",
     "fieldname": "npwp",
     "fieldtype": "Data",
-    "insert_after": "npwp_section",
+    "insert_after": "identifier_section",
     "label": "NPWP",
     "module": "Payroll Indonesia",
     "name": "Employee-npwp",
@@ -131,18 +154,18 @@
   {
     "doctype": "Custom Field",
     "dt": "Employee",
-    "fieldname": "tax_identifier_col_break",
+    "fieldname": "identifier_col_break",
     "fieldtype": "Column Break",
     "insert_after": "upload_ktp",
     "module": "Payroll Indonesia",
-    "name": "Employee-tax_identifier_col_break"
+    "name": "Employee-identifier_col_break"
   },
   {
     "doctype": "Custom Field",
     "dt": "Employee",
     "fieldname": "npwp_suami",
     "fieldtype": "Data",
-    "insert_after": "tax_identifier_col_break",
+    "insert_after": "identifier_col_break",
     "label": "NPWP Suami",
     "module": "Payroll Indonesia",
     "name": "Employee-npwp_suami",
@@ -163,19 +186,20 @@
   {
     "doctype": "Custom Field",
     "dt": "Employee",
-    "fieldname": "bpjs_section",
+    "fieldname": "bpjs_enrollment_section",
     "fieldtype": "Section Break",
     "insert_after": "npwp_gabung_suami",
-    "label": "BPJS Information",
+    "label": "BPJS Enrollment",
     "module": "Payroll Indonesia",
-    "name": "Employee-bpjs_section"
+    "name": "Employee-bpjs_enrollment_section",
+    "collapsible": 0
   },
   {
     "doctype": "Custom Field",
     "dt": "Employee",
     "fieldname": "ikut_bpjs_kesehatan",
     "fieldtype": "Check",
-    "insert_after": "bpjs_section",
+    "insert_after": "bpjs_enrollment_section",
     "label": "Ikut BPJS Kesehatan",
     "module": "Payroll Indonesia",
     "name": "Employee-ikut_bpjs_kesehatan",
@@ -187,32 +211,10 @@
     "fieldname": "ikut_bpjs_ketenagakerjaan",
     "fieldtype": "Check",
     "insert_after": "ikut_bpjs_kesehatan",
-    "label": "Ikut BPJS Ketenagakerjaan", 
+    "label": "Ikut BPJS Ketenagakerjaan",
     "module": "Payroll Indonesia",
     "name": "Employee-ikut_bpjs_ketenagakerjaan",
     "default": "1"
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Employee",
-    "fieldname": "tipe_karyawan",
-    "fieldtype": "Select",
-    "insert_after": "ikut_bpjs_ketenagakerjaan",
-    "label": "Tipe Karyawan",
-    "module": "Payroll Indonesia",
-    "name": "Employee-tipe_karyawan",
-    "options": "Tetap\nTidak Tetap\nFreelance"
-  },
-  {
-    "doctype": "Custom Field",
-    "dt": "Employee",
-    "fieldname": "penghasilan_final",
-    "fieldtype": "Check",
-    "insert_after": "tipe_karyawan",
-    "label": "Penghasilan Final",
-    "module": "Payroll Indonesia",
-    "name": "Employee-penghasilan_final",
-    "default": "0"
   },
   {
     "doctype": "Custom Field",
