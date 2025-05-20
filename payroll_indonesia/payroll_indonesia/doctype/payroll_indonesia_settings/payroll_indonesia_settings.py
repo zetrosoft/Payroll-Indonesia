@@ -1,13 +1,18 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last Modified: 2025-05-19 08:30:17 by dannyaudian
+# Last Modified: 2025-05-20 04:45:04 by dannyaudian
 
 import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
+# Import TER validation and default rates from pph_ter.py
+from payroll_indonesia.pph_ter import (
+    DEFAULT_TER_RATES,
+    validate_ter_data_availability
+)
 
 
 class PayrollIndonesiaSettings(Document):
@@ -15,7 +20,7 @@ class PayrollIndonesiaSettings(Document):
         """Validate settings on save"""
         try:
             self.validate_tax_settings()
-            self.validate_ter_settings()
+            self.validate_ter_settings()  # Updated TER validation
             self.validate_bpjs_settings()
             self.validate_json_fields()
             self.update_timestamp()
@@ -55,32 +60,14 @@ class PayrollIndonesiaSettings(Document):
             # If TER is not enabled, no need to validate TER settings
             return
 
-        # Track validation status and issues
-        ter_validation_issues = []
-        
-        # Check if TER rate tables are present for all categories
-        ter_a_valid = self._validate_ter_rate_json(self.ter_rate_ter_a_json, "TER A", ter_validation_issues)
-        ter_b_valid = self._validate_ter_rate_json(self.ter_rate_ter_b_json, "TER B", ter_validation_issues)
-        ter_c_valid = self._validate_ter_rate_json(self.ter_rate_ter_c_json, "TER C", ter_validation_issues)
-
-        # Check if PTKP to TER mapping is complete
-        if not self.ptkp_ter_mapping_table or len(self.ptkp_ter_mapping_table) == 0:
-            ter_validation_issues.append(_("PTKP to TER mapping is missing or empty"))
-        
-        # Check if PPh 21 TER Table (database table) has entries
-        # This is important since it's used for actual tax calculations
-        try:
-            ter_table_count = frappe.db.count("PPh 21 TER Table")
-            if ter_table_count == 0:
-                ter_validation_issues.append(_("PPh 21 TER Table is empty. TER rates need to be synced."))
-                # Force a sync attempt if table is empty
-                self.sync_ter_rates(force_sync=True)
-        except Exception:
-            ter_validation_issues.append(_("Could not check PPh 21 TER Table status"))
+        # Use the new validation function from pph_ter.py
+        issues = validate_ter_data_availability()
+        # Store issues in the new field for displaying in the UI
+        self.ter_validation_issues = "\n".join(issues) if issues else ""
             
         # Display comprehensive validation results
-        if ter_validation_issues:
-            issues_text = "\n• " + "\n• ".join(ter_validation_issues)
+        if issues:
+            issues_text = "\n• " + "\n• ".join(issues)
             frappe.msgprint(
                 _("TER Configuration Issues Detected:{0}\n\nPlease complete TER setup before using this method for calculations.").format(issues_text),
                 indicator="red"
@@ -266,7 +253,24 @@ class PayrollIndonesiaSettings(Document):
         # Skip sync if TER is not enabled, unless forced
         if not self.use_ter and not force_sync:
             return
+            
+        # Check if table is empty and populate with defaults if needed
+        if frappe.db.count("PPh 21 TER Table") == 0:
+            for category, rate in DEFAULT_TER_RATES.items():
+                if not category:
+                    continue
+                doc = frappe.new_doc("PPh 21 TER Table")
+                doc.category = category
+                doc.status_pajak = "TK/0"
+                doc.min_penghasilan = 0
+                doc.max_penghasilan = 1_000_000_000
+                doc.rate = rate * 100  # Simpan sebagai persen
+                doc.is_highest_bracket = 1
+                doc.insert()
+            frappe.msgprint("Data default TER berhasil disisipkan.")
+            return
 
+        # Proceed with normal sync if table is not empty
         try:
             # Track sync status
             success_count = 0
