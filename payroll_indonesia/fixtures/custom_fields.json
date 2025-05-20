@@ -208,13 +208,33 @@
   {
     "doctype": "Custom Field",
     "dt": "Employee",
+    "fieldname": "bpjs_kesehatan_id",
+    "fieldtype": "Data",
+    "insert_after": "ikut_bpjs_kesehatan",
+    "label": "BPJS Kesehatan ID",
+    "module": "Payroll Indonesia",
+    "name": "Employee-bpjs_kesehatan_id"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Employee",
     "fieldname": "ikut_bpjs_ketenagakerjaan",
     "fieldtype": "Check",
-    "insert_after": "ikut_bpjs_kesehatan",
+    "insert_after": "bpjs_kesehatan_id",
     "label": "Ikut BPJS Ketenagakerjaan",
     "module": "Payroll Indonesia",
     "name": "Employee-ikut_bpjs_ketenagakerjaan",
     "default": "1"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Employee",
+    "fieldname": "bpjs_ketenagakerjaan_id",
+    "fieldtype": "Data",
+    "insert_after": "ikut_bpjs_ketenagakerjaan",
+    "label": "BPJS Ketenagakerjaan ID",
+    "module": "Payroll Indonesia",
+    "name": "Employee-bpjs_ketenagakerjaan_id"
   },
   {
     "doctype": "Custom Field",
@@ -410,9 +430,45 @@
   {
     "doctype": "Custom Field",
     "dt": "Salary Slip",
+    "fieldname": "kesehatan_employee",
+    "fieldtype": "Currency",
+    "insert_after": "total_bpjs",
+    "label": "BPJS Kesehatan Employee",
+    "module": "Payroll Indonesia",
+    "name": "Salary Slip-kesehatan_employee",
+    "read_only": 1,
+    "default": "0"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Salary Slip",
+    "fieldname": "jht_employee",
+    "fieldtype": "Currency",
+    "insert_after": "kesehatan_employee",
+    "label": "BPJS JHT Employee",
+    "module": "Payroll Indonesia",
+    "name": "Salary Slip-jht_employee",
+    "read_only": 1,
+    "default": "0"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Salary Slip",
+    "fieldname": "jp_employee",
+    "fieldtype": "Currency",
+    "insert_after": "jht_employee",
+    "label": "BPJS JP Employee",
+    "module": "Payroll Indonesia",
+    "name": "Salary Slip-jp_employee",
+    "read_only": 1,
+    "default": "0"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Salary Slip",
     "fieldname": "payroll_note_section",
     "fieldtype": "Section Break",
-    "insert_after": "total_bpjs",
+    "insert_after": "jp_employee",
     "label": "Payroll Notes",
     "module": "Payroll Indonesia",
     "name": "Salary Slip-payroll_note_section"
