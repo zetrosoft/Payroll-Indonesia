@@ -72,26 +72,27 @@ def log_tax_error(error_type, message, doc=None, employee=None):
     """
     try:
         # Extract key information for the error title
-        doc_name = getattr(doc, 'name', 'unknown') if doc else 'unknown'
-        emp_name = getattr(employee, 'name', 'unknown') if employee else 'unknown'
-        
+        doc_name = getattr(doc, "name", "unknown") if doc else "unknown"
+        emp_name = getattr(employee, "name", "unknown") if employee else "unknown"
+
         # Create a short descriptive title with key information
         title = f"{error_type}: {emp_name}"
-        
+
         # Sanitize message to avoid nesting by removing existing error log IDs
         sanitized_message = message
         if "Error Log " in sanitized_message:
             # Remove nested error log references
             import re
+
             sanitized_message = re.sub(r"Error Log [a-z0-9]+:", "", sanitized_message)
             sanitized_message = re.sub(r"\([^)]*Error Log [^)]*\)", "", sanitized_message)
-        
+
         # Keep track of basic context
         context = f"Document: {doc_name}, Employee: {emp_name}"
-        
+
         # Create a clean message that includes context but avoids nesting
         clean_message = f"{context}\n\nError details: {sanitized_message}"
-        
+
         # Create log with clean title and message
         return frappe.log_error(message=clean_message, title=title)
     except Exception:
@@ -115,7 +116,7 @@ def calculate_tax_components(doc, employee):
     try:
         # Ensure required fields exist
         _ensure_required_fields(doc)
-        
+
         # Initialize total_bpjs to 0 if None to prevent NoneType subtraction error
         if doc.total_bpjs is None:
             doc.total_bpjs = 0
@@ -178,7 +179,7 @@ def _ensure_required_fields(doc):
     """
     Ensure all required fields for tax calculations exist in the document
     If they don't exist, initialize them with default values.
-    
+
     Args:
         doc: Salary slip document
     """
@@ -193,9 +194,9 @@ def _ensure_required_fields(doc):
         "netto": 0,
         "total_bpjs": 0,
         "koreksi_pph21": 0,
-        "is_final_gabung_suami": 0
+        "is_final_gabung_suami": 0,
     }
-    
+
     # Set defaults for missing fields
     for field, default_value in required_fields.items():
         if not hasattr(doc, field) or getattr(doc, field) is None:
@@ -410,8 +411,12 @@ def set_basic_payroll_note(doc, employee):
 
         # Format monetary values for better readability
         gross_pay_formatted = "{:,.0f}".format(doc.gross_pay) if hasattr(doc, "gross_pay") else "0"
-        biaya_jabatan_formatted = "{:,.0f}".format(doc.biaya_jabatan) if hasattr(doc, "biaya_jabatan") else "0"
-        total_bpjs_formatted = "{:,.0f}".format(doc.total_bpjs) if hasattr(doc, "total_bpjs") else "0"
+        biaya_jabatan_formatted = (
+            "{:,.0f}".format(doc.biaya_jabatan) if hasattr(doc, "biaya_jabatan") else "0"
+        )
+        total_bpjs_formatted = (
+            "{:,.0f}".format(doc.total_bpjs) if hasattr(doc, "total_bpjs") else "0"
+        )
         netto_formatted = "{:,.0f}".format(doc.netto) if hasattr(doc, "netto") else "0"
 
         doc.payroll_note = "\n".join(
@@ -430,10 +435,10 @@ def set_basic_payroll_note(doc, employee):
         # This is not a critical error - the note is mostly informational
         # Use simpler error logging to avoid nested errors
         log_tax_error("Payroll Note", str(e), doc, employee)
-        
+
         # Just set a basic note
         doc.payroll_note = f"Penghasilan Bruto: Rp {doc.gross_pay:,.0f}"
-        
+
         # Inform the user but don't block processing
         frappe.msgprint(_("Warning: Could not set detailed payroll note."), indicator="orange")
 
@@ -496,7 +501,7 @@ def get_ytd_totals(doc, year):
         try:
             if not hasattr(doc, "start_date") or not doc.start_date:
                 return result
-                
+
             salary_slips = frappe.db.sql(
                 """
                 SELECT
@@ -513,7 +518,7 @@ def get_ytd_totals(doc, year):
                 (doc.employee, year, doc.start_date),
                 as_dict=1,
             )
-            
+
             # Sum up the values
             for slip in salary_slips:
                 try:
@@ -549,25 +554,27 @@ def get_ytd_totals(doc, year):
 
             # Cache the result for 30 minutes
             cache_value(cache_key, result, CACHE_SHORT)
-            
+
         except Exception:
             # Return default result on database error
             frappe.msgprint(
-                _("Warning: Could not retrieve previous salary slips. YTD calculations may be incorrect."),
-                indicator="orange"
+                _(
+                    "Warning: Could not retrieve previous salary slips. YTD calculations may be incorrect."
+                ),
+                indicator="orange",
             )
-            
+
         return result
 
     except Exception as e:
         # Non-critical error - use simple log and return zeros
         log_tax_error("YTD Totals", str(e), doc)
-        
+
         # Inform the user but don't block processing
         frappe.msgprint(
             _("Warning: Error calculating YTD totals. Using zero values as fallback."),
-            indicator="orange"
+            indicator="orange",
         )
-        
+
         # Return empty result on error
         return {"gross": 0, "bpjs": 0, "pph21": 0}

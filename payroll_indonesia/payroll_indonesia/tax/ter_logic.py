@@ -18,9 +18,8 @@ and can be imported by other modules without causing circular dependencies.
 """
 
 import frappe
-from frappe import _
 from frappe.utils import flt, getdate, cint
-from typing import Dict, Any, List, Union, Optional, Tuple
+from typing import Dict, Optional
 
 # Import cache utilities
 from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_value
@@ -44,7 +43,7 @@ from payroll_indonesia.payroll_indonesia.tax.pph_ter import map_ptkp_to_ter_cate
 def log_tax_logic_error(error_type: str, message: str, data: Optional[Dict] = None) -> None:
     """
     Helper function to log tax logic related errors consistently
-    
+
     Args:
         error_type: Type of error (e.g., "Annual Detection", "Tax Note")
         message: Error message
@@ -53,10 +52,10 @@ def log_tax_logic_error(error_type: str, message: str, data: Optional[Dict] = No
     try:
         # Create clean error title
         title = f"Tax Logic {error_type}"
-        
+
         # Format message with data if provided
         formatted_message = f"{message}\n\nData: {data}" if data else message
-            
+
         # Log the error
         frappe.log_error(formatted_message, title)
     except Exception:
@@ -90,8 +89,7 @@ def calculate_progressive_tax(pkp, pph_settings=None):
         # Ensure PKP is non-negative
         if pkp_value < 0:
             log_tax_logic_error(
-                "Progressive Tax",
-                f"Negative PKP value {pkp_value} provided, using 0 instead"
+                "Progressive Tax", f"Negative PKP value {pkp_value} provided, using 0 instead"
             )
             pkp_value = 0
 
@@ -101,8 +99,7 @@ def calculate_progressive_tax(pkp, pph_settings=None):
                 pph_settings = frappe.get_cached_doc("PPh 21 Settings")
             except Exception as settings_error:
                 log_tax_logic_error(
-                    "Settings Retrieval",
-                    f"Error retrieving PPh 21 Settings: {str(settings_error)}"
+                    "Settings Retrieval", f"Error retrieving PPh 21 Settings: {str(settings_error)}"
                 )
                 pph_settings = None
 
@@ -124,17 +121,13 @@ def calculate_progressive_tax(pkp, pph_settings=None):
                     as_dict=1,
                 )
             except Exception as e:
-                log_tax_logic_error(
-                    "Database Error",
-                    f"Error querying tax brackets: {str(e)}"
-                )
+                log_tax_logic_error("Database Error", f"Error querying tax brackets: {str(e)}")
 
         # If still not found, use default values
         if not bracket_table:
             # Log using our consistent method
             log_tax_logic_error(
-                "Default Values",
-                "No tax brackets found in settings, using default values"
+                "Default Values", "No tax brackets found in settings, using default values"
             )
 
             # Default bracket values if not found - based on PMK 101/2016 and UU HPP 2021
@@ -179,8 +172,7 @@ def calculate_progressive_tax(pkp, pph_settings=None):
     except Exception as e:
         # Log error and return default values
         log_tax_logic_error(
-            "Calculation Error",
-            f"Error calculating progressive tax for PKP {pkp}: {str(e)}"
+            "Calculation Error", f"Error calculating progressive tax for PKP {pkp}: {str(e)}"
         )
         # Return minimal results rather than raising exception
         return 0, []
@@ -203,7 +195,7 @@ def get_ptkp_amount(status_pajak, pph_settings=None):
         if not status_pajak or not isinstance(status_pajak, str):
             log_tax_logic_error(
                 "PTKP",
-                f"Empty or invalid tax status provided: {status_pajak}, using TK0 as default"
+                f"Empty or invalid tax status provided: {status_pajak}, using TK0 as default",
             )
             status_pajak = "TK0"
         else:
@@ -224,10 +216,7 @@ def get_ptkp_amount(status_pajak, pph_settings=None):
             try:
                 pph_settings = frappe.get_cached_doc("PPh 21 Settings")
             except Exception as e:
-                log_tax_logic_error(
-                    "Settings Error",
-                    f"Error getting PPh 21 Settings: {str(e)}"
-                )
+                log_tax_logic_error("Settings Error", f"Error getting PPh 21 Settings: {str(e)}")
 
         # Get PTKP from settings
         ptkp_table = []
@@ -246,10 +235,7 @@ def get_ptkp_amount(status_pajak, pph_settings=None):
                     as_dict=1,
                 )
             except Exception as e:
-                log_tax_logic_error(
-                    "Database Error",
-                    f"Error querying PTKP table: {str(e)}"
-                )
+                log_tax_logic_error("Database Error", f"Error querying PTKP table: {str(e)}")
 
         # Find matching status with safe attribute access
         for ptkp in ptkp_table:
@@ -288,7 +274,7 @@ def get_ptkp_amount(status_pajak, pph_settings=None):
                         ptkp_amount = flt(getattr(ptkp, "amount", 0))
                     else:
                         ptkp_amount = flt(getattr(ptkp, "ptkp_amount", 0))
-                    
+
                     if ptkp_amount > 0:
                         cache_value(cache_key, ptkp_amount, CACHE_LONG)
                         return ptkp_amount
@@ -302,7 +288,7 @@ def get_ptkp_amount(status_pajak, pph_settings=None):
                 if prefix.startswith(key):
                     log_tax_logic_error(
                         "PTKP Fallback",
-                        f"PTKP not found in settings for {status_pajak}, using default value {value}"
+                        f"PTKP not found in settings for {status_pajak}, using default value {value}",
                     )
                     cache_value(cache_key, value, CACHE_LONG)
                     return value
@@ -314,17 +300,14 @@ def get_ptkp_amount(status_pajak, pph_settings=None):
         default_value = 54000000  # Default for TK0
         log_tax_logic_error(
             "PTKP Default",
-            f"No PTKP match found for {status_pajak}, using TK0 default ({default_value})"
+            f"No PTKP match found for {status_pajak}, using TK0 default ({default_value})",
         )
         cache_value(cache_key, default_value, CACHE_LONG)
         return default_value
 
     except Exception as e:
         # Non-critical error - log and return default
-        log_tax_logic_error(
-            "PTKP Error",
-            f"Error getting PTKP amount for {status_pajak}: {str(e)}"
-        )
+        log_tax_logic_error("PTKP Error", f"Error getting PTKP amount for {status_pajak}: {str(e)}")
         # Return default PTKP for TK0
         return 54000000
 
@@ -362,7 +345,7 @@ def should_use_ter_method(employee, pph_settings=None):
         cached_result = get_cached_value(cache_key)
 
         if cached_result is not None:
-            return cached_result == True  # Ensure boolean return
+            return cached_result
 
         # Get PPh 21 Settings if not provided - use cached value for better performance
         if not pph_settings:
@@ -384,15 +367,14 @@ def should_use_ter_method(employee, pph_settings=None):
                     cache_value(settings_cache_key, pph_settings, CACHE_MEDIUM)
                 except Exception as e:
                     log_tax_logic_error(
-                        "Settings Error",
-                        f"Error retrieving PPh 21 Settings: {str(e)}"
+                        "Settings Error", f"Error retrieving PPh 21 Settings: {str(e)}"
                     )
                     pph_settings = {}
 
         # Fast path for global TER setting disabled - with default safety
         use_ter_setting = False
         calculation_method = ""
-        
+
         # Extract settings safely
         if isinstance(pph_settings, dict):
             use_ter_setting = pph_settings.get("use_ter", False)
@@ -400,7 +382,9 @@ def should_use_ter_method(employee, pph_settings=None):
         else:
             # Try object access if it's not a dict
             use_ter_setting = getattr(pph_settings, "use_ter", False) if pph_settings else False
-            calculation_method = getattr(pph_settings, "calculation_method", "") if pph_settings else ""
+            calculation_method = (
+                getattr(pph_settings, "calculation_method", "") if pph_settings else ""
+            )
 
         # Check global settings
         if not use_ter_setting or calculation_method != "TER":
@@ -414,7 +398,7 @@ def should_use_ter_method(employee, pph_settings=None):
         except Exception:
             # If date operation fails, use a non-December value
             current_month = 1
-            
+
         if current_month == 12:
             cache_value(cache_key, False, CACHE_MEDIUM)  # Cache for 1 hour
             return False
@@ -422,14 +406,14 @@ def should_use_ter_method(employee, pph_settings=None):
         # Extract employee attributes safely
         tipe_karyawan = ""
         override_tax_method = ""
-        
+
         # Try to get attributes from employee with different access methods
         try:
             if hasattr(employee, "tipe_karyawan"):
                 tipe_karyawan = getattr(employee, "tipe_karyawan", "")
             elif isinstance(employee, dict):
                 tipe_karyawan = employee.get("tipe_karyawan", "")
-                
+
             if hasattr(employee, "override_tax_method"):
                 override_tax_method = getattr(employee, "override_tax_method", "")
             elif isinstance(employee, dict):
@@ -438,7 +422,7 @@ def should_use_ter_method(employee, pph_settings=None):
             log_tax_logic_error(
                 "Attribute Access",
                 f"Error accessing employee attributes: {str(e)}",
-                {"employee_id": employee_id}
+                {"employee_id": employee_id},
             )
 
         # Fast path for employee exclusions
@@ -454,7 +438,7 @@ def should_use_ter_method(employee, pph_settings=None):
         if override_tax_method == "TER":
             cache_value(cache_key, True, CACHE_MEDIUM)  # Cache for 1 hour
             return True
-            
+
         # If we made it here, use TER method
         cache_value(cache_key, True, CACHE_MEDIUM)  # Cache for 1 hour
         return True
@@ -464,7 +448,7 @@ def should_use_ter_method(employee, pph_settings=None):
         log_tax_logic_error(
             "TER Eligibility",
             f"Error determining TER eligibility: {str(e)}",
-            {"employee_id": employee_id if 'employee_id' in locals() else "unknown"}
+            {"employee_id": employee_id if "employee_id" in locals() else "unknown"},
         )
         # Default to False on error (use progressive method)
         return False
@@ -495,18 +479,12 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
             "already_paid": 0,
             "annual_tax": 0,
             "ter_used": False,
-            "ter_category": ""
+            "ter_category": "",
         }
-        
-        # Get translation function
-        translate = frappe.get_attr("frappe._")
 
         # Validate parameters
         if not employee:
-            log_tax_logic_error(
-                "Annual PPh",
-                "Employee ID is required for annual PPh calculation"
-            )
+            log_tax_logic_error("Annual PPh", "Employee ID is required for annual PPh calculation")
             return default_result
 
         # Ensure year is valid
@@ -518,8 +496,7 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
         except (ValueError, TypeError):
             valid_year = getdate().year  # Default to current year
             log_tax_logic_error(
-                "Annual PPh",
-                f"Invalid year provided: {year}, using current year {valid_year}"
+                "Annual PPh", f"Invalid year provided: {year}, using current year {valid_year}"
             )
 
         # Get employee document if not provided
@@ -529,8 +506,7 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
                 emp_doc = frappe.get_doc("Employee", employee)
             except Exception as e:
                 log_tax_logic_error(
-                    "Employee Not Found",
-                    f"Error retrieving employee {employee}: {str(e)}"
+                    "Employee Not Found", f"Error retrieving employee {employee}: {str(e)}"
                 )
                 return default_result
 
@@ -558,7 +534,7 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
             log_tax_logic_error(
                 "Salary Slip Query",
                 f"Error querying salary slips: {str(e)}",
-                {"employee": employee, "year": valid_year}
+                {"employee": employee, "year": valid_year},
             )
             salary_slips = []
 
@@ -573,7 +549,7 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
             # Safe access to values
             gross_pay = flt(getattr(slip, "gross_pay", 0))
             total_bpjs = flt(getattr(slip, "total_bpjs", 0))
-            
+
             annual_income += gross_pay
             bpjs_total += total_bpjs
 
@@ -593,7 +569,7 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
                 status_pajak = getattr(emp_doc, "status_pajak", "TK0") or "TK0"
             elif isinstance(emp_doc, dict):
                 status_pajak = emp_doc.get("status_pajak", "TK0") or "TK0"
-                
+
         # Get PTKP with our improved function
         ptkp = get_ptkp_amount(status_pajak)
 
@@ -604,8 +580,7 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
         ter_used = False
         try:
             ter_used = any(
-                cint(getattr(slip, "is_using_ter", 0)) > 0 or 
-                cint(slip.get("is_using_ter", 0)) > 0 
+                cint(getattr(slip, "is_using_ter", 0)) > 0 or cint(slip.get("is_using_ter", 0)) > 0
                 for slip in salary_slips
             )
         except Exception:
@@ -620,47 +595,48 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
             annual_tax, _ = calculate_progressive_tax(pkp)
         except Exception as e:
             log_tax_logic_error(
-                "Annual Tax",
-                f"Error calculating annual tax: {str(e)}",
-                {"pkp": pkp}
+                "Annual Tax", f"Error calculating annual tax: {str(e)}", {"pkp": pkp}
             )
             annual_tax = 0
 
         # Determine most common TER category if TER was used
         ter_categories = []
         ter_category = ""
-        
+
         try:
             # Collect TER categories safely
             for slip in salary_slips:
                 slip_ter_category = ""
                 is_using_ter = False
-                
+
                 # Get is_using_ter safely
                 try:
-                    is_using_ter = cint(getattr(slip, "is_using_ter", 0)) > 0 or cint(slip.get("is_using_ter", 0)) > 0
+                    is_using_ter = (
+                        cint(getattr(slip, "is_using_ter", 0)) > 0
+                        or cint(slip.get("is_using_ter", 0)) > 0
+                    )
                 except Exception:
                     is_using_ter = False
-                    
+
                 # Get ter_category safely
                 try:
-                    slip_ter_category = getattr(slip, "ter_category", "") or slip.get("ter_category", "")
+                    slip_ter_category = getattr(slip, "ter_category", "") or slip.get(
+                        "ter_category", ""
+                    )
                 except Exception:
                     slip_ter_category = ""
-                
+
                 if is_using_ter and slip_ter_category:
                     ter_categories.append(slip_ter_category)
 
             # Find most common if we have categories
             if ter_categories:
                 from collections import Counter
+
                 category_counts = Counter(ter_categories)
                 ter_category = category_counts.most_common(1)[0][0]
         except Exception as e:
-            log_tax_logic_error(
-                "TER Category",
-                f"Error determining TER category: {str(e)}"
-            )
+            log_tax_logic_error("TER Category", f"Error determining TER category: {str(e)}")
             ter_category = ""
 
         # If TER wasn't used but we have status_pajak, determine TER category
@@ -689,7 +665,7 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
         log_tax_logic_error(
             "Annual PPh Error",
             f"Error calculating annual PPh: {str(e)}",
-            {"employee": employee, "year": year}
+            {"employee": employee, "year": year},
         )
         # Return empty result
         return {
@@ -702,7 +678,7 @@ def hitung_pph_tahunan(employee, year, employee_details=None):
             "already_paid": 0,
             "annual_tax": 0,
             "ter_used": False,
-            "ter_category": ""
+            "ter_category": "",
         }
 
 
@@ -778,7 +754,7 @@ def calculate_tax_already_paid(salary_slips):
             log_tax_logic_error(
                 "Tax Components Query",
                 f"Error querying tax components: {str(e)}",
-                {"slip_names": slip_names}
+                {"slip_names": slip_names},
             )
             return 0
 
@@ -794,10 +770,7 @@ def calculate_tax_already_paid(salary_slips):
 
     except Exception as e:
         # Log error and return 0
-        log_tax_logic_error(
-            "Tax Already Paid",
-            f"Error calculating already paid tax: {str(e)}"
-        )
+        log_tax_logic_error("Tax Already Paid", f"Error calculating already paid tax: {str(e)}")
         return 0
 
 
@@ -818,65 +791,62 @@ def detect_annual_income(gross_pay, total_earnings=0, basic_salary=0, bypass_det
     # Default return values
     is_annual = False
     reason = ""
-    
+
     # Convert and validate all numeric inputs
     try:
         gross_pay_value = flt(gross_pay)
     except (ValueError, TypeError):
-        log_tax_logic_error(
-            "Annual Detection",
-            f"Invalid gross_pay value: {gross_pay}, using 0"
-        )
+        log_tax_logic_error("Annual Detection", f"Invalid gross_pay value: {gross_pay}, using 0")
         gross_pay_value = 0
-        
+
     try:
         total_earnings_value = flt(total_earnings)
     except (ValueError, TypeError):
         log_tax_logic_error(
-            "Annual Detection",
-            f"Invalid total_earnings value: {total_earnings}, using 0"
+            "Annual Detection", f"Invalid total_earnings value: {total_earnings}, using 0"
         )
         total_earnings_value = 0
-        
+
     try:
         basic_salary_value = flt(basic_salary)
     except (ValueError, TypeError):
         log_tax_logic_error(
-            "Annual Detection", 
-            f"Invalid basic_salary value: {basic_salary}, using 0"
+            "Annual Detection", f"Invalid basic_salary value: {basic_salary}, using 0"
         )
         basic_salary_value = 0
-    
+
     # Default monthly value
     monthly_gross_pay = gross_pay_value
-    
+
     # Early return if bypassing detection or gross_pay is zero/negative
     if bypass_detection or gross_pay_value <= 0:
         return False, "", gross_pay_value
-    
+
     # Detection based on total earnings with validation
-    if total_earnings_value > 0 and gross_pay_value > (total_earnings_value * ANNUAL_DETECTION_FACTOR):
+    if total_earnings_value > 0 and gross_pay_value > (
+        total_earnings_value * ANNUAL_DETECTION_FACTOR
+    ):
         is_annual = True
         reason = f"Gross pay ({gross_pay_value:,.0f}) exceeds {ANNUAL_DETECTION_FACTOR}x total earnings ({total_earnings_value:,.0f})"
-        
+
         # Set monthly equivalent to total earnings if it's reasonable
         if total_earnings_value > 0 and total_earnings_value < gross_pay_value:
             monthly_gross_pay = total_earnings_value
         else:
             # Fallback to dividing by months per year
             monthly_gross_pay = gross_pay_value / MONTHS_PER_YEAR
-    
+
     # Detection based on threshold value
     elif gross_pay_value > TAX_DETECTION_THRESHOLD:
         is_annual = True
         reason = f"Gross pay ({gross_pay_value:,.0f}) exceeds threshold {TAX_DETECTION_THRESHOLD:,.0f} (likely annual)"
         monthly_gross_pay = gross_pay_value / MONTHS_PER_YEAR
-    
+
     # Detection based on basic salary ratio
     elif basic_salary_value > 0 and gross_pay_value > (basic_salary_value * SALARY_BASIC_FACTOR):
         is_annual = True
         reason = f"Gross pay ({gross_pay_value:,.0f}) exceeds {SALARY_BASIC_FACTOR}x basic salary ({basic_salary_value:,.0f})"
-        
+
         # Check if it looks like exactly 12 months of basic salary
         ratio = gross_pay_value / basic_salary_value if basic_salary_value > 0 else 0
         if 11 < ratio < 13:
@@ -889,7 +859,7 @@ def detect_annual_income(gross_pay, total_earnings=0, basic_salary=0, bypass_det
             else:
                 # Fallback to dividing by months per year
                 monthly_gross_pay = gross_pay_value / MONTHS_PER_YEAR
-    
+
     # Ensure monthly_gross_pay is not negative or zero
     if monthly_gross_pay <= 0:
         monthly_gross_pay = gross_pay_value
@@ -898,9 +868,9 @@ def detect_annual_income(gross_pay, total_earnings=0, basic_salary=0, bypass_det
         log_tax_logic_error(
             "Annual Detection",
             "Detection produced invalid monthly amount, using original value",
-            {"gross_pay": gross_pay_value, "monthly_calculated": monthly_gross_pay}
+            {"gross_pay": gross_pay_value, "monthly_calculated": monthly_gross_pay},
         )
-    
+
     return is_annual, reason, monthly_gross_pay
 
 
@@ -917,29 +887,23 @@ def add_tax_info_to_note(doc, tax_method, values):
     try:
         # Safely check if doc is valid
         if not doc:
-            log_tax_logic_error(
-                "Tax Note",
-                "Invalid document provided to add_tax_info_to_note"
-            )
+            log_tax_logic_error("Tax Note", "Invalid document provided to add_tax_info_to_note")
             return
-            
+
         # Safely check if payroll_note attribute exists and create if not
         if not hasattr(doc, "payroll_note") or doc.payroll_note is None:
             try:
                 doc.payroll_note = ""
             except Exception:
                 # If we can't set the attribute, we can't continue
-                log_tax_logic_error(
-                    "Tax Note",
-                    "Cannot set payroll_note attribute on document"
-                )
+                log_tax_logic_error("Tax Note", "Cannot set payroll_note attribute on document")
                 return
 
         # Initialize note content
         note_content = [
             "\n\n<!-- TAX_CALCULATION_START -->",
         ]
-        
+
         # Helper function for safe access to values
         def get_safe_value(key, default=0, format_fn=None):
             try:
@@ -951,14 +915,14 @@ def add_tax_info_to_note(doc, tax_method, values):
                 return default
             except Exception:
                 return default
-        
+
         # Helper function for formatting currencies
         def format_currency(value):
             try:
                 return f"{flt(value):,.0f}"
             except Exception:
                 return "0"
-                
+
         # Helper function for formatting percentages
         def format_percent(value):
             try:
@@ -976,15 +940,17 @@ def add_tax_info_to_note(doc, tax_method, values):
             ter_rate = get_safe_value("ter_rate", 0, format_percent)
             monthly_tax = get_safe_value("monthly_tax", 0, format_currency)
 
-            note_content.extend([
-                "=== Perhitungan PPh 21 dengan TER ===",
-                f"Status Pajak: {status_pajak}{mapping_info}",
-                f"Penghasilan Bruto: Rp {gross_pay}",
-                f"Tarif Efektif Rata-rata: {ter_rate}%",
-                f"PPh 21 Sebulan: Rp {monthly_tax}",
-                "",
-                "Sesuai PMK 168/2023 tentang Tarif Efektif Rata-rata",
-            ])
+            note_content.extend(
+                [
+                    "=== Perhitungan PPh 21 dengan TER ===",
+                    f"Status Pajak: {status_pajak}{mapping_info}",
+                    f"Penghasilan Bruto: Rp {gross_pay}",
+                    f"Tarif Efektif Rata-rata: {ter_rate}%",
+                    f"PPh 21 Sebulan: Rp {monthly_tax}",
+                    "",
+                    "Sesuai PMK 168/2023 tentang Tarif Efektif Rata-rata",
+                ]
+            )
 
         elif tax_method == "PROGRESSIVE_DECEMBER":
             # Progressive method for December
@@ -995,18 +961,20 @@ def add_tax_info_to_note(doc, tax_method, values):
             annual_netto = get_safe_value("annual_netto", 0, format_currency)
             ptkp = get_safe_value("ptkp", 0, format_currency)
             pkp = get_safe_value("pkp", 0, format_currency)
-            
-            note_content.extend([
-                "=== Perhitungan PPh 21 Tahunan (Desember) ===",
-                f"Penghasilan Bruto Setahun: Rp {annual_gross}",
-                f"Biaya Jabatan: Rp {annual_biaya_jabatan}",
-                f"Total BPJS: Rp {annual_bpjs}",
-                f"Penghasilan Neto: Rp {annual_netto}",
-                f"PTKP ({status_pajak}): Rp {ptkp}",
-                f"PKP: Rp {pkp}",
-                "",
-                "Perhitungan Per Lapisan Pajak:",
-            ])
+
+            note_content.extend(
+                [
+                    "=== Perhitungan PPh 21 Tahunan (Desember) ===",
+                    f"Penghasilan Bruto Setahun: Rp {annual_gross}",
+                    f"Biaya Jabatan: Rp {annual_biaya_jabatan}",
+                    f"Total BPJS: Rp {annual_bpjs}",
+                    f"Penghasilan Neto: Rp {annual_netto}",
+                    f"PTKP ({status_pajak}): Rp {ptkp}",
+                    f"PKP: Rp {pkp}",
+                    "",
+                    "Perhitungan Per Lapisan Pajak:",
+                ]
+            )
 
             # Add tax bracket details if available
             tax_details = get_safe_value("tax_details", [])
@@ -1033,15 +1001,17 @@ def add_tax_info_to_note(doc, tax_method, values):
             correction = get_safe_value("correction", 0, format_currency)
             is_kurang_bayar = flt(get_safe_value("correction", 0)) > 0
 
-            note_content.extend([
-                "",
-                f"Total PPh 21 Setahun: Rp {annual_pph}",
-                f"PPh 21 Sudah Dibayar: Rp {ytd_pph}",
-                f"Koreksi Desember: Rp {correction}",
-                f"({'Kurang Bayar' if is_kurang_bayar else 'Lebih Bayar'})",
-                "",
-                "Metode perhitungan Desember menggunakan metode progresif sesuai PMK 168/2023",
-            ])
+            note_content.extend(
+                [
+                    "",
+                    f"Total PPh 21 Setahun: Rp {annual_pph}",
+                    f"PPh 21 Sudah Dibayar: Rp {ytd_pph}",
+                    f"Koreksi Desember: Rp {correction}",
+                    f"({'Kurang Bayar' if is_kurang_bayar else 'Lebih Bayar'})",
+                    "",
+                    "Metode perhitungan Desember menggunakan metode progresif sesuai PMK 168/2023",
+                ]
+            )
 
         elif tax_method == "PROGRESSIVE":
             # Regular progressive method
@@ -1051,16 +1021,18 @@ def add_tax_info_to_note(doc, tax_method, values):
             ptkp = get_safe_value("ptkp", 0, format_currency)
             pkp = get_safe_value("pkp", 0, format_currency)
 
-            note_content.extend([
-                "=== Perhitungan PPh 21 dengan Metode Progresif ===",
-                f"Status Pajak: {status_pajak}",
-                f"Penghasilan Neto Sebulan: Rp {monthly_netto}",
-                f"Penghasilan Neto Setahun: Rp {annual_netto}",
-                f"PTKP: Rp {ptkp}",
-                f"PKP: Rp {pkp}",
-                "",
-                "PPh 21 Tahunan:",
-            ])
+            note_content.extend(
+                [
+                    "=== Perhitungan PPh 21 dengan Metode Progresif ===",
+                    f"Status Pajak: {status_pajak}",
+                    f"Penghasilan Neto Sebulan: Rp {monthly_netto}",
+                    f"Penghasilan Neto Setahun: Rp {annual_netto}",
+                    f"PTKP: Rp {ptkp}",
+                    f"PKP: Rp {pkp}",
+                    "",
+                    "PPh 21 Tahunan:",
+                ]
+            )
 
             # Add tax bracket details if available
             tax_details = get_safe_value("tax_details", [])
@@ -1084,12 +1056,14 @@ def add_tax_info_to_note(doc, tax_method, values):
             # Add monthly PPh
             annual_pph = get_safe_value("annual_pph", 0, format_currency)
             monthly_pph = get_safe_value("monthly_pph", 0, format_currency)
-            
-            note_content.extend([
-                "",
-                f"Total PPh 21 Setahun: Rp {annual_pph}",
-                f"PPh 21 Sebulan: Rp {monthly_pph}",
-            ])
+
+            note_content.extend(
+                [
+                    "",
+                    f"Total PPh 21 Setahun: Rp {annual_pph}",
+                    f"PPh 21 Sebulan: Rp {monthly_pph}",
+                ]
+            )
 
         else:
             # Simple message (e.g., for NPWP Gabung Suami case)
@@ -1097,26 +1071,32 @@ def add_tax_info_to_note(doc, tax_method, values):
             if message:
                 note_content.extend(["=== Informasi Pajak ===", message])
             else:
-                note_content.extend([
-                    "=== Informasi Pajak ===",
-                    "Tidak ada perhitungan PPh 21 yang dilakukan."
-                ])
+                note_content.extend(
+                    ["=== Informasi Pajak ===", "Tidak ada perhitungan PPh 21 yang dilakukan."]
+                )
 
         # Add end marker
         note_content.append("<!-- TAX_CALCULATION_END -->")
-        
+
         # Check if we need to handle existing tax calculation section
         current_note = getattr(doc, "payroll_note", "") or ""
-        
-        if "<!-- TAX_CALCULATION_START -->" in current_note and "<!-- TAX_CALCULATION_END -->" in current_note:
+
+        if (
+            "<!-- TAX_CALCULATION_START -->" in current_note
+            and "<!-- TAX_CALCULATION_END -->" in current_note
+        ):
             # Find and remove the existing section
             try:
                 start_idx = current_note.find("<!-- TAX_CALCULATION_START -->")
-                end_idx = current_note.find("<!-- TAX_CALCULATION_END -->") + len("<!-- TAX_CALCULATION_END -->")
-                
+                end_idx = current_note.find("<!-- TAX_CALCULATION_END -->") + len(
+                    "<!-- TAX_CALCULATION_END -->"
+                )
+
                 if start_idx >= 0 and end_idx > start_idx:
                     # Remove existing section and replace with new one
-                    doc.payroll_note = current_note[:start_idx] + "\n".join(note_content) + current_note[end_idx:]
+                    doc.payroll_note = (
+                        current_note[:start_idx] + "\n".join(note_content) + current_note[end_idx:]
+                    )
                 else:
                     # Just append if indices are wrong
                     doc.payroll_note = current_note + "\n" + "\n".join(note_content)
@@ -1126,7 +1106,7 @@ def add_tax_info_to_note(doc, tax_method, values):
         else:
             # Just append if no existing section
             doc.payroll_note = current_note + "\n" + "\n".join(note_content)
-            
+
         # Try to persist changes
         try:
             doc.db_set("payroll_note", doc.payroll_note, update_modified=False)
@@ -1136,11 +1116,8 @@ def add_tax_info_to_note(doc, tax_method, values):
 
     except Exception as e:
         # Log error but don't break the process
-        log_tax_logic_error(
-            "Note Error",
-            f"Error adding tax info to note: {str(e)}"
-        )
-        
+        log_tax_logic_error("Note Error", f"Error adding tax info to note: {str(e)}")
+
         # Try to add a simple note
         try:
             if hasattr(doc, "payroll_note"):

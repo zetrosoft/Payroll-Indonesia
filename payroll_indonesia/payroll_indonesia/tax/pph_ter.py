@@ -16,8 +16,7 @@ and other TER-related utilities.
 """
 
 import frappe
-from frappe import _
-from frappe.utils import flt, cint
+from frappe.utils import flt
 import json
 from typing import Dict, Any, List, Tuple, Optional, Union
 
@@ -26,7 +25,6 @@ from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_valu
 
 # Import constants
 from payroll_indonesia.constants import (
-    CACHE_SHORT,
     CACHE_LONG,
     TER_CATEGORY_A,
     TER_CATEGORY_B,
@@ -47,7 +45,7 @@ DEFAULT_TER_RATES = {
 def log_ter_error(error_type: str, message: str, data: Optional[Dict] = None) -> None:
     """
     Helper function to log TER-related errors in a consistent format
-    
+
     Args:
         error_type: Type of error (e.g., "Mapping Error", "Rate Error")
         message: Error message
@@ -56,13 +54,13 @@ def log_ter_error(error_type: str, message: str, data: Optional[Dict] = None) ->
     try:
         # Create clean error title
         title = f"TER {error_type}"
-        
+
         # Format message with data if provided
         if data:
             formatted_message = f"{message}\n\nData: {data}"
         else:
             formatted_message = message
-            
+
         # Log the error
         frappe.log_error(formatted_message, title)
     except Exception:
@@ -94,14 +92,14 @@ def map_ptkp_to_ter_category(status_pajak: str) -> str:
         if not status_pajak or not isinstance(status_pajak, str):
             # Use default if invalid
             log_ter_error(
-                "Category Mapping", 
-                f"Invalid tax status provided: {str(status_pajak)}, using TER C as default"
+                "Category Mapping",
+                f"Invalid tax status provided: {str(status_pajak)}, using TER C as default",
             )
             return TER_CATEGORY_C
 
         # Normalize status_pajak by removing whitespace and converting to uppercase
         status_pajak = status_pajak.strip().upper()
-        
+
         # Return default for empty status
         if not status_pajak:
             return TER_CATEGORY_C
@@ -131,7 +129,7 @@ def map_ptkp_to_ter_category(status_pajak: str) -> str:
             log_ter_error(
                 "Mapping Error",
                 f"Error retrieving TER mapping from settings: {str(e)}",
-                {"status_pajak": status_pajak}
+                {"status_pajak": status_pajak},
             )
             # Continue with default mapping, don't show msgprint for better UX
 
@@ -140,7 +138,7 @@ def map_ptkp_to_ter_category(status_pajak: str) -> str:
         try:
             prefix = status_pajak[:2] if len(status_pajak) >= 2 else status_pajak
             suffix = status_pajak[2:] if len(status_pajak) >= 3 else "0"
-            
+
             # Try to convert suffix to int if possible (to handle numeric comparisons)
             numeric_suffix = None
             try:
@@ -162,7 +160,9 @@ def map_ptkp_to_ter_category(status_pajak: str) -> str:
             result = TER_CATEGORY_C
         elif prefix == "K" and (suffix == "0" or numeric_suffix == 0):
             result = TER_CATEGORY_B
-        elif prefix == "K" and (suffix in ["1", "2", "3"] or (numeric_suffix is not None and 1 <= numeric_suffix <= 3)):
+        elif prefix == "K" and (
+            suffix in ["1", "2", "3"] or (numeric_suffix is not None and 1 <= numeric_suffix <= 3)
+        ):
             result = TER_CATEGORY_C
         elif prefix == "HB":  # Special case for HB (single parent)
             result = TER_CATEGORY_C
@@ -173,7 +173,7 @@ def map_ptkp_to_ter_category(status_pajak: str) -> str:
             log_ter_error(
                 "Mapping Warning",
                 f"Unknown tax status {status_pajak} for TER mapping, defaulting to {result}",
-                {"status_pajak": status_pajak}
+                {"status_pajak": status_pajak},
             )
 
         # Cache the result
@@ -185,7 +185,7 @@ def map_ptkp_to_ter_category(status_pajak: str) -> str:
         log_ter_error(
             "Critical Error",
             f"Error mapping PTKP {status_pajak} to TER category: {str(e)}",
-            {"status_pajak": status_pajak}
+            {"status_pajak": status_pajak},
         )
         # Return a safe default to prevent process failure
         return TER_CATEGORY_C
@@ -232,14 +232,12 @@ def get_ter_mapping_from_settings() -> List[Dict[str, Any]]:
             except Exception as parse_error:
                 # Non-critical error - we can continue with default mapping
                 log_ter_error(
-                    "Parse Error",
-                    f"Error parsing legacy TER mapping: {str(parse_error)}"
+                    "Parse Error", f"Error parsing legacy TER mapping: {str(parse_error)}"
                 )
     except Exception as e:
         # Non-critical error - we can continue with default mapping
         log_ter_error(
-            "Settings Error",
-            f"Error retrieving TER mapping from PPh 21 Settings: {str(e)}"
+            "Settings Error", f"Error retrieving TER mapping from PPh 21 Settings: {str(e)}"
         )
 
     # Return empty list if not found
@@ -261,7 +259,7 @@ def get_ter_rate(category: str, status_pajak: str = None) -> float:
     """
     # Normalize the category input
     category = (category or "").strip().upper()
-    
+
     # Handle short format conversion (A, B, C) to full format (TER A, TER B, TER C)
     if category in ["A", "B", "C"]:
         category = f"TER {category}"
@@ -276,12 +274,8 @@ def get_ter_rate(category: str, status_pajak: str = None) -> float:
     try:
         rate = frappe.db.get_value(
             "PPh 21 TER Table",
-            filters={
-                "category": category,
-                "status_pajak": status_pajak,
-                "is_highest_bracket": 1
-            },
-            fieldname="rate"
+            filters={"category": category, "status_pajak": status_pajak, "is_highest_bracket": 1},
+            fieldname="rate",
         )
         if rate is not None:
             return float(rate) / 100.0  # Convert percentage to decimal
@@ -289,14 +283,16 @@ def get_ter_rate(category: str, status_pajak: str = None) -> float:
         log_ter_error(
             "Database Error",
             f"Error retrieving TER rate from database: {str(e)}",
-            {"category": category, "status_pajak": status_pajak}
+            {"category": category, "status_pajak": status_pajak},
         )
 
     # Fallback to default rates
     return DEFAULT_TER_RATES.get(category, 0.25)
 
 
-def calculate_monthly_tax_with_ter(income: Union[float, int], ter_category: str = "") -> Tuple[float, float]:
+def calculate_monthly_tax_with_ter(
+    income: Union[float, int], ter_category: str = ""
+) -> Tuple[float, float]:
     """
     Calculate monthly PPh 21 using TER method
     Enhanced with better validation and error handling
@@ -314,9 +310,9 @@ def calculate_monthly_tax_with_ter(income: Union[float, int], ter_category: str 
             safe_income = flt(income)
         except (ValueError, TypeError):
             log_ter_error(
-                "Calculation Error", 
+                "Calculation Error",
                 f"Invalid income value: {income}, using 0",
-                {"income": income, "category": ter_category}
+                {"income": income, "category": ter_category},
             )
             safe_income = 0.0
 
@@ -326,25 +322,25 @@ def calculate_monthly_tax_with_ter(income: Union[float, int], ter_category: str 
 
         # Validate ter_category
         safe_category = ter_category.strip() if isinstance(ter_category, str) else ""
-        
+
         # Convert from short format (A, B, C) to full format (TER A, TER B, TER C) if needed
         if safe_category in ["A", "B", "C"]:
             safe_category = f"TER {safe_category}"
-        
+
         # If category is empty or invalid, assign default
         if not safe_category or safe_category not in TER_CATEGORIES:
             # If ter_category is empty or not in valid categories, try to determine from other parameters
             # For this simplified version, we just use TER C as default
             safe_category = TER_CATEGORY_C
             log_ter_error(
-                "Calculation Warning", 
+                "Calculation Warning",
                 f"Invalid or empty TER category: '{ter_category}', defaulting to '{safe_category}'",
-                {"income": safe_income, "category": ter_category}
+                {"income": safe_income, "category": ter_category},
             )
 
         # Get TER rate for income and category (using income-variant function)
         try:
-            from payroll_indonesia.payroll_indonesia.doctype.payroll_indonesia_settings.payroll_indonesia_settings import PayrollIndonesiaSettings
+            # Import only where needed to avoid unused import warning
             settings = frappe.get_doc("Payroll Indonesia Settings", "Payroll Indonesia Settings")
             ter_rate = settings.get_ter_rate(safe_category, safe_income)
         except Exception:
@@ -355,15 +351,15 @@ def calculate_monthly_tax_with_ter(income: Union[float, int], ter_category: str 
         monthly_tax = flt(safe_income * ter_rate)
 
         return monthly_tax, ter_rate
-    
+
     except Exception as e:
         # Log error
         log_ter_error(
             "Calculation Error",
             f"Error calculating monthly tax with TER: {str(e)}",
-            {"income": income, "category": ter_category}
+            {"income": income, "category": ter_category},
         )
-        
+
         # Return minimal values rather than raising exception to make the app more resilient
         # Use TER C's default rate for maximum safety
         default_rate = DEFAULT_TER_RATES.get(TER_CATEGORY_C, 0.25)
@@ -380,7 +376,7 @@ def calculate_monthly_tax_with_ter(income: Union[float, int], ter_category: str 
 def validate_ter_data_availability() -> list:
     """
     Check if TER data is available in the database
-    
+
     Returns:
         list: List of issues found, empty list if no issues
     """
@@ -393,10 +389,9 @@ def validate_ter_data_availability() -> list:
         if total == 0:
             issues.append(f"Tidak ada entri untuk kategori {category}.")
 
-        highest = frappe.db.count("PPh 21 TER Table", {
-            "category": category,
-            "is_highest_bracket": 1
-        })
+        highest = frappe.db.count(
+            "PPh 21 TER Table", {"category": category, "is_highest_bracket": 1}
+        )
         if highest == 0:
             issues.append(f"Tidak ada bracket tertinggi (is_highest_bracket=1) untuk {category}.")
 

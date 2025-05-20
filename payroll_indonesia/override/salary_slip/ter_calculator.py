@@ -15,11 +15,8 @@ from payroll_indonesia.utilities.cache_utils import get_cached_value, cache_valu
 # Import constants
 from payroll_indonesia.constants import (
     MONTHS_PER_YEAR,
-    CACHE_SHORT,
     CACHE_LONG,
     CACHE_MEDIUM,
-    TER_CATEGORY_A,
-    TER_CATEGORY_B,
     TER_CATEGORY_C,
     TER_CATEGORIES,
 )
@@ -52,7 +49,7 @@ def log_ter_error(error_type, message, doc=None, employee=None):
     """
     Improved error logging function specifically for TER calculation errors.
     Prevents nesting of error messages and creates more concise logs.
-    
+
     Args:
         error_type (str): Short type of TER-related error
         message (str): Error message
@@ -61,22 +58,25 @@ def log_ter_error(error_type, message, doc=None, employee=None):
     """
     try:
         # Extract key information
-        doc_name = getattr(doc, 'name', 'unknown') if doc else 'unknown'
-        emp_name = getattr(employee, 'name', 'unknown') if employee else 'unknown'
-        
+        doc_name = getattr(doc, "name", "unknown") if doc else "unknown"
+        emp_name = getattr(employee, "name", "unknown") if employee else "unknown"
+
         # Create concise title
         title = f"TER {error_type}: {emp_name}"
-        
+
         # Sanitize message to avoid nesting
         import re
+
         sanitized_message = message
         if "Error Log" in sanitized_message:
             sanitized_message = re.sub(r"Error Log [a-z0-9]+:", "", sanitized_message)
             sanitized_message = re.sub(r"\([^)]*Error Log [^)]*\)", "", sanitized_message)
-        
+
         # Create clean message with context
-        clean_message = f"Document: {doc_name}, Employee: {emp_name}\n\nDetails: {sanitized_message}"
-        
+        clean_message = (
+            f"Document: {doc_name}, Employee: {emp_name}\n\nDetails: {sanitized_message}"
+        )
+
         return frappe.log_error(message=clean_message, title=title)
     except Exception:
         # Fallback to basic logging
@@ -91,16 +91,16 @@ def ensure_ter_fields(doc):
     """
     Ensure all required fields for TER calculation exist in the document.
     Initialize them with default values if missing.
-    
+
     Args:
         doc: Salary slip document
-        
+
     Returns:
         bool: True if all fields were initialized successfully
     """
     if not doc:
         return False
-        
+
     try:
         for field, default_value in TER_REQUIRED_FIELDS.items():
             if not hasattr(doc, field) or getattr(doc, field) is None:
@@ -122,7 +122,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
     try:
         # Ensure all required fields exist and are initialized
         ensure_ter_fields(doc)
-        
+
         # Store original values for verification, with safe getattr access
         original_values = {
             "gross_pay": flt(getattr(doc, "gross_pay", 0)),
@@ -133,16 +133,18 @@ def calculate_monthly_pph_with_ter(doc, employee):
         }
 
         # Add concise log entry for debugging
-        doc_name = getattr(doc, 'name', 'unknown')
+        doc_name = getattr(doc, "name", "unknown")
         log_ter_error("Calculation Start", f"Beginning calculation for {doc_name}", doc, employee)
-        
+
         # Validate employee status_pajak with safe access
         employee_status_pajak = getattr(employee, "status_pajak", "") if employee else ""
         if not employee_status_pajak:
             employee_status_pajak = "TK0"  # Default to TK0
             if hasattr(employee, "status_pajak"):
                 employee.status_pajak = employee_status_pajak
-            frappe.msgprint(_("Warning: Employee tax status not set, using TK0 as default"), indicator="orange")
+            frappe.msgprint(
+                _("Warning: Employee tax status not set, using TK0 as default"), indicator="orange"
+            )
 
         # Start with gross pay as monthly income with safe access
         monthly_gross_pay = flt(getattr(doc, "gross_pay", 0))
@@ -161,9 +163,10 @@ def calculate_monthly_pph_with_ter(doc, employee):
         if hasattr(doc, "earnings") and doc.earnings:
             try:
                 basic_salary_list = [
-                    flt(getattr(e, "amount", 0)) 
-                    for e in doc.earnings 
-                    if getattr(e, "salary_component", "") in ["Gaji Pokok", "Basic Salary", "Basic Pay"]
+                    flt(getattr(e, "amount", 0))
+                    for e in doc.earnings
+                    if getattr(e, "salary_component", "")
+                    in ["Gaji Pokok", "Basic Salary", "Basic Pay"]
                 ]
                 basic_salary = basic_salary_list[0] if basic_salary_list else 0
             except Exception:
@@ -219,7 +222,9 @@ def calculate_monthly_pph_with_ter(doc, employee):
         except Exception as e:
             log_ter_error("Category Mapping", str(e), doc, employee)
             ter_category = TER_CATEGORY_C  # Default to highest category on error
-            frappe.msgprint(_("Warning: Error mapping TER category, using TER C as default"), indicator="orange")
+            frappe.msgprint(
+                _("Warning: Error mapping TER category, using TER C as default"), indicator="orange"
+            )
 
         # Normalize the TER category with improved validation
         ter_category = normalize_ter_category(ter_category)
@@ -227,13 +232,13 @@ def calculate_monthly_pph_with_ter(doc, employee):
         # Calculate monthly tax with TER with improved error handling
         monthly_tax = 0
         ter_rate = 0
-        
+
         try:
             # First attempt using the centralized function that handles validation
             monthly_tax, ter_rate = calculate_monthly_tax_with_ter(monthly_gross_pay, ter_category)
         except Exception as e:
             log_ter_error("Tax Calculation", f"Primary calculation failed: {str(e)}", doc)
-            
+
             # Fallback calculation
             try:
                 # Use the simplified approach with validation
@@ -245,8 +250,7 @@ def calculate_monthly_pph_with_ter(doc, employee):
                 ter_rate = 0.05  # Default to 5% as absolute fallback
                 monthly_tax = flt(monthly_gross_pay * ter_rate)
                 frappe.msgprint(
-                    _("Warning: TER calculation failed, using default 5% tax rate"), 
-                    indicator="red"
+                    _("Warning: TER calculation failed, using default 5% tax rate"), indicator="red"
                 )
 
         # Set and save TER info safely
@@ -312,26 +316,26 @@ def calculate_monthly_pph_with_ter(doc, employee):
 def normalize_ter_category(category):
     """
     Normalize TER category to ensure it uses the correct format.
-    
+
     Args:
         category (str): TER category input (could be 'A', 'B', 'C', or 'TER A', etc.)
-        
+
     Returns:
         str: Normalized TER category ('TER A', 'TER B', or 'TER C')
     """
     category = (category or "").strip().upper()
-    
+
     # Convert single letter format to TER format
     if category in ["A", "B", "C"]:
         category = f"TER {category}"
     # Ensure category starts with "TER " prefix
     elif not category.startswith("TER "):
         category = TER_CATEGORY_C  # Default to highest category
-        
+
     # Validate against allowed categories
     if category not in TER_CATEGORIES:
         category = TER_CATEGORY_C  # Default to highest category if invalid
-        
+
     return category
 
 
@@ -339,22 +343,22 @@ def calculate_simple_pph_with_ter(employee, taxable_income, ter_category=None, s
     """
     Simplified version of PPh 21 calculation with TER for external usage.
     Includes proper category validation.
-    
+
     Args:
         employee: Employee document or ID
         taxable_income: Monthly taxable income
         ter_category: TER category ('A', 'B', 'C', 'TER A', 'TER B', 'TER C')
         status_pajak: Tax status code (e.g., 'TK0', 'K1')
-        
+
     Returns:
         float: Calculated monthly PPh 21 amount
     """
     # Normalize and validate the category
     category = normalize_ter_category(ter_category)
-    
+
     # Get the TER rate
     rate = get_ter_rate(category, status_pajak)
-    
+
     # Calculate and return tax amount
     return flt(taxable_income) * rate
 
@@ -370,7 +374,7 @@ def verify_calculation_integrity(
 ):
     """
     Verify integrity of TER calculation results with improved safety checks
-    
+
     Args:
         doc: Salary slip document
         original_values: Dict of original values
@@ -379,26 +383,30 @@ def verify_calculation_integrity(
         ter_rate: Calculated TER rate (decimal)
         ter_category: Determined TER category
         monthly_tax: Calculated monthly tax amount
-    
+
     Returns:
         bool: True if integrity is verified or issues were fixed
     """
     if not doc:
         return False
-        
+
     try:
         errors = []
-        
+
         # Ensure critical fields exist before checking them
         ensure_ter_fields(doc)
 
         # Only verify gross_pay if it exists in both doc and original_values
         if hasattr(doc, "gross_pay") and "gross_pay" in original_values:
             if abs(flt(doc.gross_pay) - flt(original_values.get("gross_pay", 0))) > 0.01:
-                errors.append(f"gross_pay changed: {original_values.get('gross_pay', 0)} → {doc.gross_pay}")
+                errors.append(
+                    f"gross_pay changed: {original_values.get('gross_pay', 0)} → {doc.gross_pay}"
+                )
                 doc.gross_pay = flt(original_values.get("gross_pay", 0))
                 try:
-                    doc.db_set("gross_pay", flt(original_values.get("gross_pay", 0)), update_modified=False)
+                    doc.db_set(
+                        "gross_pay", flt(original_values.get("gross_pay", 0)), update_modified=False
+                    )
                 except Exception:
                     # Continue if db_set fails
                     pass
@@ -413,7 +421,9 @@ def verify_calculation_integrity(
                 )
                 doc.monthly_gross_for_ter = flt(monthly_gross_pay)
                 try:
-                    doc.db_set("monthly_gross_for_ter", flt(monthly_gross_pay), update_modified=False)
+                    doc.db_set(
+                        "monthly_gross_for_ter", flt(monthly_gross_pay), update_modified=False
+                    )
                 except Exception:
                     # Continue if db_set fails
                     pass
@@ -475,9 +485,8 @@ def verify_calculation_integrity(
 
             # Add to payroll_note if available
             if hasattr(doc, "payroll_note") and doc.payroll_note is not None:
-                doc.payroll_note += (
-                    "\n[TER] Fixed calculation issues:\n"
-                    + "\n".join(f"- {err}" for err in errors)
+                doc.payroll_note += "\n[TER] Fixed calculation issues:\n" + "\n".join(
+                    f"- {err}" for err in errors
                 )
 
         return True  # Return true even with errors since we fixed them
@@ -493,12 +502,12 @@ def verify_calculation_integrity(
 def get_ytd_totals_from_tax_summary(doc, year, month=None):
     """
     Get YTD tax totals from Employee Tax Summary with caching and improved parameter handling
-    
+
     Args:
         doc: Salary slip document or employee ID string
         year: Tax year
         month: Month number (1-12), defaults to current month if not provided
-    
+
     Returns:
         dict: YTD values (gross, tax, bpjs)
     """
@@ -511,7 +520,7 @@ def get_ytd_totals_from_tax_summary(doc, year, month=None):
     else:
         # Return empty result if no employee identified
         return {"gross": 0, "bpjs": 0, "pph21": 0}
-        
+
     # Validate year
     if not year:
         # Try to get year from document
@@ -523,7 +532,7 @@ def get_ytd_totals_from_tax_summary(doc, year, month=None):
                 year = getdate().year
         else:
             year = getdate().year
-            
+
     # Validate month
     if not month:
         # Try to get month from document
@@ -552,7 +561,7 @@ def get_ytd_totals_from_tax_summary(doc, year, month=None):
                 ETS.ytd_tax,
                 SUM(ETSD.gross_pay) as ytd_gross,
                 SUM(ETSD.bpjs_deductions) as ytd_bpjs
-            FROM 
+            FROM
                 `tabEmployee Tax Summary` ETS
             LEFT JOIN
                 `tabEmployee Tax Summary Detail` ETSD ON ETS.name = ETSD.parent
@@ -586,12 +595,14 @@ def get_ytd_totals_from_tax_summary(doc, year, month=None):
     except Exception as e:
         # Log error and fall back to legacy method
         log_ter_error("YTD Data", f"Error getting YTD data: {str(e)}", doc)
-        
+
         # Only show message to user if this is being called directly from UI
-        if frappe.local.form_dict.cmd == "payroll_indonesia.override.salary_slip.ter_calculator.get_ytd_totals_from_tax_summary":
+        if (
+            frappe.local.form_dict.cmd
+            == "payroll_indonesia.override.salary_slip.ter_calculator.get_ytd_totals_from_tax_summary"
+        ):
             frappe.msgprint(
-                _("Warning: Using fallback method to calculate YTD tax data"), 
-                indicator="orange"
+                _("Warning: Using fallback method to calculate YTD tax data"), indicator="orange"
             )
 
         # Fallback to the older method
@@ -602,7 +613,7 @@ def get_ytd_totals_from_tax_summary_legacy(employee, year, month=None):
     """
     Legacy fallback method to get YTD tax totals from Employee Tax Summary
     with improved parameter validation
-    
+
     Args:
         employee: Employee ID or document
         year: Tax year
@@ -610,16 +621,16 @@ def get_ytd_totals_from_tax_summary_legacy(employee, year, month=None):
     """
     # Standard default result
     default_result = {"gross": 0, "pph21": 0, "bpjs": 0}
-    
+
     try:
         # Extract employee ID if needed
         if not isinstance(employee, str) and hasattr(employee, "name"):
             employee = employee.name
-            
+
         # Validate parameters
         if not employee or not year:
             return default_result
-            
+
         # Default month to current if not provided
         if not month:
             month = getdate().month
@@ -658,9 +669,5 @@ def get_ytd_totals_from_tax_summary_legacy(employee, year, month=None):
 
     except Exception as e:
         # Log error but return empty result
-        log_ter_error(
-            "YTD Legacy", 
-            f"Failed to calculate YTD values: {str(e)}", 
-            None
-        )
+        log_ter_error("YTD Legacy", f"Failed to calculate YTD values: {str(e)}", None)
         return default_result

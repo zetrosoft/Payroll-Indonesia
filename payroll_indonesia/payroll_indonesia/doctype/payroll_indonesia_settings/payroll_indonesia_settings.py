@@ -8,10 +8,11 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
+
 # Import TER validation and default rates from pph_ter.py
 from payroll_indonesia.payroll_indonesia.tax.pph_ter import (
     DEFAULT_TER_RATES,
-    validate_ter_data_availability
+    validate_ter_data_availability,
 )
 
 
@@ -64,57 +65,61 @@ class PayrollIndonesiaSettings(Document):
         issues = validate_ter_data_availability()
         # Store issues in the new field for displaying in the UI
         self.ter_validation_issues = "\n".join(issues) if issues else ""
-            
+
         # Display comprehensive validation results
         if issues:
             issues_text = "\n• " + "\n• ".join(issues)
             frappe.msgprint(
-                _("TER Configuration Issues Detected:{0}\n\nPlease complete TER setup before using this method for calculations.").format(issues_text),
-                indicator="red"
+                _(
+                    "TER Configuration Issues Detected:{0}\n\nPlease complete TER setup before using this method for calculations."
+                ).format(issues_text),
+                indicator="red",
             )
 
     def _validate_ter_rate_json(self, json_data, category_name, issues_list):
         """
         Validate TER rate JSON data for a specific category
-        
+
         Args:
             json_data: JSON string with TER rates
             category_name: Name of TER category ("TER A", "TER B", "TER C")
             issues_list: List to collect validation issues
-            
+
         Returns:
             bool: True if valid, False otherwise
         """
         if not json_data:
             issues_list.append(_("{0} rates are missing").format(category_name))
             return False
-            
+
         try:
             # Parse the JSON data
             rate_data = json.loads(json_data)
-            
+
             # Check if it's a list with at least one entry
             if not isinstance(rate_data, list) or not rate_data:
-                issues_list.append(_("{0} rates format is invalid (not a list or empty)").format(category_name))
-                return False
-                
-            # Check if there's at least one rate with is_highest_bracket=True
-            has_highest_bracket = any(
-                item.get("is_highest_bracket", False) for item in rate_data
-            )
-            if not has_highest_bracket:
                 issues_list.append(
-                    _("{0} rates missing highest bracket (no unlimited upper bracket defined)").format(category_name)
+                    _("{0} rates format is invalid (not a list or empty)").format(category_name)
                 )
                 return False
-                
+
+            # Check if there's at least one rate with is_highest_bracket=True
+            has_highest_bracket = any(item.get("is_highest_bracket", False) for item in rate_data)
+            if not has_highest_bracket:
+                issues_list.append(
+                    _(
+                        "{0} rates missing highest bracket (no unlimited upper bracket defined)"
+                    ).format(category_name)
+                )
+                return False
+
             # Check that all entries have required fields
             for idx, item in enumerate(rate_data):
                 missing_fields = []
                 for field in ["income_from", "income_to", "rate"]:
                     if field not in item:
                         missing_fields.append(field)
-                
+
                 if missing_fields:
                     issues_list.append(
                         _("{0} rate entry {1} is missing fields: {2}").format(
@@ -122,7 +127,7 @@ class PayrollIndonesiaSettings(Document):
                         )
                     )
                     return False
-                    
+
             return True
         except json.JSONDecodeError:
             issues_list.append(_("{0} rates contain invalid JSON").format(category_name))
@@ -162,7 +167,9 @@ class PayrollIndonesiaSettings(Document):
                 try:
                     json.loads(self.get(field))
                 except json.JSONDecodeError:
-                    frappe.msgprint(_("Invalid JSON format in field {0}").format(field), indicator="red")
+                    frappe.msgprint(
+                        _("Invalid JSON format in field {0}").format(field), indicator="red"
+                    )
                 except Exception:
                     frappe.msgprint(_("Error validating field {0}").format(field), indicator="red")
 
@@ -214,16 +221,19 @@ class PayrollIndonesiaSettings(Document):
 
                 # Update calculation method and TER usage flag
                 needs_update = False
-                
-                if hasattr(pph_settings, "calculation_method") and pph_settings.calculation_method != self.tax_calculation_method:
+
+                if (
+                    hasattr(pph_settings, "calculation_method")
+                    and pph_settings.calculation_method != self.tax_calculation_method
+                ):
                     pph_settings.calculation_method = self.tax_calculation_method
                     needs_update = True
-                    
+
                 # Sync the use_ter field if it exists in PPh 21 Settings
                 if hasattr(pph_settings, "use_ter") and pph_settings.use_ter != self.use_ter:
                     pph_settings.use_ter = self.use_ter
                     needs_update = True
-                
+
                 if needs_update:
                     pph_settings.flags.ignore_validate = True
                     pph_settings.flags.ignore_permissions = True
@@ -242,7 +252,7 @@ class PayrollIndonesiaSettings(Document):
     def sync_ter_rates(self, force_sync=False):
         """
         Sync TER rates from JSON fields to PPh 21 TER Table
-        
+
         Args:
             force_sync (bool): If True, forces sync even if use_ter is not enabled
         """
@@ -253,7 +263,7 @@ class PayrollIndonesiaSettings(Document):
         # Skip sync if TER is not enabled, unless forced
         if not self.use_ter and not force_sync:
             return
-            
+
         # Check if table is empty and populate with defaults if needed
         if frappe.db.count("PPh 21 TER Table") == 0:
             for category, rate in DEFAULT_TER_RATES.items():
@@ -275,7 +285,7 @@ class PayrollIndonesiaSettings(Document):
             # Track sync status
             success_count = 0
             error_count = 0
-            
+
             # Sync TER A rates
             if self.ter_rate_ter_a_json:
                 try:
@@ -311,12 +321,11 @@ class PayrollIndonesiaSettings(Document):
                 if error_count > 0:
                     frappe.msgprint(
                         _("TER Rates sync completed with some errors. See error log for details."),
-                        indicator="orange"
+                        indicator="orange",
                     )
                 else:
                     frappe.msgprint(
-                        _("TER Rates successfully synced to database."),
-                        indicator="green"
+                        _("TER Rates successfully synced to database."), indicator="green"
                     )
 
         except Exception as e:
@@ -325,29 +334,29 @@ class PayrollIndonesiaSettings(Document):
     def _sync_ter_category_rates(self, category, rates):
         """
         Sync rates for a specific TER category
-        
+
         Args:
             category: TER category name ("TER A", "TER B", "TER C")
             rates: List of rate dictionaries
-            
+
         Returns:
             int: Number of successfully synced records
         """
         if not isinstance(rates, list):
             return 0
-            
+
         success_count = 0
         for rate_data in rates:
             try:
                 # Skip invalid entries
                 if not isinstance(rate_data, dict):
                     continue
-                    
+
                 income_from = flt(rate_data.get("income_from", 0))
                 income_to = flt(rate_data.get("income_to", 0))
                 rate = flt(rate_data.get("rate", 0))
                 is_highest_bracket = bool(rate_data.get("is_highest_bracket", 0))
-                
+
                 filters = {
                     "status_pajak": category,
                     "income_from": income_from,
@@ -365,23 +374,24 @@ class PayrollIndonesiaSettings(Document):
                 else:
                     # Create new record
                     ter_doc = frappe.new_doc("PPh 21 TER Table")
-                    ter_doc.update({
-                        "status_pajak": category,
-                        "income_from": income_from,
-                        "income_to": income_to,
-                        "rate": rate,
-                        "is_highest_bracket": is_highest_bracket,
-                        "description": self._build_ter_description(category, rate_data),
-                    })
+                    ter_doc.update(
+                        {
+                            "status_pajak": category,
+                            "income_from": income_from,
+                            "income_to": income_to,
+                            "rate": rate,
+                            "is_highest_bracket": is_highest_bracket,
+                            "description": self._build_ter_description(category, rate_data),
+                        }
+                    )
                     ter_doc.flags.ignore_permissions = True
                     ter_doc.insert()
                     success_count += 1
             except Exception as e:
                 frappe.log_error(
-                    f"Error syncing TER rate record for {category}: {str(e)}",
-                    "TER Rate Sync Error"
+                    f"Error syncing TER rate record for {category}: {str(e)}", "TER Rate Sync Error"
                 )
-                
+
         return success_count
 
     def _build_ter_description(self, status, rate_data):
@@ -475,23 +485,23 @@ class PayrollIndonesiaSettings(Document):
     def get_ter_category(self, ptkp_status):
         """
         Get TER category for a specific PTKP status with improved validation and fallback
-        
+
         Args:
             ptkp_status: PTKP status code (e.g., 'TK0', 'K1')
-            
+
         Returns:
             str: The corresponding TER category ('TER A', 'TER B', or 'TER C')
         """
         # Validate input
         if not ptkp_status:
             return "TER C"  # Default to highest category for safety
-            
+
         # Normalize the status
         try:
             ptkp_status = str(ptkp_status).strip().upper()
         except Exception:
             return "TER C"  # Default on error
-            
+
         # First try to get mapping from settings
         if hasattr(self, "ptkp_ter_mapping_table") and self.ptkp_ter_mapping_table:
             for row in self.ptkp_ter_mapping_table:
@@ -503,7 +513,7 @@ class PayrollIndonesiaSettings(Document):
             # Extract prefix and suffix safely
             prefix = ptkp_status[:2] if len(ptkp_status) >= 2 else ptkp_status
             suffix = ptkp_status[2:] if len(ptkp_status) >= 3 else "0"
-            
+
             # Apply mapping rules
             if ptkp_status == "TK0":
                 return "TER A"
@@ -528,23 +538,23 @@ class PayrollIndonesiaSettings(Document):
         """
         Get TER rate based on TER category and income
         Enhanced with better validation, error handling, and fallback mechanism
-        
+
         Args:
             ter_category: TER category ('TER A', 'TER B', 'TER C')
             income: Monthly income amount
             fallback_to_json: Whether to fallback to JSON data if database lookup fails
-            
+
         Returns:
             float: The TER rate as percentage (e.g., 15.0 for 15%)
         """
         # Early validation
         if not self.use_ter:
             return 0
-            
+
         # Validate inputs
         try:
             income_value = flt(income)
-            
+
             # Normalize ter_category
             if not ter_category or not isinstance(ter_category, str):
                 ter_category = "TER C"  # Default to highest category
@@ -556,14 +566,14 @@ class PayrollIndonesiaSettings(Document):
             # On validation error, use safe defaults
             income_value = 0
             ter_category = "TER C"
-            
+
         # If income is zero or negative, return 0 rate
         if income_value <= 0:
             return 0
-            
+
         # Default rates by category - will be used if nothing else works
         default_rates = {
-            "TER A": 5.0,   # 5%
+            "TER A": 5.0,  # 5%
             "TER B": 15.0,  # 15%
             "TER C": 25.0,  # 25%
         }
@@ -573,7 +583,7 @@ class PayrollIndonesiaSettings(Document):
             rate = self._get_ter_rate_from_database(ter_category, income_value)
             if rate is not None:
                 return rate
-                
+
             # If database lookup fails and fallback enabled, try JSON data
             if fallback_to_json:
                 rate = self._get_ter_rate_from_json(ter_category, income_value)
@@ -582,20 +592,20 @@ class PayrollIndonesiaSettings(Document):
         except Exception as e:
             frappe.log_error(
                 f"Error getting TER rate for {ter_category}, income {income_value}: {str(e)}",
-                "TER Rate Error"
+                "TER Rate Error",
             )
-            
+
         # Ultimate fallback - use conservative default rates
         return default_rates.get(ter_category, 25.0)
 
     def _get_ter_rate_from_database(self, ter_category, income):
         """
         Get TER rate from PPh 21 TER Table in database
-        
+
         Args:
             ter_category: TER category
             income: Income amount
-            
+
         Returns:
             float: TER rate or None if not found
         """
@@ -612,16 +622,16 @@ class PayrollIndonesiaSettings(Document):
                 # Check if this is the highest bracket (no upper limit)
                 if entry.is_highest_bracket and income >= flt(entry.income_from):
                     return flt(entry.rate)
-                    
+
                 # Check if income falls in this range bracket
                 if income >= flt(entry.income_from) and (
                     flt(entry.income_to) == 0 or income < flt(entry.income_to)
                 ):
                     return flt(entry.rate)
-                    
+
             # No suitable bracket found
             return None
-            
+
         except Exception as e:
             frappe.log_error(f"Error in database TER rate lookup: {str(e)}", "TER Rate DB Error")
             return None
@@ -629,11 +639,11 @@ class PayrollIndonesiaSettings(Document):
     def _get_ter_rate_from_json(self, ter_category, income):
         """
         Get TER rate from JSON field data
-        
+
         Args:
             ter_category: TER category
             income: Income amount
-            
+
         Returns:
             float: TER rate or None if not found
         """
@@ -646,32 +656,32 @@ class PayrollIndonesiaSettings(Document):
                 json_field = self.ter_rate_ter_b_json
             elif ter_category == "TER C" and self.ter_rate_ter_c_json:
                 json_field = self.ter_rate_ter_c_json
-                
+
             if not json_field:
                 return None
-                
+
             # Parse JSON and search for matching rate
             rates = json.loads(json_field)
             if not isinstance(rates, list):
                 return None
-                
+
             # Sort rates by income_from to ensure proper ordering
             rates = sorted(rates, key=lambda x: flt(x.get("income_from", 0)))
-                
+
             for rate in rates:
                 # Check highest bracket first
                 if rate.get("is_highest_bracket") and income >= flt(rate.get("income_from", 0)):
                     return flt(rate.get("rate", 0))
-                    
+
                 # Check regular brackets
                 if income >= flt(rate.get("income_from", 0)) and (
                     flt(rate.get("income_to", 0)) == 0 or income < flt(rate.get("income_to", 0))
                 ):
                     return flt(rate.get("rate", 0))
-                    
+
             # No suitable bracket found
             return None
-            
+
         except Exception as e:
             frappe.log_error(f"Error in JSON TER rate lookup: {str(e)}", "TER Rate JSON Error")
             return None
@@ -679,7 +689,7 @@ class PayrollIndonesiaSettings(Document):
     def ensure_ter_setup_complete(self):
         """
         Check if TER setup is complete and ready for tax calculations
-        
+
         Returns:
             dict: Status of TER setup with details
         """
@@ -688,27 +698,27 @@ class PayrollIndonesiaSettings(Document):
             "issues": [],
             "use_ter": self.use_ter,
         }
-        
+
         # First check if TER is even enabled
         if not self.use_ter:
             result["is_complete"] = False
             result["issues"].append("TER calculation method is not enabled")
             return result
-            
+
         # Check if TER rate tables are present for all categories
         if not self.ter_rate_ter_a_json:
             result["issues"].append("TER A rates are missing")
-            
+
         if not self.ter_rate_ter_b_json:
             result["issues"].append("TER B rates are missing")
-            
+
         if not self.ter_rate_ter_c_json:
             result["issues"].append("TER C rates are missing")
-            
+
         # Check if PTKP to TER mapping is complete
         if not self.ptkp_ter_mapping_table or len(self.ptkp_ter_mapping_table) == 0:
             result["issues"].append("PTKP to TER mapping is missing")
-            
+
         # Check if PPh 21 TER Table (database table) has entries
         try:
             ter_table_count = frappe.db.count("PPh 21 TER Table")
@@ -716,10 +726,10 @@ class PayrollIndonesiaSettings(Document):
                 result["issues"].append("PPh 21 TER Table is empty")
         except Exception:
             result["issues"].append("Could not verify PPh 21 TER Table status")
-            
+
         # Set overall status
         result["is_complete"] = len(result["issues"]) == 0
-        
+
         return result
 
     def get_gl_account_config(self):
