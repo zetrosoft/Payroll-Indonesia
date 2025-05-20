@@ -14,9 +14,6 @@ from .controller import (
     set_component,
 )
 
-# Import debug_log from bpjs_calculator to prevent circular imports
-from payroll_indonesia.override.salary_slip.bpjs_calculator import debug_log
-
 # Export for direct imports
 __all__ = [
     "IndonesiaPayrollSalarySlip",
@@ -24,10 +21,8 @@ __all__ = [
     "process_salary_slips_batch",
     "check_fiscal_year_setup",
     "clear_caches",
-    "debug_log",
     "get_component",
     "set_component",
 ]
 
-# Note: We're importing debug_log directly from bpjs_calculator to prevent circular imports
-# This module is used to initialize the Payroll Indonesia salary slip processing components
+# Note: This module is used to initialize the Payroll Indonesia salary slip processing components
