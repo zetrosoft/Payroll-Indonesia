@@ -81,9 +81,9 @@ VALID_TAX_STATUS = [
 ]
 
 # TER (Tax Exclusion Ratio) Categories per PMK 168/2023
-TER_CATEGORY_A = "A"  # TER Category A - mostly for lower income
-TER_CATEGORY_B = "B"  # TER Category B - mostly for middle income
-TER_CATEGORY_C = "C"  # TER Category C - mostly for higher income
+TER_CATEGORY_A = "TER A"  # TER Category A - mostly for lower income
+TER_CATEGORY_B = "TER B"  # TER Category B - mostly for middle income
+TER_CATEGORY_C = "TER C"  # TER Category C - mostly for higher income
 TER_CATEGORIES = [TER_CATEGORY_A, TER_CATEGORY_B, TER_CATEGORY_C]
 
 # Default BPJS rates as dictionary (for backwards compatibility)
