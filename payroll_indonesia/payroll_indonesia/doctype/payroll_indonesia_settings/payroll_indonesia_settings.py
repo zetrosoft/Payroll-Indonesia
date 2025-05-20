@@ -9,7 +9,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
 # Import TER validation and default rates from pph_ter.py
-from payroll_indonesia.pph_ter import (
+from payroll_indonesia.payroll_indonesia.tax.pph_ter import (
     DEFAULT_TER_RATES,
     validate_ter_data_availability
 )

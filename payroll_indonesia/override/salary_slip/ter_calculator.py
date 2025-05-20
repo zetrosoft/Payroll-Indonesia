@@ -31,7 +31,7 @@ from payroll_indonesia.payroll_indonesia.tax.ter_logic import (
 )
 
 # Import TER functions from pph_ter (single source of truth)
-from payroll_indonesia.pph_ter import (
+from payroll_indonesia.payroll_indonesia.tax.pph_ter import (
     map_ptkp_to_ter_category,
     get_ter_rate,
     calculate_monthly_tax_with_ter,
