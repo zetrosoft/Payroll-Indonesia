@@ -269,7 +269,9 @@ class PayrollIndonesiaSettings(Document):
         if frappe.db.count("PPh 21 TER Table") == 0:
             try:
                 # Import DEFAULT_TER_RATES only where needed to avoid circular imports
-                from payroll_indonesia.payroll_indonesia.tax.pph_ter import DEFAULT_TER_RATES
+                from payroll_indonesia.payroll_indonesia.tax.pph_ter import (
+                    DEFAULT_TER_RATES,
+                )
 
                 for category, rate in DEFAULT_TER_RATES.items():
                     if not category:

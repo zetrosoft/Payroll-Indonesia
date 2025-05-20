@@ -41,7 +41,7 @@ DEFAULT_TER_RATES = {
 }
 
 # Initialize logger
-logger = frappe.logger("payroll_indonesia.tax")
+logger = frappe.logger("payroll_indonesia.payroll_indonesia.tax")
 
 
 def normalize_ter_category(category: str) -> str:

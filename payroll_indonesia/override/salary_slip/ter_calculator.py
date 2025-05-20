@@ -36,13 +36,13 @@ from payroll_indonesia.constants import (
 )
 
 # Import centralized TER function APIs from pph_ter module
-from payroll_indonesia.tax.pph_ter import (
+from payroll_indonesia.payroll_indonesia.tax.pph_ter import (
     get_ter_rate,
     map_ptkp_to_ter_category,
 )
 
 # Import tax utilities for note generation and annual detection
-from payroll_indonesia.tax.ter_logic import (
+from payroll_indonesia.payroll_indonesia.tax.ter_logic import (
     detect_annual_income,
     add_tax_info_to_note,
 )
