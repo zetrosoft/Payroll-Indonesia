@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-19 08:11:14 by dannyaudian
+# Last modified: 2025-05-20 04:53:47 by dannyaudian
 
 import frappe
 from frappe import _
@@ -18,6 +18,10 @@ from payroll_indonesia.constants import (
     CACHE_SHORT,
     CACHE_LONG,
     CACHE_MEDIUM,
+    TER_CATEGORY_A,
+    TER_CATEGORY_B,
+    TER_CATEGORY_C,
+    TER_CATEGORIES,
 )
 
 # Import centralized logic functions
@@ -27,7 +31,7 @@ from payroll_indonesia.payroll_indonesia.tax.ter_logic import (
 )
 
 # Import TER functions from pph_ter (single source of truth)
-from payroll_indonesia.payroll_indonesia.tax.pph_ter import (
+from payroll_indonesia.pph_ter import (
     map_ptkp_to_ter_category,
     get_ter_rate,
     calculate_monthly_tax_with_ter,
@@ -211,25 +215,29 @@ def calculate_monthly_pph_with_ter(doc, employee):
                     cache_value(cache_key, ter_category, CACHE_LONG)
                 else:
                     # Fallback if mapping returns empty
-                    ter_category = "TER C"  # Default to highest category
+                    ter_category = TER_CATEGORY_C  # Default to highest category
         except Exception as e:
             log_ter_error("Category Mapping", str(e), doc, employee)
-            ter_category = "TER C"  # Default to highest category on error
+            ter_category = TER_CATEGORY_C  # Default to highest category on error
             frappe.msgprint(_("Warning: Error mapping TER category, using TER C as default"), indicator="orange")
+
+        # Normalize the TER category with improved validation
+        ter_category = normalize_ter_category(ter_category)
 
         # Calculate monthly tax with TER with improved error handling
         monthly_tax = 0
         ter_rate = 0
         
         try:
-            # First attempt using the centralized function
+            # First attempt using the centralized function that handles validation
             monthly_tax, ter_rate = calculate_monthly_tax_with_ter(monthly_gross_pay, ter_category)
         except Exception as e:
             log_ter_error("Tax Calculation", f"Primary calculation failed: {str(e)}", doc)
             
             # Fallback calculation
             try:
-                ter_rate = get_ter_rate(monthly_gross_pay, ter_category)
+                # Use the simplified approach with validation
+                ter_rate = get_ter_rate(ter_category, employee_status_pajak)
                 monthly_tax = flt(monthly_gross_pay * ter_rate)
             except Exception as e2:
                 # Last resort fallback
@@ -299,6 +307,56 @@ def calculate_monthly_pph_with_ter(doc, employee):
         log_ter_error("Calculation Failure", str(e), doc, employee)
         # Simplified error message to avoid nested errors
         frappe.throw(_("Failed to calculate PPh 21 using TER method. See error log for details."))
+
+
+def normalize_ter_category(category):
+    """
+    Normalize TER category to ensure it uses the correct format.
+    
+    Args:
+        category (str): TER category input (could be 'A', 'B', 'C', or 'TER A', etc.)
+        
+    Returns:
+        str: Normalized TER category ('TER A', 'TER B', or 'TER C')
+    """
+    category = (category or "").strip().upper()
+    
+    # Convert single letter format to TER format
+    if category in ["A", "B", "C"]:
+        category = f"TER {category}"
+    # Ensure category starts with "TER " prefix
+    elif not category.startswith("TER "):
+        category = TER_CATEGORY_C  # Default to highest category
+        
+    # Validate against allowed categories
+    if category not in TER_CATEGORIES:
+        category = TER_CATEGORY_C  # Default to highest category if invalid
+        
+    return category
+
+
+def calculate_simple_pph_with_ter(employee, taxable_income, ter_category=None, status_pajak=None):
+    """
+    Simplified version of PPh 21 calculation with TER for external usage.
+    Includes proper category validation.
+    
+    Args:
+        employee: Employee document or ID
+        taxable_income: Monthly taxable income
+        ter_category: TER category ('A', 'B', 'C', 'TER A', 'TER B', 'TER C')
+        status_pajak: Tax status code (e.g., 'TK0', 'K1')
+        
+    Returns:
+        float: Calculated monthly PPh 21 amount
+    """
+    # Normalize and validate the category
+    category = normalize_ter_category(ter_category)
+    
+    # Get the TER rate
+    rate = get_ter_rate(category, status_pajak)
+    
+    # Calculate and return tax amount
+    return flt(taxable_income) * rate
 
 
 def verify_calculation_integrity(
