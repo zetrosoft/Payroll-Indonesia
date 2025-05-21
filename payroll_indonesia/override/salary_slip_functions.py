@@ -12,7 +12,7 @@ from frappe.utils import flt
 
 # Import BPJS calculation functions
 from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculation import hitung_bpjs
-from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculator import calculate_bpjs_components
+from payroll_indonesia.override.salary_slip.bpjs_calculator import calculate_bpjs_components
 
 # Import centralized tax calculation function
 from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
