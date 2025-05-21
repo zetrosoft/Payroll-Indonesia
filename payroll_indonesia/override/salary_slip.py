@@ -12,7 +12,7 @@ from frappe.utils import flt, getdate, add_to_date, date_diff
 from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
 
 # Import BPJS calculation module
-from payroll_indonesia.payroll_indonesia.bpjs.bpjs_calculator import calculate_bpjs_components
+from payroll_indonesia.override.salary_slip.bpjs_calculator import calculate_bpjs_components
 
 # Import centralized tax calculation
 from payroll_indonesia.override.salary_slip.tax_calculator import calculate_tax_components
