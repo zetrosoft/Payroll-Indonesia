@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-04-27 08:32:34 by dannyaudian
+# Last modified: 2025-05-23 03:57:11 by dannyaudian
 
 import frappe
 import json
@@ -480,3 +480,340 @@ def diagnose_salary_slip(slip_name):
         return result
     except Exception as e:
         return {"error": str(e), "traceback": frappe.get_traceback()}
+
+
+#
+# TAX SUMMARY API ENDPOINTS
+#
+
+
+@frappe.whitelist(allow_guest=False)
+def refresh_tax_summary(employee=None, year=None, salary_slip=None, force=False):
+    """
+    Manually refresh the Employee Tax Summary for a specific employee, year, or salary slip.
+    This is a high-level API for the UI to trigger a refresh operation.
+    
+    Args:
+        employee: The employee code to refresh (required unless salary_slip is provided)
+        year: The tax year to refresh (defaults to current year if not provided)
+        salary_slip: Specific salary slip to refresh tax summary for
+        force: Whether to force recreation of the tax summary (default: False)
+        
+    Returns:
+        dict: Status and result of the operation
+    """
+    # Check permissions
+    if not frappe.has_permission("Employee Tax Summary", "write"):
+        frappe.throw(_("Not permitted to update Tax Summary data"), frappe.PermissionError)
+        
+    try:
+        # Case 1: Refresh specific salary slip
+        if salary_slip:
+            from payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary import create_from_salary_slip
+            
+            # Get the salary slip to access its fields
+            slip = frappe.get_doc("Salary Slip", salary_slip)
+            if slip.docstatus != 1:
+                return {
+                    "status": "error",
+                    "message": _("Salary slip must be submitted to update tax summary")
+                }
+                
+            # Queue the update
+            result = create_from_salary_slip(salary_slip)
+            
+            if result:
+                return {
+                    "status": "success",
+                    "message": _("Tax summary updated from salary slip {0}").format(salary_slip),
+                    "tax_summary": result
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": _("Failed to update tax summary from salary slip {0}").format(salary_slip)
+                }
+                
+        # Case 2: Refresh employee+year combination
+        elif employee:
+            # Set default year if not provided
+            if not year:
+                year = getdate().year
+                
+            try:
+                # Verify employee exists
+                if not frappe.db.exists("Employee", employee):
+                    return {
+                        "status": "error",
+                        "message": _("Employee {0} not found").format(employee)
+                    }
+                    
+                # Queue the refresh job in background
+                from payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary import refresh_tax_summary as _refresh_func
+                
+                job_name = f"refresh_tax_summary_{employee}_{year}"
+                
+                # Use enqueue to run in background for better performance
+                frappe.enqueue(
+                    _refresh_func,
+                    queue="long",
+                    timeout=1200,  # 20 minutes timeout for large datasets
+                    employee=employee,
+                    year=year,
+                    force=force,
+                    job_name=job_name,
+                    now=False  # Run in background
+                )
+                
+                return {
+                    "status": "queued",
+                    "message": _("Tax summary refresh queued in background job: {0}").format(job_name),
+                    "employee": employee,
+                    "year": year
+                }
+                
+            except Exception as e:
+                frappe.log_error(
+                    f"Error queuing tax summary refresh for {employee}, {year}: {str(e)}\n{frappe.get_traceback()}",
+                    "Tax Summary API Error"
+                )
+                
+                return {
+                    "status": "error",
+                    "message": _("Error refreshing tax summary: {0}").format(str(e)),
+                    "details": str(e)
+                }
+        else:
+            return {
+                "status": "error",
+                "message": _("Either employee or salary_slip must be provided")
+            }
+            
+    except Exception as e:
+        frappe.log_error(
+            f"Error in refresh_tax_summary API: {str(e)}\n{frappe.get_traceback()}",
+            "Tax Summary API Error"
+        )
+        
+        return {
+            "status": "error", 
+            "message": _("Error refreshing tax summary: {0}").format(str(e)),
+            "details": frappe.get_traceback()
+        }
+
+
+@frappe.whitelist(allow_guest=False)
+def get_tax_summary_status(employee, year=None):
+    """
+    Get the status of tax summaries for an employee
+    
+    Args:
+        employee: Employee code
+        year: Optional tax year (defaults to current year)
+        
+    Returns:
+        dict: Tax summary status data
+    """
+    if not frappe.has_permission("Employee Tax Summary", "read"):
+        frappe.throw(_("Not permitted to view Tax Summary data"), frappe.PermissionError)
+        
+    try:
+        # Default to current year if not specified
+        if not year:
+            year = getdate().year
+        else:
+            year = cint(year)
+            
+        # Check if tax summary exists
+        tax_summary = frappe.db.get_value(
+            "Employee Tax Summary",
+            {"employee": employee, "year": year},
+            ["name", "ytd_tax", "is_using_ter", "ter_rate"],
+            as_dict=True
+        )
+        
+        # Get all salary slips for this employee and year
+        salary_slips = frappe.get_all(
+            "Salary Slip",
+            filters={
+                "employee": employee,
+                "docstatus": 1,
+                "start_date": [">=", f"{year}-01-01"],
+                "end_date": ["<=", f"{year}-12-31"]
+            },
+            fields=["name", "start_date", "end_date", "posting_date", "docstatus"],
+            order_by="start_date ASC"
+        )
+        
+        result = {
+            "employee": employee,
+            "year": year,
+            "tax_summary_exists": bool(tax_summary),
+            "slip_count": len(salary_slips),
+            "months_covered": []
+        }
+        
+        # Add tax summary details if it exists
+        if tax_summary:
+            result["tax_summary"] = {
+                "name": tax_summary.name,
+                "ytd_tax": tax_summary.ytd_tax,
+                "is_using_ter": tax_summary.is_using_ter,
+                "ter_rate": tax_summary.ter_rate,
+                "formatted_ytd_tax": frappe.format(tax_summary.ytd_tax, {"fieldtype": "Currency"})
+            }
+            
+            # Get monthly data
+            monthly_data = frappe.get_all(
+                "Employee Monthly Tax Detail",
+                filters={"parent": tax_summary.name},
+                fields=["month", "gross_pay", "tax_amount", "is_using_ter", "ter_rate", "salary_slip"],
+                order_by="month ASC"
+            )
+            
+            # Process monthly data
+            result["monthly_data"] = []
+            for month in range(1, 13):
+                month_data = next((m for m in monthly_data if m.month == month), None)
+                
+                month_status = {
+                    "month": month,
+                    "month_name": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][month-1],
+                    "has_data": bool(month_data and month_data.gross_pay > 0),
+                    "has_slip": any(getdate(s.start_date).month == month for s in salary_slips)
+                }
+                
+                if month_data and month_data.gross_pay > 0:
+                    month_status["data"] = {
+                        "gross_pay": month_data.gross_pay,
+                        "tax_amount": month_data.tax_amount,
+                        "is_using_ter": month_data.is_using_ter,
+                        "ter_rate": month_data.ter_rate,
+                        "salary_slip": month_data.salary_slip,
+                        "formatted_gross": frappe.format(month_data.gross_pay, {"fieldtype": "Currency"}),
+                        "formatted_tax": frappe.format(month_data.tax_amount, {"fieldtype": "Currency"})
+                    }
+                    
+                    # Add to months covered
+                    if month_status["has_data"]:
+                        result["months_covered"].append(month)
+                        
+                result["monthly_data"].append(month_status)
+                
+        # Include summary statistics
+        result["stats"] = {
+            "months_with_data": len(result.get("months_covered", [])),
+            "potential_months": len(set(getdate(s.start_date).month for s in salary_slips)),
+            "missing_months": []
+        }
+        
+        # Check for months with slips but no tax data
+        for slip in salary_slips:
+            slip_month = getdate(slip.start_date).month
+            if slip_month not in result.get("months_covered", []):
+                result["stats"]["missing_months"].append({
+                    "month": slip_month,
+                    "month_name": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][slip_month-1],
+                    "salary_slip": slip.name
+                })
+                
+        # Add refresh recommendation if needed
+        if result["stats"]["missing_months"]:
+            result["needs_refresh"] = True
+            result["refresh_recommendation"] = _(
+                "Tax summary is missing data for {0} months with salary slips. Consider refreshing the tax summary."
+            ).format(len(result["stats"]["missing_months"]))
+        else:
+            result["needs_refresh"] = False
+            
+        return result
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error getting tax summary status for {employee}, {year}: {str(e)}\n{frappe.get_traceback()}",
+            "Tax Summary API Error"
+        )
+        
+        return {
+            "status": "error",
+            "message": _("Error retrieving tax summary status: {0}").format(str(e))
+        }
+
+
+@frappe.whitelist(allow_guest=False)
+def bulk_refresh_tax_summaries(employees=None, year=None, company=None):
+    """
+    Start a bulk refresh operation for multiple employees' tax summaries
+    
+    Args:
+        employees: List of employee codes (optional)
+        year: Tax year to refresh (defaults to current year)
+        company: Company to refresh all employees for (optional)
+        
+    Returns:
+        dict: Job information
+    """
+    if not frappe.has_permission("Employee Tax Summary", "write"):
+        frappe.throw(_("Not permitted to update Tax Summary data"), frappe.PermissionError)
+    
+    try:
+        # Set default year
+        if not year:
+            year = getdate().year
+        else:
+            year = cint(year)
+            
+        # Handle JSON string
+        if isinstance(employees, str):
+            try:
+                employees = json.loads(employees)
+            except ValueError:
+                # If single value, convert to list
+                employees = [employees]
+                
+        # If no employees specified but company is, get all active employees for company
+        if not employees and company:
+            employees = [e.name for e in frappe.get_all(
+                "Employee", 
+                filters={"company": company, "status": "Active"},
+                fields=["name"]
+            )]
+            
+        if not employees:
+            return {
+                "status": "error",
+                "message": _("No employees specified for bulk refresh")
+            }
+            
+        # Queue the bulk operation
+        job_name = f"bulk_tax_refresh_{getdate().strftime('%Y%m%d%H%M%S')}"
+        
+        frappe.enqueue(
+            "payroll_indonesia.override.salary_slip.refresh_multiple_tax_summaries",
+            queue="long",
+            timeout=3600,  # 1 hour timeout
+            employees=employees,
+            year=year,
+            job_name=job_name,
+            now=False,  # Run in background
+            is_async=True
+        )
+        
+        return {
+            "status": "queued",
+            "message": _("Bulk tax summary refresh queued as job: {0}").format(job_name),
+            "job": job_name,
+            "employee_count": len(employees),
+            "year": year
+        }
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error in bulk_refresh_tax_summaries: {str(e)}\n{frappe.get_traceback()}",
+            "Tax Summary API Error"
+        )
+        
+        return {
+            "status": "error",
+            "message": _("Error starting bulk refresh: {0}").format(str(e))
+        }
