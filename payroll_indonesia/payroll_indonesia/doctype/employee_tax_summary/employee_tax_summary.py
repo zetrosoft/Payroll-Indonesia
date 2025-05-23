@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-23 04:30:22 by dannyaudian
+# Last modified: 2025-05-23 05:15:32 by dannyaudian
 
 from __future__ import unicode_literals
 import frappe
@@ -10,12 +10,14 @@ from frappe.model.document import Document
 from frappe.utils import flt, getdate, cint, now_datetime, get_datetime_str, add_to_date
 from frappe.utils.background_jobs import is_job_queued
 
-
-# Debug function for error tracking
-def debug_log(message, module_name="Employee Tax Summary"):
-    """Log debug message with timestamp and additional info"""
-    timestamp = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
-    frappe.log_error(f"[{timestamp}] {message}", module_name)
+# Import centralized validator functions
+from payroll_indonesia.utilities.salary_slip_validator import (
+    get_salary_slip_with_validation,
+    debug_log,
+    validate_tax_related_fields,
+    validate_for_tax_summary,
+    check_salary_slip_cancellation
+)
 
 
 class EmployeeTaxSummary(Document):
@@ -336,8 +338,10 @@ class EmployeeTaxSummary(Document):
             salary_slip_name: Name of the salary slip document
             tax_data: Dictionary with tax data
         """
-        # Update basic fields
+        # Store salary slip reference
         self.monthly_details[month_index].salary_slip = salary_slip_name
+        
+        # Update basic fields
         self.monthly_details[month_index].gross_pay = tax_data["gross_pay"]
         self.monthly_details[month_index].bpjs_deductions = tax_data["bpjs_deductions"]
         self.monthly_details[month_index].other_deductions = tax_data["other_deductions"]
@@ -361,10 +365,10 @@ class EmployeeTaxSummary(Document):
             salary_slip_name: Name of the salary slip document
             tax_data: Dictionary with tax data
         """
-        # Create new monthly detail
+        # Create new monthly detail with salary slip reference
         monthly_data = {
             "month": month,
-            "salary_slip": salary_slip_name,
+            "salary_slip": salary_slip_name,  # Store salary slip reference
             "gross_pay": tax_data["gross_pay"],
             "bpjs_deductions": tax_data["bpjs_deductions"],
             "other_deductions": tax_data["other_deductions"],
@@ -495,6 +499,55 @@ class EmployeeTaxSummary(Document):
                 "monthly_amounts": []
             }
 
+    def delete_tax_summary(self):
+        """
+        Delete this tax summary and all related monthly details.
+        
+        This method provides a clean way to remove all tax summary data for a 
+        specific employee and year when needed (e.g., in case of major data corruption).
+        
+        Note: This is a destructive operation and should be used with caution.
+        """
+        try:
+            # Log the deletion for audit purposes
+            debug_log(
+                f"Starting deletion of Employee Tax Summary {self.name} for employee {self.employee}, year {self.year}", 
+                level="warning"
+            )
+            
+            # First, handle monthly details
+            monthly_details_deleted = 0
+            
+            # Delete monthly details one by one
+            for row in self.monthly_details:
+                if row.name:
+                    frappe.delete_doc("Employee Monthly Tax Detail", row.name, force=True, 
+                                      ignore_permissions=True, ignore_on_trash=True)
+                    monthly_details_deleted += 1
+            
+            # Then delete the tax summary itself
+            frappe.delete_doc("Employee Tax Summary", self.name, force=True, 
+                              ignore_permissions=True, ignore_on_trash=True)
+            
+            # Log successful deletion
+            debug_log(
+                f"Successfully deleted Employee Tax Summary {self.name} with {monthly_details_deleted} monthly records", 
+                level="warning"
+            )
+            
+            return {
+                "status": "success",
+                "message": f"Successfully deleted tax summary with {monthly_details_deleted} monthly records",
+                "monthly_details_deleted": monthly_details_deleted
+            }
+
+        except Exception as e:
+            frappe.log_error(
+                f"Error deleting tax summary {self.name}: {str(e)}\n{frappe.get_traceback()}",
+                "Tax Summary Deletion Error"
+            )
+            frappe.throw(_("Error deleting tax summary: {0}").format(str(e)))
+
     def on_update(self):
         """Actions after updating tax summary"""
         try:
@@ -552,9 +605,16 @@ def create_from_salary_slip(salary_slip, method=None):
             debug_log(f"Job {job_name} is already queued or running, skipping...")
             return None
 
-        # Get the salary slip document with proper validation
-        slip = _get_salary_slip_with_validation(salary_slip)
+        # Get the salary slip document with proper validation using central validator
+        slip = get_salary_slip_with_validation(salary_slip)
         if not slip:
+            # Validator already logged the specific error
+            debug_log(f"Validation failed for salary slip {salary_slip}, aborting tax summary creation")
+            return None
+
+        # Additional validation for submitted status
+        if slip.docstatus != 1:
+            debug_log(f"Salary slip {salary_slip} is not submitted (docstatus={slip.docstatus}), aborting tax summary creation")
             return None
 
         employee = slip.employee
@@ -584,42 +644,6 @@ def create_from_salary_slip(salary_slip, method=None):
             f"Traceback: {frappe.get_traceback()}",
             "Employee Tax Summary Error",
         )
-        return None
-
-
-def _get_salary_slip_with_validation(salary_slip):
-    """
-    Get and validate salary slip document
-    
-    Args:
-        salary_slip: Name of the salary slip document
-        
-    Returns:
-        Document: Salary slip document or None if invalid
-    """
-    try:
-        # Get the document
-        slip = frappe.get_doc("Salary Slip", salary_slip)
-        
-        # Validate document
-        if not slip:
-            debug_log(f"Salary slip {salary_slip} not found")
-            return None
-            
-        if slip.docstatus != 1:
-            debug_log(f"Salary slip {salary_slip} is not submitted (docstatus={slip.docstatus})")
-            return None
-            
-        # Check required fields
-        for field in ["employee", "start_date", "end_date"]:
-            if not hasattr(slip, field) or not getattr(slip, field):
-                debug_log(f"Salary slip {salary_slip} missing required field: {field}")
-                return None
-                
-        return slip
-        
-    except Exception as e:
-        debug_log(f"Error retrieving salary slip {salary_slip}: {str(e)}")
         return None
 
 
@@ -697,7 +721,8 @@ def _create_new_tax_summary(employee, year):
                 "bpjs_deductions": 0, 
                 "tax_amount": 0,
                 "is_using_ter": 0,
-                "ter_rate": 0
+                "ter_rate": 0,
+                "salary_slip": None  # Explicitly initialize salary_slip reference
             },
         )
 
@@ -737,14 +762,16 @@ def update_on_salary_slip_cancel(salary_slip, year):
             debug_log(f"Job {job_name} is already queued or running, skipping...")
             return False
 
-        # Get the salary slip document
-        slip = frappe.get_doc("Salary Slip", salary_slip)
-        if not slip:
-            debug_log(f"Salary slip {salary_slip} not found")
+        # Use the centralized validator to check the salary slip
+        result = check_salary_slip_cancellation(salary_slip)
+        if not result["is_cancelled"]:
+            debug_log(f"Validation failed for cancelled salary slip: {result['error']}")
             return False
 
+        # Extract employee and month from validated salary slip
+        slip = result["slip"]
         employee = slip.employee
-        month = getdate(slip.end_date).month
+        month = result["month"]
 
         # Validate year is a number
         try:
@@ -846,7 +873,9 @@ def refresh_tax_summary(employee, year=None, force=False):
         # If force is true and tax summary exists, delete it
         if force and tax_summary_name:
             try:
-                frappe.delete_doc("Employee Tax Summary", tax_summary_name, force=True)
+                tax_summary = frappe.get_doc("Employee Tax Summary", tax_summary_name)
+                # Use our new centralized method to safely delete all related data
+                tax_summary.delete_tax_summary()
                 tax_summary_name = None
             except Exception as e:
                 return {"status": "error", "message": f"Error deleting existing tax summary: {str(e)}"}
@@ -868,12 +897,15 @@ def refresh_tax_summary(employee, year=None, force=False):
             tax_summary.flags.ignore_permissions = True
             tax_summary.save()
         
-        # Process each salary slip
+        # Process each salary slip - using our centralized validation
         processed = 0
         for slip in salary_slips:
-            result = create_from_salary_slip(slip.name, "reprocess")
-            if result:
-                processed += 1
+            # Validate slip through central validator
+            slip_doc = get_salary_slip_with_validation(slip.name)
+            if slip_doc:
+                result = create_from_salary_slip(slip.name, "reprocess")
+                if result:
+                    processed += 1
                 
         return {
             "status": "success",
