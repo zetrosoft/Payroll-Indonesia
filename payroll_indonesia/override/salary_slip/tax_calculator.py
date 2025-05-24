@@ -445,20 +445,41 @@ def set_basic_payroll_note(doc, employee):
 
 def is_december(doc):
     """
-    Check if salary slip is for December
-
+    Check if salary slip is for December based solely on the document's end_date
+    
     Args:
         doc: Salary slip document
-
+    
     Returns:
-        bool: True if the salary slip is for December
+        bool: True if the salary slip is for December, False otherwise
     """
     try:
-        if hasattr(doc, "end_date") and doc.end_date:
-            return getdate(doc.end_date).month == DECEMBER_MONTH
-        return False
+        # First ensure the document has an end_date attribute
+        if not hasattr(doc, "end_date") or not doc.end_date:
+            frappe.log_error(
+                message=f"December Check: Document has no end_date",
+                title="December Check: Missing end_date"
+            )
+            return False
+            
+        # Parse the end_date and check if month is December (12)
+        end_date = getdate(doc.end_date)
+        is_dec = end_date.month == DECEMBER_MONTH
+        
+        # Log the evaluation result
+        log_message = (
+            f"Document: {getattr(doc, 'name', 'unknown')}\n"
+            f"End Date: {doc.end_date}\n"
+            f"Parsed Month: {end_date.month}\n"
+            f"DECEMBER_MONTH constant: {DECEMBER_MONTH}\n"
+            f"Is December: {is_dec}"
+        )
+        frappe.log_error(message=log_message, title="December Check")
+        
+        return is_dec
+        
     except Exception as e:
-        # Non-critical error - log with simpler method and default to False
+        # Non-critical error - log with existing function and default to False
         log_tax_error("Date Check", str(e), doc)
         return False
 
