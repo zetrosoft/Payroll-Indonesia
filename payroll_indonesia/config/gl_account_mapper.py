@@ -1,8 +1,38 @@
 import frappe
 import logging
-from payroll_indonesia.install import get_default_config
+import json
+import os
 
 logger = logging.getLogger(__name__)
+
+def get_config():
+    """
+    Load the defaults.json configuration file
+    
+    Returns:
+        dict: Configuration data or None if file not found
+    """
+    try:
+        # Cari defaults.json di dua path seperti saat ini
+        config_path = frappe.get_app_path(
+            "payroll_indonesia", "payroll_indonesia", "config", "defaults.json"
+        )
+
+        if not os.path.exists(config_path):
+            config_path = frappe.get_app_path("payroll_indonesia", "config", "defaults.json")
+
+            if not os.path.exists(config_path):
+                logger.warning("defaults.json not found in expected locations")
+                return None
+
+        # Load and return config
+        with open(config_path, "r") as f:
+            config = json.loads(f.read())
+            return config
+
+    except Exception as e:
+        logger.exception(f"Error loading defaults.json: {str(e)}")
+        return None
 
 def map_gl_account(company: str, base_account_key: str, category: str) -> str:
     """
@@ -18,7 +48,7 @@ def map_gl_account(company: str, base_account_key: str, category: str) -> str:
         str: The mapped account name with company suffix
     """
     # Load configuration from defaults.json
-    config = get_default_config()
+    config = get_config()
     
     if not config:
         logger.error("Could not load defaults.json configuration")
