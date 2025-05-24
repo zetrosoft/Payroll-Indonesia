@@ -10,14 +10,8 @@
     "is_tax_applicable": 1,
     "is_flexible_benefit": 0,
     "variable_based_on_taxable_salary": 0,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Beban Gaji Pokok - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -31,14 +25,8 @@
     "is_tax_applicable": 1,
     "is_flexible_benefit": 0,
     "variable_based_on_taxable_salary": 0,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Beban Tunjangan Makan - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -52,14 +40,8 @@
     "is_tax_applicable": 1,
     "is_flexible_benefit": 0,
     "variable_based_on_taxable_salary": 0,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Beban Tunjangan Transport - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -73,14 +55,8 @@
     "is_tax_applicable": 1,
     "is_flexible_benefit": 0,
     "variable_based_on_taxable_salary": 0,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Beban Insentif - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -94,14 +70,8 @@
     "is_tax_applicable": 1,
     "is_flexible_benefit": 0,
     "variable_based_on_taxable_salary": 0,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Beban Bonus - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -113,14 +83,8 @@
     "description": "Pajak Penghasilan Pasal 21 (Progressive/TER sesuai PMK 168/2023)",
     "statistical_component": 0,
     "variable_based_on_taxable_salary": 1,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Hutang PPh 21 - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator",
     "custom_attributes": {
       "supports_ter": 1
@@ -134,14 +98,8 @@
     "type": "Deduction",
     "description": "BPJS Jaminan Hari Tua - Potongan Karyawan",
     "statistical_component": 0,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Hutang BPJS JHT - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -152,14 +110,8 @@
     "type": "Deduction",
     "description": "BPJS Jaminan Pensiun - Potongan Karyawan",
     "statistical_component": 0,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Hutang BPJS JP - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -170,14 +122,8 @@
     "type": "Deduction",
     "description": "BPJS Kesehatan - Potongan Karyawan",
     "statistical_component": 0,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Hutang BPJS Kesehatan - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -188,14 +134,8 @@
     "type": "Deduction",
     "description": "BPJS Jaminan Hari Tua - Kontribusi Perusahaan",
     "statistical_component": 1,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Beban BPJS JHT - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -206,14 +146,8 @@
     "type": "Deduction",
     "description": "BPJS Jaminan Pensiun - Kontribusi Perusahaan",
     "statistical_component": 1,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Beban BPJS JP - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -224,14 +158,8 @@
     "type": "Deduction",
     "description": "BPJS Jaminan Kecelakaan Kerja",
     "statistical_component": 1,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Beban BPJS JKK - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -242,14 +170,8 @@
     "type": "Deduction",
     "description": "BPJS Jaminan Kematian",
     "statistical_component": 1,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Beban BPJS JKM - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   },
   {
@@ -260,14 +182,8 @@
     "type": "Deduction",
     "description": "BPJS Kesehatan - Kontribusi Perusahaan",
     "statistical_component": 1,
-    "accounts": [
-      {
-        "company": "%",
-        "account": "Beban BPJS Kesehatan - %"
-      }
-    ],
-    "modified": "2025-04-23 12:31:47",
-    "modified_by": "Administrator",
+    "modified": "2025-05-24 04:57:55",
+    "modified_by": "dannyaudian",
     "owner": "Administrator"
   }
 ]
