@@ -8,7 +8,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, getdate, cint
-from frappe.utils.background_jobs import is_job_queued
+from frappe.utils.background_jobs import get_jobs
 
 # Import centralized validator functions
 from payroll_indonesia.utilities.salary_slip_validator import (
@@ -16,6 +16,28 @@ from payroll_indonesia.utilities.salary_slip_validator import (
     debug_log,
     check_salary_slip_cancellation,
 )
+
+
+def is_job_already_queued(job_name, queue='default'):
+    """
+    Check if a job with the specified name is already queued
+    
+    Args:
+        job_name: The name of the job to check
+        queue: The queue to check (default, long, short)
+        
+    Returns:
+        bool: True if the job is already queued, False otherwise
+    """
+    try:
+        jobs = get_jobs(site=frappe.local.site, queue=queue)
+        return any(job.get('kwargs', {}).get('job_name') == job_name for job in jobs)
+    except Exception as e:
+        frappe.log_error(
+            f"Error checking if job {job_name} is queued: {str(e)}",
+            "Job Queue Check Error"
+        )
+        return False
 
 
 class EmployeeTaxSummary(Document):
@@ -599,7 +621,7 @@ def create_from_salary_slip(salary_slip, method=None):
     try:
         # Check if job is already running
         job_name = f"tax_summary_update_{salary_slip}"
-        if is_job_queued(job_name) and method != "reprocess":
+        if is_job_already_queued(job_name, queue='long') and method != "reprocess":
             debug_log(f"Job {job_name} is already queued or running, skipping...")
             return None
 
@@ -760,7 +782,7 @@ def update_on_salary_slip_cancel(salary_slip, year):
     try:
         # Check if job is already running
         job_name = f"tax_summary_revert_{salary_slip}"
-        if is_job_queued(job_name):
+        if is_job_already_queued(job_name, queue='long'):
             debug_log(f"Job {job_name} is already queued or running, skipping...")
             return False
 
