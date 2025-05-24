@@ -12,7 +12,7 @@ def map_gl_account(company: str, base_account_key: str, category: str) -> str:
         company (str): The company name for which to create the account mapping
         base_account_key (str): The key of the base account in defaults.json
         category (str): The category of the account ('expense_accounts', 'bpjs_expense_accounts', 
-                        'payable_accounts', or 'bpjs_payable_accounts')
+                        'payable_accounts', 'bpjs_payable_accounts', or 'bpjs_account_mapping')
     
     Returns:
         str: The mapped account name with company suffix
@@ -24,7 +24,27 @@ def map_gl_account(company: str, base_account_key: str, category: str) -> str:
         logger.error("Could not load defaults.json configuration")
         return f"Unknown Account - {company}"
     
-    # Check if the category exists in gl_accounts
+    # Special handling for bpjs_account_mapping which is a flat mapping
+    if category == 'bpjs_account_mapping':
+        # Check if bpjs_account_mapping exists in gl_accounts
+        bpjs_mapping = config.get("gl_accounts", {}).get("bpjs_account_mapping", {})
+        
+        if not bpjs_mapping:
+            logger.warning("bpjs_account_mapping not found in gl_accounts configuration")
+            return f"Unknown Account - {company}"
+        
+        # Check if the specific key exists in the mapping
+        if base_account_key not in bpjs_mapping:
+            logger.warning(f"Account key '{base_account_key}' not found in 'bpjs_account_mapping'")
+            return f"Unknown Account - {company}"
+        
+        # Get the account name directly from the mapping
+        account_name = bpjs_mapping.get(base_account_key)
+        
+        # Return the account name with company suffix
+        return f"{account_name} - {company}"
+    
+    # Regular category handling (unchanged)
     if category not in config.get("gl_accounts", {}):
         logger.warning(f"Category '{category}' not found in gl_accounts configuration")
         return f"Unknown Account - {company}"
