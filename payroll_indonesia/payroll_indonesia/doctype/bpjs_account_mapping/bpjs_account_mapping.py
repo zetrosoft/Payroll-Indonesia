@@ -170,57 +170,48 @@ def create_default_mapping(company):
         mapping.company = company
         mapping.flags.ignore_validate = True
 
-        # Set accounts from BPJS Settings if available, or use map_gl_account
-        if bpjs_settings:
-            # Map BPJS Settings fields to mapping fields using bpjs_account_mapping from defaults.json
-            account_mapping_fields = {
-                "kesehatan_employee_account": "bpjs_kesehatan_payable",
-                "kesehatan_employer_credit_account": "bpjs_kesehatan_payable",
-                "jht_employee_account": "bpjs_jht_payable",
-                "jht_employer_credit_account": "bpjs_jht_payable",
-                "jp_employee_account": "bpjs_jp_payable",
-                "jp_employer_credit_account": "bpjs_jp_payable",
-                "jkk_employer_credit_account": "bpjs_jkk_payable",
-                "jkm_employer_credit_account": "bpjs_jkm_payable",
-                "kesehatan_employer_debit_account": "bpjs_kesehatan_employer_expense",
-                "jht_employer_debit_account": "bpjs_jht_employer_expense",
-                "jp_employer_debit_account": "bpjs_jp_employer_expense",
-                "jkk_employer_debit_account": "bpjs_jkk_employer_expense",
-                "jkm_employer_debit_account": "bpjs_jkm_employer_expense"
-            }
+        # Define mapping between document fields and GL account keys and categories
+        account_mapping_fields = {
+            "kesehatan_employee_account": ("bpjs_kesehatan_payable", "bpjs_payable_accounts"),
+            "kesehatan_employer_credit_account": ("bpjs_kesehatan_payable", "bpjs_payable_accounts"),
+            "jht_employee_account": ("bpjs_jht_payable", "bpjs_payable_accounts"),
+            "jht_employer_credit_account": ("bpjs_jht_payable", "bpjs_payable_accounts"),
+            "jp_employee_account": ("bpjs_jp_payable", "bpjs_payable_accounts"),
+            "jp_employer_credit_account": ("bpjs_jp_payable", "bpjs_payable_accounts"),
+            "jkk_employer_credit_account": ("bpjs_jkk_payable", "bpjs_payable_accounts"),
+            "jkm_employer_credit_account": ("bpjs_jkm_payable", "bpjs_payable_accounts"),
+            "kesehatan_employer_debit_account": ("bpjs_kesehatan_employer_expense", "bpjs_expense_accounts"),
+            "jht_employer_debit_account": ("bpjs_jht_employer_expense", "bpjs_expense_accounts"),
+            "jp_employer_debit_account": ("bpjs_jp_employer_expense", "bpjs_expense_accounts"),
+            "jkk_employer_debit_account": ("bpjs_jkk_employer_expense", "bpjs_expense_accounts"),
+            "jkm_employer_debit_account": ("bpjs_jkm_employer_expense", "bpjs_expense_accounts")
+        }
             
-            for mapping_field, account_key in account_mapping_fields.items():
-                # For liability accounts (credit and employee accounts)
-                if "employee_account" in mapping_field or "credit_account" in mapping_field:
-                    category = "bpjs_payable_accounts"
-                # For expense accounts (debit accounts)
-                else: 
-                    category = "bpjs_expense_accounts"
-                
-                # Map the account using the GL mapper function
-                account = map_gl_account(company, account_key, category)
+        for mapping_field, (account_key, category) in account_mapping_fields.items():
+            # Map the account using the GL mapper function
+            account = map_gl_account(company, account_key, category)
+            if account and frappe.db.exists("Account", account):
+                mapping.set(mapping_field, account)
+                debug_log(
+                    f"Set {mapping_field} to {account} using map_gl_account", "BPJS Mapping"
+                )
+            elif hasattr(bpjs_settings, mapping_field.replace("_credit_account", "_account").replace("_debit_account", "_account")):
+                # Fallback to BPJS Settings if available
+                settings_field = mapping_field.replace("_credit_account", "_account").replace("_debit_account", "_account")
+                account = bpjs_settings.get(settings_field)
                 if account and frappe.db.exists("Account", account):
                     mapping.set(mapping_field, account)
                     debug_log(
-                        f"Set {mapping_field} to {account} using map_gl_account", "BPJS Mapping"
+                        f"Set {mapping_field} to {account} from BPJS Settings", "BPJS Mapping"
                     )
-                elif hasattr(bpjs_settings, mapping_field.replace("_credit_account", "_account").replace("_debit_account", "_account")):
-                    # Fallback to BPJS Settings if available
-                    settings_field = mapping_field.replace("_credit_account", "_account").replace("_debit_account", "_account")
-                    account = bpjs_settings.get(settings_field)
-                    if account and frappe.db.exists("Account", account):
-                        mapping.set(mapping_field, account)
-                        debug_log(
-                            f"Set {mapping_field} to {account} from BPJS Settings", "BPJS Mapping"
-                        )
-                    else:
-                        debug_log(
-                            f"No valid account found for {mapping_field}", "BPJS Mapping"
-                        )
                 else:
                     debug_log(
-                        f"No valid account mapping found for {mapping_field}", "BPJS Mapping"
+                        f"No valid account found for {mapping_field}", "BPJS Mapping"
                     )
+            else:
+                debug_log(
+                    f"No valid account mapping found for {mapping_field}", "BPJS Mapping"
+                )
 
         # Insert mapping without strict validation
         try:
@@ -722,29 +713,28 @@ def validate(doc, method=None):
         )
         return
 
-    # Call instance methods
+    # Call document validation method
     doc.validate_duplicate_mapping()
-    doc.validate_account_types()
-    doc.setup_missing_accounts()
     
-    # Add validation using map_gl_account
-    validate_accounts_against_mapping(doc)
+    # Validate account fields against mapping from defaults.json
+    company = doc.company
+    validate_with_gl_mapper(doc, company)
 
 
-def validate_accounts_against_mapping(doc):
+def validate_with_gl_mapper(doc, company):
     """
-    Validate that account fields align with expected mapping from defaults.json
-
+    Validate account fields using map_gl_account function
+    
     Args:
         doc: BPJS Account Mapping document
+        company: Company to validate against
     """
+    # Skip validation if in setup mode
     if getattr(doc, "flags", {}).get("ignore_validate"):
         return
         
-    company = doc.company
-    
-    # Define mapping of document fields to GL account mapper keys and categories
-    field_to_mapping = {
+    # Define mapping between document fields and GL account mapper keys and categories
+    field_mapping = {
         # Employee accounts (liability)
         "kesehatan_employee_account": ("bpjs_kesehatan_payable", "bpjs_payable_accounts"),
         "jht_employee_account": ("bpjs_jht_payable", "bpjs_payable_accounts"),
@@ -765,31 +755,51 @@ def validate_accounts_against_mapping(doc):
         "jkm_employer_credit_account": ("bpjs_jkm_payable", "bpjs_payable_accounts")
     }
     
-    # Check each field's account against the expected mapped value
-    for field, (account_key, category) in field_to_mapping.items():
-        current_account = doc.get(field)
-        if not current_account:
-            continue  # Skip empty fields
-            
+    # Validate and/or update each field
+    failed_fields = []
+    
+    for field, (account_key, category) in field_mapping.items():
         try:
-            # Get the expected account using map_gl_account
-            expected_account = map_gl_account(company, account_key, category)
+            # Get mapped account from defaults.json
+            mapped_account = map_gl_account(company, account_key, category)
             
-            if expected_account and expected_account != current_account:
+            # Check if field is set
+            if not doc.get(field):
+                # Set field if valid mapped account exists
+                if mapped_account and frappe.db.exists("Account", mapped_account):
+                    doc.set(field, mapped_account)
+                    debug_log(f"Set {field} to mapped account {mapped_account}", "BPJS Mapping Validation")
+                else:
+                    failed_fields.append(field)
+            # If field is set but doesn't match mapped account, show warning
+            elif mapped_account and doc.get(field) != mapped_account:
+                # Just warn but don't change
                 frappe.msgprint(
-                    _(f"Field {field} has account {current_account} but expected {expected_account} based on GL mapping."),
+                    _(f"Field {field} has account {doc.get(field)} but expected {mapped_account} based on GL mapping."),
                     indicator="orange",
                     alert=True
                 )
-                debug_log(
-                    f"Account mismatch in {doc.name}: field {field} has {current_account} but expected {expected_account}",
-                    "BPJS Mapping Validation"
-                )
+                
+            # Validate account exists
+            if doc.get(field) and not frappe.db.exists("Account", doc.get(field)):
+                failed_fields.append(field)
+                doc.set(field, None)  # Clear invalid account
+        
         except Exception as e:
             debug_log(
-                f"Error validating account mapping for field {field}: {str(e)}",
-                "BPJS Mapping Validation Error"
+                f"Error validating {field} with map_gl_account: {str(e)}",
+                "BPJS Mapping Validation Error",
+                trace=True
             )
+            failed_fields.append(field)
+    
+    # Raise ValidationError if any fields failed
+    if failed_fields and not doc.flags.get("ignore_validation_errors"):
+        frappe.throw(
+            _("Failed to map the following accounts from defaults.json: {0}. Please check the configuration.").format(
+                ", ".join(failed_fields)
+            )
+        )
 
 
 def on_update_mapping(doc, method=None):
@@ -804,14 +814,14 @@ def on_update_mapping(doc, method=None):
     frappe.cache().delete_value(f"bpjs_mapping_{doc.company}")
     debug_log(f"Cleared cache for BPJS mapping of company {doc.company}", "BPJS Mapping Update")
     
-    # Update accounts using map_gl_account if needed
+    # Update accounts from GL mapping
     update_accounts_from_mapping(doc)
 
 
 def update_accounts_from_mapping(doc):
     """
-    Update accounts in the document from GL account mapping
-
+    Update empty account fields using map_gl_account function
+    
     Args:
         doc: BPJS Account Mapping document
     """
@@ -821,8 +831,8 @@ def update_accounts_from_mapping(doc):
     company = doc.company
     accounts_updated = False
     
-    # Define mapping of document fields to GL account mapper keys and categories
-    field_to_mapping = {
+    # Define mapping between document fields and GL account mapper keys and categories
+    field_mapping = {
         # Employee accounts (liability)
         "kesehatan_employee_account": ("bpjs_kesehatan_payable", "bpjs_payable_accounts"),
         "jht_employee_account": ("bpjs_jht_payable", "bpjs_payable_accounts"),
@@ -844,7 +854,7 @@ def update_accounts_from_mapping(doc):
     }
     
     # Update empty fields with mapped accounts
-    for field, (account_key, category) in field_to_mapping.items():
+    for field, (account_key, category) in field_mapping.items():
         if not doc.get(field):
             try:
                 account = map_gl_account(company, account_key, category)
@@ -888,8 +898,11 @@ class BPJSAccountMapping(Document):
             return
 
         self.validate_duplicate_mapping()
+        
+        # Validate accounts using map_gl_account
+        company = self.company
+        self.resolve_accounts_with_mapper(company)
         self.validate_account_types()
-        self.setup_missing_accounts()
 
     def validate_duplicate_mapping(self):
         """Ensure no duplicate mapping exists for the same company"""
@@ -909,69 +922,152 @@ class BPJSAccountMapping(Document):
                     existing, self.company
                 )
             )
+    
+    def resolve_accounts_with_mapper(self, company):
+        """
+        Resolve and update account fields using map_gl_account function
+        
+        Args:
+            company: Company to resolve accounts for
+        """
+        # Define mapping between document fields and GL account mapper keys and categories
+        field_mapping = {
+            # Employee accounts (liability)
+            "kesehatan_employee_account": ("bpjs_kesehatan_payable", "bpjs_payable_accounts"),
+            "jht_employee_account": ("bpjs_jht_payable", "bpjs_payable_accounts"),
+            "jp_employee_account": ("bpjs_jp_payable", "bpjs_payable_accounts"),
+            
+            # Employer expense accounts
+            "kesehatan_employer_debit_account": ("bpjs_kesehatan_employer_expense", "bpjs_expense_accounts"),
+            "jht_employer_debit_account": ("bpjs_jht_employer_expense", "bpjs_expense_accounts"),
+            "jp_employer_debit_account": ("bpjs_jp_employer_expense", "bpjs_expense_accounts"),
+            "jkk_employer_debit_account": ("bpjs_jkk_employer_expense", "bpjs_expense_accounts"),
+            "jkm_employer_debit_account": ("bpjs_jkm_employer_expense", "bpjs_expense_accounts"),
+            
+            # Employer liability accounts
+            "kesehatan_employer_credit_account": ("bpjs_kesehatan_payable", "bpjs_payable_accounts"),
+            "jht_employer_credit_account": ("bpjs_jht_payable", "bpjs_payable_accounts"),
+            "jp_employer_credit_account": ("bpjs_jp_payable", "bpjs_payable_accounts"),
+            "jkk_employer_credit_account": ("bpjs_jkk_payable", "bpjs_payable_accounts"),
+            "jkm_employer_credit_account": ("bpjs_jkm_payable", "bpjs_payable_accounts")
+        }
+        
+        # List to collect fields that failed mapping
+        failed_fields = []
+        
+        # Process each field
+        for field, (account_key, category) in field_mapping.items():
+            try:
+                # Only set value if field is empty
+                if not self.get(field):
+                    # Get mapped account name
+                    account = map_gl_account(company, account_key, category)
+                    
+                    # Set field if account exists
+                    if account and frappe.db.exists("Account", account):
+                        self.set(field, account)
+                        debug_log(
+                            f"Mapped {field} to {account} using map_gl_account", 
+                            "BPJS Mapping"
+                        )
+                    else:
+                        # Account couldn't be mapped or doesn't exist
+                        failed_fields.append(field)
+                        debug_log(
+                            f"Failed to map {field}: Account {account} doesn't exist", 
+                            "BPJS Mapping Error"
+                        )
+            except Exception as e:
+                failed_fields.append(field)
+                debug_log(
+                    f"Error mapping {field} with map_gl_account: {str(e)}", 
+                    "BPJS Mapping Error",
+                    trace=True
+                )
+        
+        # Raise validation error if any fields couldn't be mapped
+        if failed_fields and not self.flags.get("ignore_validation_errors"):
+            frappe.throw(
+                _("Failed to map the following accounts from defaults.json: {0}. Please check the configuration.").format(
+                    ", ".join(failed_fields)
+                )
+            )
 
     def validate_account_types(self):
         """Validate that all accounts are of the correct type"""
-        # Employee contribution accounts should be liability accounts
-        self.validate_account_type(
-            self.kesehatan_employee_account, ["Liability"], "BPJS Kesehatan Employee"
-        )
-        self.validate_account_type(self.jht_employee_account, ["Liability"], "BPJS JHT Employee")
-        self.validate_account_type(self.jp_employee_account, ["Liability"], "BPJS JP Employee")
+        # Skip empty accounts in validation as those will be caught elsewhere
+        if self.kesehatan_employee_account:
+            self.validate_account_type(
+                self.kesehatan_employee_account, ["Liability"], "BPJS Kesehatan Employee"
+            )
+        if self.jht_employee_account:
+            self.validate_account_type(self.jht_employee_account, ["Liability"], "BPJS JHT Employee")
+        if self.jp_employee_account:
+            self.validate_account_type(self.jp_employee_account, ["Liability"], "BPJS JP Employee")
 
         # Employer expense accounts should be expense accounts
-        self.validate_account_type(
-            self.kesehatan_employer_debit_account,
-            ["Expense Account", "Direct Expense", "Indirect Expense"],
-            "BPJS Kesehatan Employer Expense",
-        )
-        self.validate_account_type(
-            self.jht_employer_debit_account,
-            ["Expense Account", "Direct Expense", "Indirect Expense"],
-            "BPJS JHT Employer Expense",
-        )
-        self.validate_account_type(
-            self.jp_employer_debit_account,
-            ["Expense Account", "Direct Expense", "Indirect Expense"],
-            "BPJS JP Employer Expense",
-        )
-        self.validate_account_type(
-            self.jkk_employer_debit_account,
-            ["Expense Account", "Direct Expense", "Indirect Expense"],
-            "BPJS JKK Employer Expense",
-        )
-        self.validate_account_type(
-            self.jkm_employer_debit_account,
-            ["Expense Account", "Direct Expense", "Indirect Expense"],
-            "BPJS JKM Employer Expense",
-        )
+        if self.kesehatan_employer_debit_account:
+            self.validate_account_type(
+                self.kesehatan_employer_debit_account,
+                ["Expense"],
+                "BPJS Kesehatan Employer Expense",
+            )
+        if self.jht_employer_debit_account:
+            self.validate_account_type(
+                self.jht_employer_debit_account,
+                ["Expense"],
+                "BPJS JHT Employer Expense",
+            )
+        if self.jp_employer_debit_account:
+            self.validate_account_type(
+                self.jp_employer_debit_account,
+                ["Expense"],
+                "BPJS JP Employer Expense",
+            )
+        if self.jkk_employer_debit_account:
+            self.validate_account_type(
+                self.jkk_employer_debit_account,
+                ["Expense"],
+                "BPJS JKK Employer Expense",
+            )
+        if self.jkm_employer_debit_account:
+            self.validate_account_type(
+                self.jkm_employer_debit_account,
+                ["Expense"],
+                "BPJS JKM Employer Expense",
+            )
 
         # Employer liability accounts should be liability accounts
-        self.validate_account_type(
-            self.kesehatan_employer_credit_account,
-            ["Liability"],
-            "BPJS Kesehatan Employer Liability",
-        )
-        self.validate_account_type(
-            self.jht_employer_credit_account, ["Liability"], "BPJS JHT Employer Liability"
-        )
-        self.validate_account_type(
-            self.jp_employer_credit_account, ["Liability"], "BPJS JP Employer Liability"
-        )
-        self.validate_account_type(
-            self.jkk_employer_credit_account, ["Liability"], "BPJS JKK Employer Liability"
-        )
-        self.validate_account_type(
-            self.jkm_employer_credit_account, ["Liability"], "BPJS JKM Employer Liability"
-        )
+        if self.kesehatan_employer_credit_account:
+            self.validate_account_type(
+                self.kesehatan_employer_credit_account,
+                ["Liability"],
+                "BPJS Kesehatan Employer Liability",
+            )
+        if self.jht_employer_credit_account:
+            self.validate_account_type(
+                self.jht_employer_credit_account, ["Liability"], "BPJS JHT Employer Liability"
+            )
+        if self.jp_employer_credit_account:
+            self.validate_account_type(
+                self.jp_employer_credit_account, ["Liability"], "BPJS JP Employer Liability"
+            )
+        if self.jkk_employer_credit_account:
+            self.validate_account_type(
+                self.jkk_employer_credit_account, ["Liability"], "BPJS JKK Employer Liability"
+            )
+        if self.jkm_employer_credit_account:
+            self.validate_account_type(
+                self.jkm_employer_credit_account, ["Liability"], "BPJS JKM Employer Liability"
+            )
 
-    def validate_account_type(self, account, allowed_types, account_description):
+    def validate_account_type(self, account, allowed_root_types, account_description):
         """
-        Validate that an account is of the correct type
+        Validate that an account has the correct root type
 
         Args:
             account (str): Account name to validate
-            allowed_types (list): List of allowed account types
+            allowed_root_types (list): List of allowed root types
             account_description (str): Description of the account for error messages
         """
         if not account:
@@ -985,10 +1081,10 @@ class BPJSAccountMapping(Document):
         if not account_doc:
             frappe.throw(_("Account {0} does not exist").format(account))
 
-        if account_doc.root_type not in allowed_types:
+        if account_doc.root_type not in allowed_root_types:
             frappe.throw(
                 _("{0} account {1} must be a {2} account").format(
-                    account_description, account, " or ".join(allowed_types)
+                    account_description, account, " or ".join(allowed_root_types)
                 )
             )
 
@@ -997,170 +1093,67 @@ class BPJSAccountMapping(Document):
                 _("Account {0} does not belong to company {1}").format(account, self.company)
             )
 
-    def setup_missing_accounts(self):
-        """Setup missing GL accounts using map_gl_account function"""
-        try:
-            # Create parent accounts for grouping if needed
-            liability_parent = create_parent_liability_account(self.company)
-            expense_parent = create_parent_expense_account(self.company)
-
-            if not liability_parent or not expense_parent:
-                frappe.throw(_("Failed to create parent accounts for BPJS. Please check the logs."))
-
-            debug_log(
-                f"Using parent accounts: Liability={liability_parent}, Expense={expense_parent}",
-                "Account Setup",
-            )
-
-            # Define field mappings for GL accounts
-            account_mappings = {
+    def on_update(self):
+        """Refresh cache and perform additional operations after update"""
+        frappe.cache().delete_value(f"bpjs_mapping_{self.company}")
+        debug_log(
+            f"Cleared cache for BPJS mapping of company {self.company}", "BPJS Mapping Update"
+        )
+        
+        # Update empty accounts using map_gl_account
+        if not self.flags.get("skip_account_update"):
+            company = self.company
+            field_mapping = {
                 # Employee accounts (liability)
-                "kesehatan_employee_account": ("bpjs_kesehatan_payable", "bpjs_payable_accounts", liability_parent),
-                "jht_employee_account": ("bpjs_jht_payable", "bpjs_payable_accounts", liability_parent),
-                "jp_employee_account": ("bpjs_jp_payable", "bpjs_payable_accounts", liability_parent),
+                "kesehatan_employee_account": ("bpjs_kesehatan_payable", "bpjs_payable_accounts"),
+                "jht_employee_account": ("bpjs_jht_payable", "bpjs_payable_accounts"),
+                "jp_employee_account": ("bpjs_jp_payable", "bpjs_payable_accounts"),
                 
                 # Employer expense accounts
-                "kesehatan_employer_debit_account": ("bpjs_kesehatan_employer_expense", "bpjs_expense_accounts", expense_parent),
-                "jht_employer_debit_account": ("bpjs_jht_employer_expense", "bpjs_expense_accounts", expense_parent),
-                "jp_employer_debit_account": ("bpjs_jp_employer_expense", "bpjs_expense_accounts", expense_parent),
-                "jkk_employer_debit_account": ("bpjs_jkk_employer_expense", "bpjs_expense_accounts", expense_parent),
-                "jkm_employer_debit_account": ("bpjs_jkm_employer_expense", "bpjs_expense_accounts", expense_parent),
+                "kesehatan_employer_debit_account": ("bpjs_kesehatan_employer_expense", "bpjs_expense_accounts"),
+                "jht_employer_debit_account": ("bpjs_jht_employer_expense", "bpjs_expense_accounts"),
+                "jp_employer_debit_account": ("bpjs_jp_employer_expense", "bpjs_expense_accounts"),
+                "jkk_employer_debit_account": ("bpjs_jkk_employer_expense", "bpjs_expense_accounts"),
+                "jkm_employer_debit_account": ("bpjs_jkm_employer_expense", "bpjs_expense_accounts"),
                 
                 # Employer liability accounts
-                "kesehatan_employer_credit_account": ("bpjs_kesehatan_payable", "bpjs_payable_accounts", liability_parent),
-                "jht_employer_credit_account": ("bpjs_jht_payable", "bpjs_payable_accounts", liability_parent),
-                "jp_employer_credit_account": ("bpjs_jp_payable", "bpjs_payable_accounts", liability_parent),
-                "jkk_employer_credit_account": ("bpjs_jkk_payable", "bpjs_payable_accounts", liability_parent),
-                "jkm_employer_credit_account": ("bpjs_jkm_payable", "bpjs_payable_accounts", liability_parent)
+                "kesehatan_employer_credit_account": ("bpjs_kesehatan_payable", "bpjs_payable_accounts"),
+                "jht_employer_credit_account": ("bpjs_jht_payable", "bpjs_payable_accounts"),
+                "jp_employer_credit_account": ("bpjs_jp_payable", "bpjs_payable_accounts"),
+                "jkk_employer_credit_account": ("bpjs_jkk_payable", "bpjs_payable_accounts"),
+                "jkm_employer_credit_account": ("bpjs_jkm_payable", "bpjs_payable_accounts")
             }
             
-            # Fill in missing accounts using the mapping
-            for field, (account_key, category, parent_account) in account_mappings.items():
-                # Skip if already set to a valid account
-                if self.get(field) and frappe.db.exists("Account", self.get(field)):
-                    continue
-                    
-                # Try to map the account using map_gl_account
-                try:
-                    account = map_gl_account(self.company, account_key, category)
-                    if account and frappe.db.exists("Account", account):
-                        self.set(field, account)
-                        debug_log(f"Set {field} to mapped account {account}", "BPJS Account Setup")
-                        continue
-                except Exception as mapping_error:
-                    debug_log(
-                        f"Error mapping GL account for {field}: {str(mapping_error)}",
-                        "BPJS Account Setup Error"
-                    )
-                
-                # If mapping fails, try to get from BPJS Settings
-                bpjs_settings_account = self.get_account_from_bpjs_settings(field)
-                if bpjs_settings_account:
-                    self.set(field, bpjs_settings_account)
-                    debug_log(f"Set {field} to BPJS Settings account {bpjs_settings_account}", "BPJS Account Setup")
-                    continue
-                
-                # If no account found yet, create a new one as fallback
-                self.create_fallback_account(field, account_key, category, parent_account)
-                
-        except Exception as e:
-            frappe.log_error(
-                f"Error in setup_missing_accounts for {self.name}: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}",
-                "BPJS Account Setup Error",
-            )
-            debug_log(
-                f"Error in setup_missing_accounts: {str(e)}",
-                "BPJS Account Setup Error",
-                trace=True,
-            )
-
-    def create_fallback_account(self, field, account_key, category, parent_account):
-        """Create a fallback account if mapping and BPJS Settings fail"""
-        try:
-            # Get account configurations from defaults.json
-            config = get_default_config()
-            gl_accounts = config.get("gl_accounts", {}).get(category, {})
+            # Flag to track if any accounts were updated
+            accounts_updated = False
             
-            # Get account info from config
-            account_info = gl_accounts.get(account_key, {})
-            account_name = account_info.get("account_name")
+            # Only map empty fields to avoid overwriting user customizations
+            for field, (account_key, category) in field_mapping.items():
+                if not self.get(field):
+                    try:
+                        mapped_account = map_gl_account(company, account_key, category)
+                        if mapped_account and frappe.db.exists("Account", mapped_account):
+                            self.set(field, mapped_account)
+                            accounts_updated = True
+                            debug_log(
+                                f"Updated {field} with mapped account {mapped_account}", 
+                                "BPJS Mapping Update"
+                            )
+                    except Exception as e:
+                        debug_log(
+                            f"Error updating {field} with map_gl_account: {str(e)}", 
+                            "BPJS Mapping Update Error",
+                            trace=True
+                        )
             
-            if not account_name:
-                # Generate a name based on the field if not found in config
-                if "employee_account" in field:
-                    base_name = field.replace("_employee_account", " Employee").replace("_", " ").title()
-                    account_name = f"BPJS {base_name} Payable"
-                elif "debit_account" in field:
-                    base_name = field.replace("_debit_account", "").replace("_employer", " Employer").replace("_", " ").title()
-                    account_name = f"BPJS {base_name} Expense"
-                elif "credit_account" in field:
-                    base_name = field.replace("_credit_account", "").replace("_employer", " Employer").replace("_", " ").title()
-                    account_name = f"BPJS {base_name} Payable"
-            
-            # Determine account type and root type
-            if "debit_account" in field:
-                account_type = "Expense Account"
-                root_type = "Expense"
-            else:
-                account_type = "Liability"
-                root_type = "Liability"
-            
-            # Create the account
-            account = create_account(
-                company=self.company,
-                account_name=account_name,
-                account_type=account_type,
-                parent=parent_account,
-                root_type=root_type
-            )
-            
-            if account:
-                self.set(field, account)
-                debug_log(f"Created fallback account {account} for {field}", "BPJS Account Setup")
-                
-        except Exception as e:
-            debug_log(
-                f"Error creating fallback account for {field}: {str(e)}",
-                "BPJS Account Setup Error",
-                trace=True
-            )
-
-    def get_account_from_bpjs_settings(self, field):
-        """Get account from BPJS Settings for a specific field"""
-        try:
-            if not frappe.db.exists("BPJS Settings", "BPJS Settings"):
-                return None
-                
-            bpjs_settings = frappe.get_doc("BPJS Settings", "BPJS Settings")
-            
-            # Map BPJS Account Mapping fields to BPJS Settings fields
-            field_mapping = {
-                "kesehatan_employee_account": "kesehatan_account",
-                "kesehatan_employer_credit_account": "kesehatan_account",
-                "jht_employee_account": "jht_account",
-                "jht_employer_credit_account": "jht_account",
-                "jp_employee_account": "jp_account",
-                "jp_employer_credit_account": "jp_account",
-                "jkk_employer_credit_account": "jkk_account",
-                "jkm_employer_credit_account": "jkm_account"
-            }
-            
-            if field in field_mapping:
-                settings_field = field_mapping[field]
-                account = bpjs_settings.get(settings_field)
-                
-                if account and frappe.db.exists("Account", account):
-                    return account
-                    
-            return None
-            
-        except Exception as e:
-            debug_log(
-                f"Error getting account from BPJS Settings for {field}: {str(e)}",
-                "BPJS Account Setup Error"
-            )
-            return None
+            # Save the document again if any accounts were updated
+            if accounts_updated:
+                self.flags.skip_account_update = True  # Prevent recursive updates
+                self.save(ignore_permissions=True)
+                debug_log(
+                    f"Updated BPJS Account Mapping {self.name} with mapped accounts", 
+                    "BPJS Mapping Update"
+                )
 
     def get_accounts_for_component(self, component_type):
         """
@@ -1190,14 +1183,3 @@ class BPJSAccountMapping(Document):
             accounts["employer_credit"] = getattr(self, employer_credit_field)
 
         return accounts
-
-    def on_update(self):
-        """Refresh cache and perform additional operations after update"""
-        frappe.cache().delete_value(f"bpjs_mapping_{self.company}")
-        debug_log(
-            f"Cleared cache for BPJS mapping of company {self.company}", "BPJS Mapping Update"
-        )
-        
-        # Additional logic to update any accounts that might be missing
-        if not self.flags.get("skip_account_update"):
-            update_accounts_from_mapping(self)
