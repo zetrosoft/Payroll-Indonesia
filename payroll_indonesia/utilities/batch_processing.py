@@ -614,6 +614,7 @@ def bulk_refresh_tax_summaries_by_department(
 
 # ======== Cleanup Functions ========
 
+
 def cleanup_old_batch_jobs_extended(days: int = 7) -> Dict[str, Any]:
     """
     Clean up old completed batch jobs from the database
