@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from frappe import _
 from frappe.utils import flt, cint, getdate, now_datetime
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Tuple
 
 # Import constants
 from payroll_indonesia.constants import (
@@ -59,6 +59,7 @@ __all__ = [
 # Settings cache
 settings_cache = {}
 config_cache = {}
+parent_account_cache = {}
 cache_expiry = {}
 CACHE_EXPIRY_SECONDS = 3600  # 1 hour
 
@@ -196,6 +197,14 @@ def get_default_config(section: Optional[str] = None) -> Dict[str, Any]:
     config["bpjs_expense_parent_account"] = getattr(
         settings, "bpjs_expense_parent_account", "Expenses"
     )
+    
+    # Add parent account candidates
+    config["parent_account_candidates"] = {
+        "Liability": _get_parent_account_candidates_liability(settings),
+        "Expense": _get_parent_account_candidates_expense(settings),
+        "Income": ["Income", "Direct Income", "Indirect Income"],
+        "Asset": ["Current Assets", "Fixed Assets"]
+    }
 
     # Cache the result
     config_cache[cache_key] = config if section is None else config.get(section, {})
@@ -206,6 +215,42 @@ def get_default_config(section: Optional[str] = None) -> Dict[str, Any]:
         return config.get(section, {})
 
     return config
+
+
+def _get_parent_account_candidates_liability(settings) -> List[str]:
+    """
+    Get list of parent account candidates for liability accounts
+    
+    Args:
+        settings: Payroll Indonesia Settings document
+        
+    Returns:
+        List[str]: List of account names
+    """
+    if hasattr(settings, "parent_account_candidates_liability") and settings.parent_account_candidates_liability:
+        candidates = settings.parent_account_candidates_liability.split("\n")
+        return [candidate.strip() for candidate in candidates if candidate.strip()]
+    
+    # Default candidates
+    return ["Duties and Taxes", "Current Liabilities", "Accounts Payable"]
+
+
+def _get_parent_account_candidates_expense(settings) -> List[str]:
+    """
+    Get list of parent account candidates for expense accounts
+    
+    Args:
+        settings: Payroll Indonesia Settings document
+        
+    Returns:
+        List[str]: List of account names
+    """
+    if hasattr(settings, "parent_account_candidates_expense") and settings.parent_account_candidates_expense:
+        candidates = settings.parent_account_candidates_expense.split("\n")
+        return [candidate.strip() for candidate in candidates if candidate.strip()]
+    
+    # Default candidates
+    return ["Direct Expenses", "Indirect Expenses", "Expenses"]
 
 
 def create_default_settings():
@@ -243,6 +288,9 @@ def create_default_settings():
             "meal_allowance": 750000.0,
             "transport_allowance": 900000.0,
             "position_allowance_percent": 7.5,
+            # Parent account candidates
+            "parent_account_candidates_liability": "Duties and Taxes\nCurrent Liabilities\nAccounts Payable",
+            "parent_account_candidates_expense": "Direct Expenses\nIndirect Expenses\nExpenses",
         }
     )
 
@@ -253,6 +301,7 @@ def create_default_settings():
 
     frappe.db.commit()
     return settings
+
 
 def _load_defaults_json() -> Dict[str, Any]:
     """
@@ -275,58 +324,635 @@ def _load_defaults_json() -> Dict[str, Any]:
         debug_log(f"Error loading defaults.json: {str(e)}", "Configuration", trace=True)
         return {}
 
-# Internal helper function for settings retrieval
-def _get_payroll_settings(
-    doctype: str, cache_key: str, defaults: Dict[str, Any] = None
-) -> Dict[str, Any]:
+
+def find_parent_account(
+    company: str,
+    account_type: str,
+    root_type: Optional[str] = None,
+) -> Optional[str]:
     """
-    Internal helper to fetch single DocType settings with cache
+    Find appropriate parent account based on account type and root type.
+    This is the centralized function for all parent account lookups.
+    
+    Args:
+        company: Company name
+        account_type: Type of account (Payable, Expense, Asset, etc.)
+        root_type: Root type (Liability, Expense, Asset, Income)
+                  If None, determined from account_type
+                  
+    Returns:
+        str: Parent account name if found, None otherwise
+    """
+    # Determine root_type if not provided
+    if not root_type:
+        root_type = _get_root_type_from_account_type(account_type)
+    
+    # Create cache key
+    cache_key = f"parent_account:{company}:{account_type}:{root_type}"
+    
+    # Check cache first
+    if cache_key in parent_account_cache:
+        # Check if cache is still valid
+        if cache_expiry.get(cache_key, 0) > now_datetime().timestamp():
+            return parent_account_cache[cache_key]
+    
+    debug_log(
+        f"Finding parent account for {account_type} (root_type: {root_type}) in company {company}",
+        "Account Lookup"
+    )
+    
+    # Get company abbreviation for formatting account names
+    abbr = frappe.get_cached_value("Company", company, "abbr")
+    if not abbr:
+        debug_log(f"Company {company} does not have an abbreviation", "Account Lookup Error")
+        return None
+    
+    # Get candidate parent accounts from settings
+    candidates = _get_parent_account_candidates(root_type)
+    
+    # Search for parent account from candidate list
+    parent_account = _find_parent_from_candidates(company, candidates, abbr)
+    
+    # If no parent account found from candidates, try fallback
+    if not parent_account:
+        # Fallback: Get any group account with the correct root_type
+        parent_account = _find_fallback_parent_account(company, root_type)
+        
+        if parent_account:
+            debug_log(
+                f"Using fallback parent account for {account_type}: {parent_account}",
+                "Account Lookup"
+            )
+        else:
+            debug_log(
+                f"Could not find any parent account for {account_type} (root_type: {root_type}) in company {company}",
+                "Account Lookup Error"
+            )
+            # Don't cache negative results
+            return None
+    
+    # Cache the successful result
+    parent_account_cache[cache_key] = parent_account
+    cache_expiry[cache_key] = now_datetime().timestamp() + CACHE_EXPIRY_SECONDS
+    
+    return parent_account
+
+
+def _get_root_type_from_account_type(account_type: str) -> str:
+    """
+    Determine the root type based on account type
+    
+    Args:
+        account_type: Type of account
+        
+    Returns:
+        str: Root type
+    """
+    if account_type in ["Direct Expense", "Indirect Expense", "Expense Account", "Expense"]:
+        return "Expense"
+    elif account_type in ["Payable", "Tax", "Receivable"]:
+        return "Liability"
+    elif account_type == "Asset":
+        return "Asset"
+    elif account_type in ["Direct Income", "Indirect Income", "Income Account"]:
+        return "Income"
+    
+    # Default mapping
+    mapping = {
+        "Cost of Goods Sold": "Expense",
+        "Bank": "Asset",
+        "Cash": "Asset",
+        "Stock": "Asset",
+        "Fixed Asset": "Asset",
+        "Chargeable": "Expense",
+        "Warehouse": "Asset",
+        "Stock Adjustment": "Expense",
+        "Round Off": "Expense",
+    }
+    
+    return mapping.get(account_type, "Liability")
+
+
+def _get_parent_account_candidates(root_type: str) -> List[str]:
+    """
+    Get parent account candidates for the given root type
+    
+    Args:
+        root_type: Root type of account
+        
+    Returns:
+        List[str]: List of candidate account names
+    """
+    # Get from config
+    config = get_default_config()
+    candidates = config.get("parent_account_candidates", {}).get(root_type, [])
+    
+    # If no candidates found in config, use defaults
+    if not candidates:
+        if root_type == "Liability":
+            candidates = ["Duties and Taxes", "Current Liabilities", "Accounts Payable"]
+        elif root_type == "Expense":
+            candidates = ["Direct Expenses", "Indirect Expenses", "Expenses"]
+        elif root_type == "Income":
+            candidates = ["Income", "Direct Income", "Indirect Income"]
+        elif root_type == "Asset":
+            candidates = ["Current Assets", "Fixed Assets"]
+        else:
+            candidates = []
+    
+    return candidates
+
+
+def _find_parent_from_candidates(company: str, candidates: List[str], abbr: str) -> Optional[str]:
+    """
+    Find parent account from the list of candidates
+    
+    Args:
+        company: Company name
+        candidates: List of candidate account names
+        abbr: Company abbreviation
+        
+    Returns:
+        str: Parent account name if found, None otherwise
+    """
+    for candidate in candidates:
+        # First check exact account name
+        account = frappe.db.get_value(
+            "Account",
+            {
+                "account_name": candidate,
+                "company": company,
+                "is_group": 1
+            },
+            "name"
+        )
+        
+        if account:
+            debug_log(f"Found parent account by name: {account}", "Account Lookup")
+            return account
+        
+        # Then check with company suffix
+        account_with_suffix = f"{candidate} - {abbr}"
+        if frappe.db.exists("Account", account_with_suffix):
+            debug_log(f"Found parent account with suffix: {account_with_suffix}", "Account Lookup")
+            return account_with_suffix
+    
+    return None
+
+
+def _find_fallback_parent_account(company: str, root_type: str) -> Optional[str]:
+    """
+    Find any group account with the correct root_type as fallback
+    
+    Args:
+        company: Company name
+        root_type: Root type of account
+        
+    Returns:
+        str: Parent account name if found, None otherwise
+    """
+    # Query for any group account with the correct root_type
+    accounts = frappe.get_all(
+        "Account",
+        filters={
+            "company": company,
+            "is_group": 1,
+            "root_type": root_type
+        },
+        order_by="lft",
+        limit=1
+    )
+    
+    if accounts:
+        return accounts[0].name
+    
+    return None
+
+
+def create_account(
+    company: str, 
+    account_name: str, 
+    account_type: str, 
+    parent: Optional[str] = None, 
+    root_type: Optional[str] = None, 
+    is_group: int = 0
+) -> Optional[str]:
+    """
+    Create GL Account if not exists with standardized naming and enhanced validation
+    
+    This is the single source of truth for account creation in Payroll Indonesia.
+    It handles all account creation logic, including finding appropriate parent accounts.
 
     Args:
-        doctype (str): The settings DocType name
-        cache_key (str): Cache key to use
-        defaults (Dict[str, Any], optional): Default values if settings don't exist
+        company: Company name
+        account_name: Account name without company abbreviation
+        account_type: Account type (Payable, Expense, etc.)
+        parent: Parent account name (if None, will be determined automatically)
+        root_type: Root type (Asset, Liability, etc.). If None, determined from account_type.
+        is_group: Whether the account is a group account (1) or not (0)
 
     Returns:
-        Dict[str, Any]: Settings dictionary
+        str: Full account name if created or already exists, None otherwise
     """
-    if not defaults:
-        defaults = {}
-
-    # For Payroll Indonesia Settings, use the get_settings() function
-    if doctype == "Payroll Indonesia Settings":
-        settings = get_settings()
-        return settings.as_dict() if settings else defaults
-
-    # Check cache first
-    settings = frappe.cache().get_value(cache_key)
-    if settings:
-        return settings
-
+    debug_log(
+        f"Starting account creation: {account_name} in {company} (Type: {account_type})", 
+        "Account Creation"
+    )
+    
     try:
-        # Check if DocType exists
-        if frappe.db.exists("DocType", doctype):
-            doc_list = frappe.db.get_all(doctype)
-            if doc_list:
-                settings_doc = frappe.get_single(doctype)
+        # Normalize invalid account_type
+        if account_type == "Expense":
+            account_type = "Expense Account"
 
-                # Convert DocType to dictionary for caching
-                settings = settings_doc.as_dict()
+        # Validate company
+        if not company or not account_name:
+            debug_log("Company and account name are required for account creation", "Account Error")
+            return None
 
-                # Cache for CACHE_MEDIUM period (1 hour)
-                frappe.cache().set_value(cache_key, settings, expires_in_sec=CACHE_MEDIUM)
-                return settings
+        # Get company abbreviation
+        abbr = frappe.get_cached_value("Company", company, "abbr")
+        if not abbr:
+            debug_log(f"Company {company} does not have an abbreviation", "Account Error")
+            return None
+
+        # Ensure account name doesn't already include the company abbreviation
+        pure_account_name = account_name.replace(f" - {abbr}", "")
+        full_account_name = f"{pure_account_name} - {abbr}"
+
+        # Check if account already exists
+        if frappe.db.exists("Account", full_account_name):
+            debug_log(f"Account {full_account_name} already exists", "Account Creation")
+
+            # Verify account properties are correct
+            account_doc = frappe.db.get_value(
+                "Account",
+                full_account_name,
+                ["account_type", "parent_account", "company", "is_group"],
+                as_dict=1,
+            )
+            
+            # For group accounts, account_type might be None
+            expected_type = None if is_group else account_type
+            actual_type = account_doc.account_type
+
+            # Log differences but don't change existing accounts
+            if (
+                (expected_type and actual_type != expected_type) or
+                account_doc.company != company or
+                cint(account_doc.is_group) != cint(is_group)
+            ):
+                debug_log(
+                    f"Account {full_account_name} exists but has different properties.\n"
+                    f"Expected: type={expected_type or 'None'}, is_group={is_group}.\n"
+                    f"Found: type={actual_type or 'None'}, is_group={account_doc.is_group}",
+                    "Account Warning",
+                )
+
+            return full_account_name
+
+        # Determine root_type if not provided
+        if not root_type:
+            root_type = _get_root_type_from_account_type(account_type)
+
+        # Find parent account if not provided
+        if not parent:
+            parent = find_parent_account(company, account_type, root_type)
+            
+            if not parent:
+                debug_log(
+                    f"Could not find suitable parent account for {account_name} ({account_type})",
+                    "Account Error"
+                )
+                return None
+        
+        # Verify parent account exists
+        if not frappe.db.exists("Account", parent):
+            debug_log(f"Parent account {parent} does not exist", "Account Error")
+            return None
+
+        # Create account fields
+        account_fields = {
+            "doctype": "Account",
+            "account_name": pure_account_name,
+            "company": company,
+            "parent_account": parent,
+            "is_group": cint(is_group),
+            "root_type": root_type,
+            "account_currency": frappe.get_cached_value("Company", company, "default_currency"),
+        }
+        
+        # Only add account_type for non-group accounts
+        if not is_group and account_type:
+            account_fields["account_type"] = account_type
+
+        debug_log(
+            f"Creating account: {full_account_name}\n"
+            f"Fields: {json.dumps(account_fields, indent=2)}",
+            "Account Creation",
+        )
+
+        # Create the account document
+        doc = frappe.get_doc(account_fields)
+
+        # Bypass permissions and mandatory checks
+        doc.flags.ignore_permissions = True
+        doc.flags.ignore_mandatory = True
+        doc.insert(ignore_permissions=True)
+
+        # Commit database changes immediately
+        frappe.db.commit()
+
+        # Verify account was created
+        if frappe.db.exists("Account", full_account_name):
+            debug_log(f"Successfully created account: {full_account_name}", "Account Creation")
+            return full_account_name
+        else:
+            debug_log(
+                f"Failed to create account {full_account_name} despite no errors",
+                "Account Error"
+            )
+            return None
 
     except Exception as e:
-        frappe.log_error(f"Error retrieving {doctype}: {str(e)}", f"{doctype} Retrieval Error")
+        debug_log(
+            f"Error creating account {account_name} for {company}: {str(e)}", 
+            "Account Error", 
+            trace=True
+        )
+        return None
 
-    # If we reach here, use defaults
-    frappe.log_error(f"{doctype} not found or empty. Using defaults.", f"{doctype} Fallback")
 
-    # Cache defaults for shorter period
-    frappe.cache().set_value(cache_key, defaults, expires_in_sec=CACHE_SHORT)
+def create_parent_liability_account(company: str) -> Optional[str]:
+    """
+    Create or get parent liability account for BPJS accounts
+    
+    Uses the centralized create_account function with group account settings.
 
-    return defaults
+    Args:
+        company: Company name
+
+    Returns:
+        str: Parent account name if created or already exists, None otherwise
+    """
+    try:
+        # Validate company
+        if not company:
+            frappe.throw(_("Company is required to create parent liability account"))
+
+        # Get settings for account name
+        settings = get_settings()
+        account_name = "BPJS Payable"  # Default
+        
+        # Check if settings has a GL account configuration
+        if settings:
+            # Try to get GL accounts data from settings
+            gl_accounts_data = {}
+            try:
+                if hasattr(settings, "gl_accounts") and settings.gl_accounts:
+                    if isinstance(settings.gl_accounts, str):
+                        gl_accounts_data = json.loads(settings.gl_accounts)
+                    else:
+                        gl_accounts_data = settings.gl_accounts
+            except (ValueError, AttributeError):
+                debug_log("Error parsing GL accounts data from settings", "Account Creation")
+
+            # Look for parent_accounts configuration
+            if gl_accounts_data and "parent_accounts" in gl_accounts_data:
+                parent_accounts = gl_accounts_data.get("parent_accounts", {})
+                if "bpjs_payable" in parent_accounts:
+                    account_name = parent_accounts.get("bpjs_payable", {}).get(
+                        "account_name", account_name
+                    )
+        
+        # Get company abbreviation
+        abbr = frappe.get_cached_value("Company", company, "abbr")
+        if not abbr:
+            debug_log(f"Company {company} does not have an abbreviation", "Account Error")
+            return None
+            
+        full_account_name = f"{account_name} - {abbr}"
+        
+        # Check if account already exists
+        if frappe.db.exists("Account", full_account_name):
+            # Verify the account is a group account
+            is_group = frappe.db.get_value("Account", full_account_name, "is_group")
+            if not is_group:
+                # Convert to group account if needed
+                try:
+                    account_doc = frappe.get_doc("Account", full_account_name)
+                    account_doc.is_group = 1
+                    account_doc.flags.ignore_permissions = True
+                    account_doc.save()
+                    frappe.db.commit()
+                    debug_log(f"Updated {full_account_name} to be a group account", "Account Fix")
+                except Exception as e:
+                    frappe.log_error(
+                        f"Could not convert {full_account_name} to group account: {str(e)}",
+                        "Account Creation Error",
+                    )
+            
+            return full_account_name
+        
+        # Create parent account using centralized function
+        return create_account(
+            company=company,
+            account_name=account_name,
+            account_type="Payable",
+            root_type="Liability",
+            is_group=1
+        )
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error in create_parent_liability_account for {company}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Account Creation Error",
+        )
+        return None
+
+
+def create_parent_expense_account(company: str) -> Optional[str]:
+    """
+    Create or get parent expense account for BPJS accounts
+    
+    Uses the centralized create_account function with group account settings.
+
+    Args:
+        company: Company name
+
+    Returns:
+        str: Parent account name if created or already exists, None otherwise
+    """
+    try:
+        # Validate company
+        if not company:
+            frappe.throw(_("Company is required to create parent expense account"))
+
+        # Get settings for account name
+        settings = get_settings()
+        account_name = "BPJS Expenses"  # Default
+        
+        # Check if settings has a GL account configuration
+        if settings:
+            # Try to get GL accounts data from settings
+            gl_accounts_data = {}
+            try:
+                if hasattr(settings, "gl_accounts") and settings.gl_accounts:
+                    if isinstance(settings.gl_accounts, str):
+                        gl_accounts_data = json.loads(settings.gl_accounts)
+                    else:
+                        gl_accounts_data = settings.gl_accounts
+            except (ValueError, AttributeError):
+                debug_log("Error parsing GL accounts data from settings", "Account Creation")
+
+            # Look for parent_accounts configuration
+            if gl_accounts_data and "parent_accounts" in gl_accounts_data:
+                parent_accounts = gl_accounts_data.get("parent_accounts", {})
+                if "bpjs_expenses" in parent_accounts:
+                    account_name = parent_accounts.get("bpjs_expenses", {}).get(
+                        "account_name", account_name
+                    )
+        
+        # Get company abbreviation
+        abbr = frappe.get_cached_value("Company", company, "abbr")
+        if not abbr:
+            debug_log(f"Company {company} does not have an abbreviation", "Account Error")
+            return None
+            
+        full_account_name = f"{account_name} - {abbr}"
+        
+        # Check if account already exists
+        if frappe.db.exists("Account", full_account_name):
+            # Verify the account is a group account
+            is_group = frappe.db.get_value("Account", full_account_name, "is_group")
+            if not is_group:
+                # Convert to group account if needed
+                try:
+                    account_doc = frappe.get_doc("Account", full_account_name)
+                    account_doc.is_group = 1
+                    # Remove account_type as it's not allowed for group accounts
+                    account_doc.account_type = None
+                    account_doc.flags.ignore_permissions = True
+                    account_doc.save()
+                    frappe.db.commit()
+                    debug_log(f"Updated {full_account_name} to be a group account", "Account Fix")
+                except Exception as e:
+                    frappe.log_error(
+                        f"Could not convert {full_account_name} to group account: {str(e)}",
+                        "Account Creation Error",
+                    )
+            
+            return full_account_name
+        
+        # Create parent account using centralized function
+        return create_account(
+            company=company,
+            account_name=account_name,
+            account_type=None,  # Group accounts should not have account_type
+            root_type="Expense",
+            is_group=1
+        )
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error in create_parent_expense_account for {company}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Account Creation Error",
+        )
+        return None
+
+
+def retry_bpjs_mapping(companies: List[str]) -> None:
+    """
+    Background job to retry failed BPJS mapping creation
+    Called via frappe.enqueue() from ensure_bpjs_mapping_for_all_companies
+
+    Args:
+        companies: List of company names to retry mapping for
+    """
+    if not companies:
+        return
+
+    try:
+        # Import conditionally to avoid circular imports
+        module_path = (
+            "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping"
+        )
+        try:
+            module = frappe.get_module(module_path)
+            create_default_mapping = getattr(module, "create_default_mapping", None)
+        except (ImportError, AttributeError) as e:
+            frappe.log_error(
+                f"Failed to import create_default_mapping: {str(e)}", "BPJS Mapping Error"
+            )
+            return
+
+        if not create_default_mapping:
+            frappe.log_error("create_default_mapping function not found", "BPJS Mapping Error")
+            return
+
+        # Get account mapping from Payroll Indonesia Settings
+        settings = get_settings()
+
+        # Get account mapping from settings
+        account_mapping = {}
+        if settings:
+            # Try to get GL accounts data from settings
+            gl_accounts_data = {}
+            try:
+                if hasattr(settings, "gl_accounts") and settings.gl_accounts:
+                    if isinstance(settings.gl_accounts, str):
+                        gl_accounts_data = json.loads(settings.gl_accounts)
+                    else:
+                        gl_accounts_data = settings.gl_accounts
+
+                    if "bpjs_account_mapping" in gl_accounts_data:
+                        account_mapping = gl_accounts_data["bpjs_account_mapping"]
+            except (ValueError, AttributeError):
+                debug_log("Error parsing GL accounts data from settings", "BPJS Mapping Retry")
+
+        for company in companies:
+            try:
+                if not frappe.db.exists("BPJS Account Mapping", {"company": company}):
+                    debug_log(
+                        f"Retrying BPJS Account Mapping creation for {company}",
+                        "BPJS Mapping Retry",
+                    )
+                    mapping_name = create_default_mapping(company, account_mapping)
+
+                    if mapping_name:
+                        frappe.logger().info(
+                            f"Successfully created BPJS Account Mapping for {company} on retry"
+                        )
+                        debug_log(
+                            f"Successfully created BPJS Account Mapping for {company} on retry",
+                            "BPJS Mapping Retry",
+                        )
+                    else:
+                        frappe.logger().warning(
+                            f"Failed again to create BPJS Account Mapping for {company}"
+                        )
+                        debug_log(
+                            f"Failed again to create BPJS Account Mapping for {company}",
+                            "BPJS Mapping Retry Error",
+                        )
+            except Exception as e:
+                frappe.log_error(
+                    f"Error creating BPJS Account Mapping for {company} on retry: {str(e)}\n\n"
+                    f"Traceback: {frappe.get_traceback()}",
+                    "BPJS Mapping Retry Error",
+                )
+                debug_log(
+                    f"Error in retry for company {company}: {str(e)}",
+                    "BPJS Mapping Retry Error",
+                    trace=True,
+                )
+
+    except Exception as e:
+        frappe.log_error(
+            f"Error in retry_bpjs_mapping: {str(e)}\n\n" f"Traceback: {frappe.get_traceback()}",
+            "BPJS Mapping Retry Error",
+        )
 
 # BPJS Settings and Calculation Functions
 @memoize_with_ttl(ttl=CACHE_MEDIUM)
@@ -1396,698 +2022,3 @@ def create_tax_summary_doc(employee, year, tax_amount=0, is_using_ter=0, ter_rat
             f"Error creating tax summary for {employee}, year {year}: {str(e)}", "Tax Summary Error"
         )
         return None
-
-
-# Account functions
-def find_parent_account(
-    company: str,
-    parent_name: str,
-    company_abbr: str,
-    account_type: str,
-    candidates: List[str] = None,
-) -> Optional[str]:
-    """
-    Find parent account with multiple fallback options
-
-    Args:
-        company: Company name
-        parent_name: Parent account name
-        company_abbr: Company abbreviation
-        account_type: Account type to find appropriate parent
-        candidates: List of candidate parent account names to try
-
-    Returns:
-        str: Parent account name if found, None otherwise
-    """
-    debug_log(f"Finding parent account: {parent_name} for company {company}", "Account Lookup")
-
-    # Try exact name
-    parent = frappe.db.get_value(
-        "Account", {"account_name": parent_name, "company": company}, "name"
-    )
-    if parent:
-        debug_log(f"Found parent account by exact name match: {parent}", "Account Lookup")
-        return parent
-
-    # Try with company abbreviation
-    parent = frappe.db.get_value("Account", {"name": f"{parent_name} - {company_abbr}"}, "name")
-    if parent:
-        debug_log(f"Found parent account with company suffix: {parent}", "Account Lookup")
-        return parent
-
-    # Get fallback parent account candidates
-    parent_candidates = []
-
-    # Determine which type of parent accounts to look for
-    if "Payable" in parent_name or account_type in ["Payable", "Tax"]:
-        # For liability accounts
-        parent_candidates = candidates or [
-            "Duties and Taxes",
-            "Current Liabilities",
-            "Accounts Payable",
-        ]
-        debug_log(
-            f"Looking for liability parent among: {', '.join(parent_candidates)}", "Account Lookup"
-        )
-    else:
-        # For expense accounts
-        parent_candidates = candidates or ["Direct Expenses", "Indirect Expenses", "Expenses"]
-        debug_log(
-            f"Looking for expense parent among: {', '.join(parent_candidates)}", "Account Lookup"
-        )
-
-    # Try each candidate
-    for candidate in parent_candidates:
-        # Try exact account name
-        candidate_account = frappe.db.get_value(
-            "Account", {"account_name": candidate, "company": company}, "name"
-        )
-
-        if candidate_account:
-            debug_log(f"Found parent {candidate_account} for {parent_name}", "Account Lookup")
-            return candidate_account
-
-        # Try with company abbreviation
-        candidate_account = frappe.db.get_value(
-            "Account", {"name": f"{candidate} - {company_abbr}"}, "name"
-        )
-
-        if candidate_account:
-            debug_log(f"Found parent {candidate_account} for {parent_name}", "Account Lookup")
-            return candidate_account
-
-    # Try broad search for accounts with similar name
-    similar_accounts = frappe.db.get_list(
-        "Account",
-        filters={"company": company, "is_group": 1, "account_name": ["like", f"%{parent_name}%"]},
-        fields=["name"],
-    )
-    if similar_accounts:
-        debug_log(f"Found similar parent account: {similar_accounts[0].name}", "Account Lookup")
-        return similar_accounts[0].name
-
-    # Try any group account of correct type as fallback
-    # Use correct mapping for account types
-    root_type = "Expense"  # Default for expense accounts
-    if account_type in ["Payable", "Receivable", "Tax"]:
-        root_type = "Liability"
-    elif account_type in ["Direct Income", "Indirect Income", "Income Account"]:
-        root_type = "Income"
-
-    debug_log(f"Searching for any {root_type} group account as fallback", "Account Lookup")
-
-    parents = frappe.get_all(
-        "Account",
-        filters={"company": company, "is_group": 1, "root_type": root_type},
-        pluck="name",
-        limit=1,
-    )
-    if parents:
-        debug_log(f"Using fallback parent account: {parents[0]}", "Account Lookup")
-        return parents[0]
-
-    debug_log(
-        f"Could not find any suitable parent account for {parent_name}", "Account Lookup Error"
-    )
-    return None
-
-
-def create_account(
-    company: str, 
-    account_name: str, 
-    account_type: str, 
-    parent: str, 
-    root_type: Optional[str] = None, 
-    is_group: int = 0
-) -> Optional[str]:
-    """
-    Create GL Account if not exists with standardized naming and enhanced validation
-    
-    This is the single source of truth for account creation in Payroll Indonesia
-
-    Args:
-        company: Company name
-        account_name: Account name without company abbreviation
-        account_type: Account type (Payable, Expense, etc.)
-        parent: Parent account name
-        root_type: Root type (Asset, Liability, etc.). If None, determined from account_type.
-        is_group: Whether the account is a group account (1) or not (0)
-
-    Returns:
-        str: Full account name if created or already exists, None otherwise
-    """
-    debug_log(
-        f"Starting account creation: {account_name} in {company} (Type: {account_type})", 
-        "Account Creation"
-    )
-    
-    try:
-        # Normalize invalid account_type
-        if account_type == "Expense":
-            account_type = "Expense Account"
-
-        # Validate inputs
-        if not company or not account_name or not parent:
-            debug_log("Missing required parameters for account creation", "Account Error")
-            return None
-
-        # Get company abbreviation
-        abbr = frappe.get_cached_value("Company", company, "abbr")
-        if not abbr:
-            debug_log(f"Company {company} does not have an abbreviation", "Account Error")
-            return None
-
-        # Ensure account name doesn't already include the company abbreviation
-        pure_account_name = account_name.replace(f" - {abbr}", "")
-        full_account_name = f"{pure_account_name} - {abbr}"
-
-        # Check if account already exists
-        if frappe.db.exists("Account", full_account_name):
-            debug_log(f"Account {full_account_name} already exists", "Account Creation")
-
-            # Verify account properties are correct
-            account_doc = frappe.db.get_value(
-                "Account",
-                full_account_name,
-                ["account_type", "parent_account", "company", "is_group"],
-                as_dict=1,
-            )
-            
-            # For group accounts, account_type might be None
-            expected_type = None if is_group else account_type
-            actual_type = account_doc.account_type
-
-            # Log differences but don't change existing accounts
-            if (
-                (expected_type and actual_type != expected_type) or
-                account_doc.parent_account != parent or
-                account_doc.company != company or
-                cint(account_doc.is_group) != cint(is_group)
-            ):
-                debug_log(
-                    f"Account {full_account_name} exists but has different properties.\n"
-                    f"Expected: type={expected_type or 'None'}, parent={parent}, is_group={is_group}.\n"
-                    f"Found: type={actual_type or 'None'}, parent={account_doc.parent_account}, "
-                    f"is_group={account_doc.is_group}",
-                    "Account Warning",
-                )
-
-            return full_account_name
-
-        # Verify parent account exists
-        if not frappe.db.exists("Account", parent):
-            debug_log(f"Parent account {parent} does not exist", "Account Error")
-            return None
-
-        # Determine root_type based on account_type if not provided
-        if not root_type:
-            if account_type in ["Direct Expense", "Indirect Expense", "Expense Account", "Expense"]:
-                root_type = "Expense"
-            elif account_type in ["Payable", "Tax", "Receivable"]:
-                root_type = "Liability"
-            elif account_type == "Asset":
-                root_type = "Asset"
-            elif account_type in ["Direct Income", "Indirect Income", "Income Account"]:
-                root_type = "Income"
-            else:
-                root_type = "Liability"  # Default
-
-        # Create account fields
-        account_fields = {
-            "doctype": "Account",
-            "account_name": pure_account_name,
-            "company": company,
-            "parent_account": parent,
-            "is_group": cint(is_group),
-            "root_type": root_type,
-            "account_currency": frappe.get_cached_value("Company", company, "default_currency"),
-        }
-        
-        # Only add account_type for non-group accounts
-        if not is_group and account_type:
-            account_fields["account_type"] = account_type
-
-        debug_log(
-            f"Creating account: {full_account_name}\n"
-            f"Fields: {json.dumps(account_fields, indent=2)}",
-            "Account Creation",
-        )
-
-        # Create the account document
-        doc = frappe.get_doc(account_fields)
-
-        # Bypass permissions and mandatory checks
-        doc.flags.ignore_permissions = True
-        doc.flags.ignore_mandatory = True
-        doc.insert(ignore_permissions=True)
-
-        # Commit database changes immediately
-        frappe.db.commit()
-
-        # Verify account was created
-        if frappe.db.exists("Account", full_account_name):
-            debug_log(f"Successfully created account: {full_account_name}", "Account Creation")
-            return full_account_name
-        else:
-            debug_log(
-                f"Failed to create account {full_account_name} despite no errors",
-                "Account Error"
-            )
-            return None
-
-    except Exception as e:
-        debug_log(
-            f"Error creating account {account_name} for {company}: {str(e)}", 
-            "Account Error", 
-            trace=True
-        )
-        return None
-
-
-def create_parent_liability_account(company: str) -> Optional[str]:
-    """
-    Create or get parent liability account for BPJS accounts
-
-    Args:
-        company: Company name
-
-    Returns:
-        str: Parent account name if created or already exists, None otherwise
-    """
-    try:
-        # Validate company
-        if not company:
-            frappe.throw(_("Company is required to create parent liability account"))
-
-        abbr = frappe.get_cached_value("Company", company, "abbr")
-        if not abbr:
-            frappe.throw(_("Company {0} does not have an abbreviation").format(company))
-
-        # Get settings from Payroll Indonesia Settings
-        settings = get_settings()
-        account_name = "BPJS Payable"  # Default
-
-        # Check if settings has a GL account configuration
-        if settings:
-            # Try to get GL accounts data from settings
-            gl_accounts_data = {}
-            try:
-                if hasattr(settings, "gl_accounts") and settings.gl_accounts:
-                    if isinstance(settings.gl_accounts, str):
-                        gl_accounts_data = json.loads(settings.gl_accounts)
-                    else:
-                        gl_accounts_data = settings.gl_accounts
-            except (ValueError, AttributeError):
-                debug_log("Error parsing GL accounts data from settings", "Account Creation")
-
-            # Look for parent_accounts configuration
-            if gl_accounts_data and "parent_accounts" in gl_accounts_data:
-                parent_accounts = gl_accounts_data.get("parent_accounts", {})
-                if "bpjs_payable" in parent_accounts:
-                    account_name = parent_accounts.get("bpjs_payable", {}).get(
-                        "account_name", account_name
-                    )
-
-        parent_name = f"{account_name} - {abbr}"
-
-        # Check if account already exists
-        if frappe.db.exists("Account", parent_name):
-            # Verify the account is a group account
-            is_group = frappe.db.get_value("Account", parent_name, "is_group")
-            if not is_group:
-                # Convert to group account if needed
-                try:
-                    account_doc = frappe.get_doc("Account", parent_name)
-                    account_doc.is_group = 1
-                    account_doc.flags.ignore_permissions = True
-                    account_doc.save()
-                    frappe.db.commit()
-                    debug_log(f"Updated {parent_name} to be a group account", "Account Fix")
-                except Exception as e:
-                    frappe.log_error(
-                        f"Could not convert {parent_name} to group account: {str(e)}",
-                        "Account Creation Error",
-                    )
-                    # Continue and return the account name anyway
-
-            debug_log(f"Parent liability account {parent_name} already exists", "Account Creation")
-            return parent_name
-
-        # Find a suitable parent account
-        parent_candidates = ["Duties and Taxes", "Current Liabilities", "Accounts Payable"]
-        parent_account = find_parent_account(
-            company=company,
-            parent_name="Duties and Taxes",
-            company_abbr=abbr,
-            account_type="Payable",
-            candidates=parent_candidates,
-        )
-
-        if not parent_account:
-            # Try to find any liability group account as fallback
-            liability_accounts = frappe.get_all(
-                "Account",
-                filters={"company": company, "is_group": 1, "root_type": "Liability"},
-                order_by="lft",
-                limit=1,
-            )
-
-            if liability_accounts:
-                parent_account = liability_accounts[0].name
-                debug_log(
-                    f"Using fallback liability parent account: {parent_account}", "Account Creation"
-                )
-            else:
-                frappe.throw(
-                    _(
-                        "No suitable liability parent account found for creating BPJS accounts in company {0}"
-                    ).format(company)
-                )
-                return None
-
-        # Create parent account with explicit error handling
-        try:
-            debug_log(
-                f"Creating parent liability account {parent_name} under {parent_account}",
-                "Account Creation",
-            )
-
-            doc = frappe.get_doc(
-                {
-                    "doctype": "Account",
-                    "account_name": account_name,
-                    "parent_account": parent_account,
-                    "company": company,
-                    "account_type": "Payable",
-                    "account_currency": frappe.get_cached_value(
-                        "Company", company, "default_currency"
-                    ),
-                    "is_group": 1,
-                    "root_type": "Liability",
-                }
-            )
-
-            # Bypass permissions and mandatory checks during setup
-            doc.flags.ignore_permissions = True
-            doc.flags.ignore_mandatory = True
-            doc.insert(ignore_permissions=True)
-
-            # Commit database changes immediately
-            frappe.db.commit()
-
-            # Verify account was created
-            if frappe.db.exists("Account", parent_name):
-                debug_log(
-                    f"Successfully created parent liability account: {parent_name}",
-                    "Account Creation",
-                )
-                return parent_name
-            else:
-                frappe.throw(
-                    _("Failed to create parent liability account {0} despite no errors").format(
-                        parent_name
-                    )
-                )
-
-        except Exception as e:
-            frappe.log_error(
-                f"Error creating parent liability account {parent_name}: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}",
-                "Account Creation Error",
-            )
-            debug_log(
-                f"Error creating parent liability account for {company}: {str(e)}",
-                "Account Creation Error",
-                trace=True,
-            )
-            return None
-
-    except Exception as e:
-        frappe.log_error(
-            f"Critical error in create_parent_liability_account for {company}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Account Creation Error",
-        )
-        return None
-
-
-def create_parent_expense_account(company: str) -> Optional[str]:
-    """
-    Create or get parent expense account for BPJS accounts
-
-    Args:
-        company: Company name
-
-    Returns:
-        str: Parent account name if created or already exists, None otherwise
-    """
-    try:
-        # Validate company
-        if not company:
-            frappe.throw(_("Company is required to create parent expense account"))
-
-        abbr = frappe.get_cached_value("Company", company, "abbr")
-        if not abbr:
-            frappe.throw(_("Company {0} does not have an abbreviation").format(company))
-
-        # Get account name from Payroll Indonesia Settings
-        settings = get_settings()
-        account_name = "BPJS Expenses"  # Default
-
-        # Check if settings has a GL account configuration
-        if settings:
-            # Try to get GL accounts data from settings
-            gl_accounts_data = {}
-            try:
-                if hasattr(settings, "gl_accounts") and settings.gl_accounts:
-                    if isinstance(settings.gl_accounts, str):
-                        gl_accounts_data = json.loads(settings.gl_accounts)
-                    else:
-                        gl_accounts_data = settings.gl_accounts
-            except (ValueError, AttributeError):
-                debug_log("Error parsing GL accounts data from settings", "Account Creation")
-
-            # Look for parent_accounts configuration
-            if gl_accounts_data and "parent_accounts" in gl_accounts_data:
-                parent_accounts = gl_accounts_data.get("parent_accounts", {})
-                if "bpjs_expenses" in parent_accounts:
-                    account_name = parent_accounts.get("bpjs_expenses", {}).get(
-                        "account_name", account_name
-                    )
-
-        parent_name = f"{account_name} - {abbr}"
-
-        # Check if account already exists
-        if frappe.db.exists("Account", parent_name):
-            # Verify the account is a group account
-            is_group = frappe.db.get_value("Account", parent_name, "is_group")
-            if not is_group:
-                # Convert to group account if needed
-                try:
-                    account_doc = frappe.get_doc("Account", parent_name)
-                    account_doc.is_group = 1
-                    # Remove account_type as it's not allowed for group accounts
-                    account_doc.account_type = None
-                    account_doc.flags.ignore_permissions = True
-                    account_doc.save()
-                    frappe.db.commit()
-                    debug_log(f"Updated {parent_name} to be a group account", "Account Fix")
-                except Exception as e:
-                    frappe.log_error(
-                        f"Could not convert {parent_name} to group account: {str(e)}",
-                        "Account Creation Error",
-                    )
-                    # Continue and return the account name anyway
-
-            debug_log(f"Parent expense account {parent_name} already exists", "Account Creation")
-            return parent_name
-
-        # Find a suitable parent account
-        parent_candidates = ["Direct Expenses", "Indirect Expenses", "Expenses"]
-        parent_account = find_parent_account(
-            company=company,
-            parent_name="Direct Expenses",
-            company_abbr=abbr,
-            account_type="Expense",
-            candidates=parent_candidates,
-        )
-
-        if not parent_account:
-            # Try to find any expense group account as fallback
-            expense_accounts = frappe.get_all(
-                "Account",
-                filters={"company": company, "is_group": 1, "root_type": "Expense"},
-                order_by="lft",
-                limit=1,
-            )
-
-            if expense_accounts:
-                parent_account = expense_accounts[0].name
-                debug_log(
-                    f"Using fallback expense parent account: {parent_account}", "Account Creation"
-                )
-            else:
-                frappe.throw(
-                    _(
-                        "No suitable expense parent account found for creating BPJS accounts in company {0}"
-                    ).format(company)
-                )
-                return None
-
-        # Create parent account with explicit error handling
-        try:
-            debug_log(
-                f"Creating parent expense account {parent_name} under {parent_account}",
-                "Account Creation",
-            )
-
-            # Create account dictionary without account_type for group account
-            account_dict = {
-                "doctype": "Account",
-                "account_name": account_name,
-                "parent_account": parent_account,
-                "company": company,
-                "account_currency": frappe.get_cached_value("Company", company, "default_currency"),
-                "is_group": 1,
-                "root_type": "Expense",
-            }
-
-            # Note: No account_type since this is a group account
-
-            doc = frappe.get_doc(account_dict)
-
-            # Bypass permissions and mandatory checks during setup
-            doc.flags.ignore_permissions = True
-            doc.flags.ignore_mandatory = True
-            doc.insert(ignore_permissions=True)
-
-            # Commit database changes immediately
-            frappe.db.commit()
-
-            # Verify account was created
-            if frappe.db.exists("Account", parent_name):
-                debug_log(
-                    f"Successfully created parent expense account: {parent_name}",
-                    "Account Creation",
-                )
-                return parent_name
-            else:
-                frappe.throw(
-                    _("Failed to create parent expense account {0} despite no errors").format(
-                        parent_name
-                    )
-                )
-
-        except Exception as e:
-            frappe.log_error(
-                f"Error creating parent expense account {parent_name}: {str(e)}\n\n"
-                f"Traceback: {frappe.get_traceback()}",
-                "Account Creation Error",
-            )
-            debug_log(
-                f"Error creating parent expense account for {company}: {str(e)}",
-                "Account Creation Error",
-                trace=True,
-            )
-            return None
-
-    except Exception as e:
-        frappe.log_error(
-            f"Critical error in create_parent_expense_account for {company}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Account Creation Error",
-        )
-        return None
-
-
-def retry_bpjs_mapping(companies: List[str]) -> None:
-    """
-    Background job to retry failed BPJS mapping creation
-    Called via frappe.enqueue() from ensure_bpjs_mapping_for_all_companies
-
-    Args:
-        companies: List of company names to retry mapping for
-    """
-    if not companies:
-        return
-
-    try:
-        # Import conditionally to avoid circular imports
-        module_path = (
-            "payroll_indonesia.payroll_indonesia.doctype.bpjs_account_mapping.bpjs_account_mapping"
-        )
-        try:
-            module = frappe.get_module(module_path)
-            create_default_mapping = getattr(module, "create_default_mapping", None)
-        except (ImportError, AttributeError) as e:
-            frappe.log_error(
-                f"Failed to import create_default_mapping: {str(e)}", "BPJS Mapping Error"
-            )
-            return
-
-        if not create_default_mapping:
-            frappe.log_error("create_default_mapping function not found", "BPJS Mapping Error")
-            return
-
-        # Get account mapping from Payroll Indonesia Settings
-        settings = get_settings()
-
-        # Get account mapping from settings
-        account_mapping = {}
-        if settings:
-            # Try to get GL accounts data from settings
-            gl_accounts_data = {}
-            try:
-                if hasattr(settings, "gl_accounts") and settings.gl_accounts:
-                    if isinstance(settings.gl_accounts, str):
-                        gl_accounts_data = json.loads(settings.gl_accounts)
-                    else:
-                        gl_accounts_data = settings.gl_accounts
-
-                    if "bpjs_account_mapping" in gl_accounts_data:
-                        account_mapping = gl_accounts_data["bpjs_account_mapping"]
-            except (ValueError, AttributeError):
-                debug_log("Error parsing GL accounts data from settings", "BPJS Mapping Retry")
-
-        for company in companies:
-            try:
-                if not frappe.db.exists("BPJS Account Mapping", {"company": company}):
-                    debug_log(
-                        f"Retrying BPJS Account Mapping creation for {company}",
-                        "BPJS Mapping Retry",
-                    )
-                    mapping_name = create_default_mapping(company, account_mapping)
-
-                    if mapping_name:
-                        frappe.logger().info(
-                            f"Successfully created BPJS Account Mapping for {company} on retry"
-                        )
-                        debug_log(
-                            f"Successfully created BPJS Account Mapping for {company} on retry",
-                            "BPJS Mapping Retry",
-                        )
-                    else:
-                        frappe.logger().warning(
-                            f"Failed again to create BPJS Account Mapping for {company}"
-                        )
-                        debug_log(
-                            f"Failed again to create BPJS Account Mapping for {company}",
-                            "BPJS Mapping Retry Error",
-                        )
-            except Exception as e:
-                frappe.log_error(
-                    f"Error creating BPJS Account Mapping for {company} on retry: {str(e)}\n\n"
-                    f"Traceback: {frappe.get_traceback()}",
-                    "BPJS Mapping Retry Error",
-                )
-                debug_log(
-                    f"Error in retry for company {company}: {str(e)}",
-                    "BPJS Mapping Retry Error",
-                    trace=True,
-                )
-
-    except Exception as e:
-        frappe.log_error(
-            f"Error in retry_bpjs_mapping: {str(e)}\n\n" f"Traceback: {frappe.get_traceback()}",
-            "BPJS Mapping Retry Error",
-        )
