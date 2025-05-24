@@ -20,10 +20,9 @@ after_install = "payroll_indonesia.install.after_install"
 # before_migrate = "payroll_indonesia.install.create_required_doctypes"
 after_migrate = [
     "payroll_indonesia.install.after_migrate",
-    # Explicitly add account setup to ensure it runs during migration
-    "payroll_indonesia.fixtures.setup.setup_accounts"
+    # Panggil fungsi yang tidak memerlukan parameter
+    "payroll_indonesia.fixtures.setup.setup_all_accounts" 
 ]
-
 # List view JS
 doctype_list_js = {
     "BPJS Payment Summary": "payroll_indonesia/doctype/bpjs_payment_summary/bpjs_payment_summary_list.js",
