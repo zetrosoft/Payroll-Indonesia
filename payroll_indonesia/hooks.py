@@ -20,18 +20,9 @@ after_install = "payroll_indonesia.install.after_install"
 # before_migrate = "payroll_indonesia.install.create_required_doctypes"
 after_migrate = [
     "payroll_indonesia.install.after_migrate",
+    # Explicitly add account setup to ensure it runs during migration
+    "payroll_indonesia.fixtures.setup.setup_accounts"
 ]
-
-# JS files for doctypes
-doctype_js = {
-    "Employee": "payroll_indonesia/public/js/employee.js",
-    "Salary Slip": "payroll_indonesia/public/js/salary_slip.js",
-    "Payroll Entry": "payroll_indonesia/public/js/payroll_entry.js",
-    "PPh 21 Settings": "payroll_indonesia/public/js/pph_21_settings.js",
-    "BPJS Settings": "payroll_indonesia/doctype/bpjs_settings/bpjs_settings.js",
-    "BPJS Account Mapping": "payroll_indonesia/doctype/bpjs_account_mapping/bpjs_account_mapping.js",
-    "BPJS Payment Summary": "payroll_indonesia/doctype/bpjs_payment_summary/bpjs_payment_summary.js",
-}
 
 # List view JS
 doctype_list_js = {
@@ -80,9 +71,12 @@ doc_events = {
         "on_cancel": "payroll_indonesia.payroll_indonesia.doctype.bpjs_payment_summary.payment_hooks.payment_entry_on_cancel",
     },
     "Account": {"on_update": "payroll_indonesia.payroll_indonesia.account_hooks.account_on_update"},
+    "Company": {
+        "after_insert": "payroll_indonesia.fixtures.setup.setup_company_accounts"
+    }
 }
 
-# Fixtures - with appropriate filters
+# Fixtures - dengan filter sesuai dengan kebutuhan
 fixtures = [
     {"doctype": "Custom Field", "filters": [["module", "=", "Payroll Indonesia"]]},
     {"doctype": "Property Setter", "filters": [["module", "=", "Payroll Indonesia"]]},
