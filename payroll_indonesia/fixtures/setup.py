@@ -437,7 +437,7 @@ def setup_accounts(config=None, specific_company=None):
     Returns:
         dict: Setup results
     """
-    from payroll_indonesia.payroll_indonesia.utils import debug_log, create_account, get_default_config
+    from payroll_indonesia.payroll_indonesia.utils import debug_log, create_account, get_default_config, find_parent_account
     
     # Get config if not provided
     if config is None:
@@ -497,7 +497,12 @@ def setup_accounts(config=None, specific_company=None):
             # Create BPJS expense accounts
             _create_bpjs_expense_accounts(company.name, expense_parent, results)
             
-            # Additional account creation as needed
+            # Create payroll expense accounts from defaults.json
+            _create_expense_accounts_from_config(company.name, config, results)
+            
+            # Create payroll payable accounts from defaults.json
+            _create_payable_accounts_from_config(company.name, config, results)
+            
             debug_log(f"Completed account setup for company: {company.name}", "Account Setup")
             
         except Exception as e:
@@ -507,6 +512,122 @@ def setup_accounts(config=None, specific_company=None):
             
     debug_log(f"Account setup completed with: {len(results['created'])} created, {len(results['skipped'])} skipped, {len(results['errors'])} errors", "Account Setup")
     return results
+
+
+def _create_expense_accounts_from_config(company, config, results):
+    """
+    Create expense accounts from configuration
+    
+    Args:
+        company: Company name
+        config: Configuration dictionary
+        results: Results dictionary to update
+    """
+    from payroll_indonesia.payroll_indonesia.utils import create_account, debug_log, find_parent_account
+    
+    # Get expense accounts from config
+    expense_accounts = config.get("gl_accounts", {}).get("expense_accounts", {})
+    if not expense_accounts:
+        debug_log("No expense accounts found in configuration", "Account Setup")
+        return
+    
+    # Find expense parent account
+    parent = find_parent_account(company, "Expense Account", "Expense")
+    if not parent:
+        debug_log(f"Could not find suitable expense parent account for {company}", "Account Setup")
+        results["errors"].append(f"Failed to find expense parent account for {company}")
+        return
+    
+    # Create each expense account
+    for key, account_data in expense_accounts.items():
+        try:
+            account_name = account_data.get("account_name", "")
+            account_type = account_data.get("account_type", "Expense Account")
+            root_type = account_data.get("root_type", "Expense")
+            
+            if not account_name:
+                continue
+                
+            debug_log(f"Creating expense account {account_name} for {company}", "Account Setup")
+            
+            account = create_account(
+                company=company,
+                account_name=account_name,
+                account_type=account_type,
+                parent=parent,
+                root_type=root_type,
+                is_group=0
+            )
+            
+            if account:
+                results["created"].append(account)
+                debug_log(f"Created expense account: {account}", "Account Setup")
+            else:
+                results["skipped"].append(account_name)
+                debug_log(f"Account {account_name} already exists or creation failed", "Account Setup")
+        except Exception as e:
+            results["errors"].append(f"Error creating {account_name}: {str(e)}")
+            debug_log(f"Error creating {account_name}: {str(e)}", "Account Setup", trace=True)
+
+
+def _create_payable_accounts_from_config(company, config, results):
+    """
+    Create payable accounts from configuration
+    
+    Args:
+        company: Company name
+        config: Configuration dictionary
+        results: Results dictionary to update
+    """
+    from payroll_indonesia.payroll_indonesia.utils import create_account, debug_log, find_parent_account
+    
+    # Get payable accounts from config
+    payable_accounts = config.get("gl_accounts", {}).get("payable_accounts", {})
+    if not payable_accounts:
+        debug_log("No payable accounts found in configuration", "Account Setup")
+        return
+    
+    # Find liability parent account
+    parent = find_parent_account(company, "Tax", "Liability")
+    if not parent:
+        # Try with Payable type if Tax type doesn't find anything
+        parent = find_parent_account(company, "Payable", "Liability")
+        
+    if not parent:
+        debug_log(f"Could not find suitable liability parent account for {company}", "Account Setup")
+        results["errors"].append(f"Failed to find liability parent account for {company}")
+        return
+    
+    # Create each payable account
+    for key, account_data in payable_accounts.items():
+        try:
+            account_name = account_data.get("account_name", "")
+            account_type = account_data.get("account_type", "Payable")
+            root_type = account_data.get("root_type", "Liability")
+            
+            if not account_name:
+                continue
+                
+            debug_log(f"Creating payable account {account_name} for {company}", "Account Setup")
+            
+            account = create_account(
+                company=company,
+                account_name=account_name,
+                account_type=account_type,
+                parent=parent,
+                root_type=root_type,
+                is_group=0
+            )
+            
+            if account:
+                results["created"].append(account)
+                debug_log(f"Created payable account: {account}", "Account Setup")
+            else:
+                results["skipped"].append(account_name)
+                debug_log(f"Account {account_name} already exists or creation failed", "Account Setup")
+        except Exception as e:
+            results["errors"].append(f"Error creating {account_name}: {str(e)}")
+            debug_log(f"Error creating {account_name}: {str(e)}", "Account Setup", trace=True)
 
 def _create_bpjs_liability_parent(company):
     """Create or get BPJS liability parent account"""
