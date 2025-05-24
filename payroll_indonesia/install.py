@@ -5,9 +5,10 @@
 import frappe
 import json
 import os
-from frappe.utils import flt
+from frappe.utils import flt, now, get_datetime
 import logging
 import hashlib
+from payroll_indonesia.config.gl_account_mapper import map_gl_account
 
 # 1️⃣ Global logger setup
 logger = logging.getLogger(__name__)
@@ -75,10 +76,31 @@ def setup_payroll_components():
                 if field in comp:
                     setattr(doc, field, comp[field])
 
+            # Set default company for GL accounts
+            company = frappe.defaults.get_global_default("company")
+            if company and hasattr(doc, "accounts"):
+                # Map the GL account based on component name
+                account_name = get_default_gl_account_for_component(company, comp["name"])
+                if account_name:
+                    doc.append("accounts", {
+                        "company": company,
+                        "default_account": account_name
+                    })
+
             doc.insert()
 
     frappe.db.commit()
     logger.info("Payroll Indonesia components setup completed")
+
+
+def get_default_gl_account_for_component(company, component_name):
+    """Get the default GL account for a salary component using map_gl_account"""
+    try:
+        from payroll_indonesia.config.gl_account_mapper import get_gl_account_for_salary_component
+        return get_gl_account_for_salary_component(company, component_name)
+    except Exception as e:
+        logger.warning(f"Error getting GL account for component {component_name}: {str(e)}")
+        return None
 
 
 def migrate_from_json_to_doctype():
@@ -107,10 +129,10 @@ def migrate_from_json_to_doctype():
             logger.warning("[PI-Install] Could not load defaults.json, skipping migration")
             return False
 
-        # SEGARA log versi & updated_by dari config + jumlah key
+        # Log versi & metadata dari config + jumlah key
         app_info = config.get("app_info", {})
         config_version = app_info.get("version", "1.0.0")
-        config_updated_by = app_info.get("updated_by", "dannyaudian")
+        config_updated_by = app_info.get("updated_by", "system")
         config_key_count = len(config.keys())
         logger.info(f"[PI-Install] Loaded defaults.json: version={config_version}, updated_by={config_updated_by}, key_count={config_key_count}")
 
@@ -120,12 +142,12 @@ def migrate_from_json_to_doctype():
             settings = frappe.get_doc("Payroll Indonesia Settings", "Payroll Indonesia Settings")
             settings_exists = True
 
-            # Bandingkan app_version & app_updated_by dengan config
-            if settings.app_version == config_version and settings.app_updated_by == config_updated_by:
-                logger.info(f"[PI-Install] Settings already exist with matching version {config_version} and updated_by {config_updated_by}, skipping migration")
+            # Bandingkan app_version dengan config version
+            if settings.app_version == config_version:
+                logger.info(f"[PI-Install] Settings already exist with matching version {config_version}, skipping migration")
                 return True
             else:
-                logger.info(f"[PI-Install] Updating existing settings from version {settings.app_version} (updated by {settings.app_updated_by}) to {config_version} (updated by {config_updated_by})")
+                logger.info(f"[PI-Install] Updating existing settings from version {settings.app_version} to {config_version}")
 
         except frappe.exceptions.DoesNotExistError:
             # Settings doesn't exist, we'll create a new one
@@ -133,10 +155,9 @@ def migrate_from_json_to_doctype():
             settings = frappe.new_doc("Payroll Indonesia Settings")
             settings_exists = False
 
-        # Periksa user login aktif
+        # Periksa user login aktif - menggunakan safer approach
         current_user = frappe.session.user
-        if current_user != "dannyaudian":
-            logger.warning(f"[PI-Install] Current user is not dannyaudian ({current_user}), proceeding with migration but please check")
+        logger.info(f"[PI-Install] Current user executing migration: {current_user}")
 
         # Panggil update_settings_from_config()
         update_settings_from_config(settings, config)
@@ -146,6 +167,9 @@ def migrate_from_json_to_doctype():
         settings.flags.ignore_validate = True
         settings.flags.ignore_permissions = True
         settings.flags.ignore_mandatory = True
+
+        # Set updated_by to current user
+        settings.app_updated_by = current_user
 
         if settings_exists:
             settings.save(ignore_permissions=True)
@@ -237,9 +261,10 @@ def update_settings_from_config(settings, config):
         if last_updated:
             settings.app_last_updated = last_updated
         else:
-            settings.app_last_updated = frappe.utils.now()
+            settings.app_last_updated = now()
 
-        settings.app_updated_by = app_info.get("updated_by", "dannyaudian")
+        # Use current timestamp for last update
+        settings.app_updated_by = frappe.session.user
         app_info_summary = {"version": settings.app_version, "last_updated": settings.app_last_updated, "updated_by": settings.app_updated_by}
 
         # BPJS settings
@@ -254,7 +279,7 @@ def update_settings_from_config(settings, config):
         settings.jp_max_salary = flt(bpjs.get("jp_max_salary", 9077600.0))
         settings.jkk_percent = flt(bpjs.get("jkk_percent", 0.24))
         settings.jkm_percent = flt(bpjs.get("jkm_percent", 0.3))
-        bpjs_summary = {"kesehatan_employee_percent": settings.kesehatan_employee_percent, "kesehatan_employer_percent": settings.kesehatan_employer_percent, "kesehatan_max_salary": settings.kesehatan_max_salary, "jht_employee_percent": settings.jht_employee_percent}
+        bpjs_summary = {"kesehatan_employee_percent": settings.kesehatan_employee_percent, "kesehatan_employer_percent": settings.kesehatan_employer_percent}
 
         # Tax settings
         tax = config.get("tax", {})
@@ -265,7 +290,7 @@ def update_settings_from_config(settings, config):
         settings.tax_calculation_method = tax.get("tax_calculation_method", "TER")
         settings.use_ter = tax.get("use_ter", 1)
         settings.use_gross_up = tax.get("use_gross_up", 0)
-        tax_summary = {"umr_default": settings.umr_default, "biaya_jabatan_percent": settings.biaya_jabatan_percent, "biaya_jabatan_max": settings.biaya_jabatan_max, "npwp_mandatory": settings.npwp_mandatory, "tax_calculation_method": settings.tax_calculation_method}
+        tax_summary = {"umr_default": settings.umr_default, "biaya_jabatan_percent": settings.biaya_jabatan_percent}
 
         # Clear existing tables to prevent duplicates
         settings.ptkp_table = []
@@ -319,7 +344,7 @@ def update_settings_from_config(settings, config):
         settings.struktur_gaji_umr_default = flt(struktur_gaji.get("umr_default", 4900000.0))
         settings.position_allowance_percent = flt(struktur_gaji.get("position_allowance_percent", 7.5))
         settings.hari_kerja_default = struktur_gaji.get("hari_kerja_default", 22)
-        struktur_gaji_summary = {"basic_salary_percent": settings.basic_salary_percent, "meal_allowance": settings.meal_allowance, "transport_allowance": settings.transport_allowance}
+        struktur_gaji_summary = {"basic_salary_percent": settings.basic_salary_percent, "meal_allowance": settings.meal_allowance}
 
         # Tipe karyawan
         tipe_karyawan = config.get("tipe_karyawan", [])
@@ -327,7 +352,7 @@ def update_settings_from_config(settings, config):
             settings.append("tipe_karyawan", {"tipe_karyawan": tipe})
         tipe_karyawan_summary = {"count": len(settings.tipe_karyawan)}
 
-        logger.info(f"[PI-Install] update_settings_from_config summaries: app_info={app_info_summary}, bpjs={bpjs_summary}, tax={tax_summary}, ptkp={ptkp_summary}, ptkp_ter_mapping={ptkp_ter_mapping_summary}, tax_brackets={tax_brackets_summary}, defaults={defaults_summary}, struktur_gaji={struktur_gaji_summary}, tipe_karyawan={tipe_karyawan_summary}")
+        logger.info(f"[PI-Install] update_settings_from_config summaries: app_info={app_info_summary}, bpjs={bpjs_summary}, tax={tax_summary}")
 
     except Exception as e:
         logger.exception(f"[PI-Install] Error in update_settings_from_config: {str(e)}")
@@ -467,6 +492,14 @@ def sync_to_bpjs_settings(pi_settings):
                         needs_update = True
                         changed_fields.append(field)
 
+            # Update GL accounts for BPJS if supported
+            company = frappe.defaults.get_global_default("company")
+            if company and hasattr(bpjs_settings, "accounts"):
+                updated_accounts = update_bpjs_gl_accounts(bpjs_settings, company)
+                if updated_accounts:
+                    needs_update = True
+                    changed_fields.append("accounts")
+
             if needs_update:
                 bpjs_settings.flags.ignore_validate = True
                 bpjs_settings.flags.ignore_permissions = True
@@ -474,3 +507,46 @@ def sync_to_bpjs_settings(pi_settings):
                 logger.info(f"[PI-Install] BPJS Settings updated from Payroll Indonesia Settings. Changed fields: {changed_fields}")
     except Exception as e:
         logger.exception(f"[PI-Install] Error syncing to BPJS Settings: {str(e)}")
+
+
+def update_bpjs_gl_accounts(bpjs_settings, company):
+    """
+    Update BPJS GL accounts using map_gl_account function
+    
+    Args:
+        bpjs_settings: BPJS Settings document
+        company: Company for which to map accounts
+        
+    Returns:
+        bool: True if any accounts were updated
+    """
+    try:
+        # Define mapping from BPJS settings account fields to GL account mapper keys
+        account_mapping = {
+            "kesehatan_account": ("bpjs_kesehatan_payable", "bpjs_payable_accounts"),
+            "jht_account": ("bpjs_jht_payable", "bpjs_payable_accounts"),
+            "jp_account": ("bpjs_jp_payable", "bpjs_payable_accounts"),
+            "jkk_account": ("bpjs_jkk_payable", "bpjs_payable_accounts"),
+            "jkm_account": ("bpjs_jkm_payable", "bpjs_payable_accounts"),
+            "kesehatan_expense_account": ("bpjs_kesehatan_employer_expense", "bpjs_expense_accounts"),
+            "jht_expense_account": ("bpjs_jht_employer_expense", "bpjs_expense_accounts"),
+            "jp_expense_account": ("bpjs_jp_employer_expense", "bpjs_expense_accounts"),
+            "jkk_expense_account": ("bpjs_jkk_employer_expense", "bpjs_expense_accounts"),
+            "jkm_expense_account": ("bpjs_jkm_employer_expense", "bpjs_expense_accounts")
+        }
+        
+        updated = False
+        
+        # Update each account field if it exists in the document
+        for field_name, (account_key, category) in account_mapping.items():
+            if hasattr(bpjs_settings, field_name):
+                mapped_account = map_gl_account(company, account_key, category)
+                if mapped_account and bpjs_settings.get(field_name) != mapped_account:
+                    bpjs_settings.set(field_name, mapped_account)
+                    logger.info(f"[PI-Install] Updated BPJS Settings {field_name} to {mapped_account}")
+                    updated = True
+        
+        return updated
+    except Exception as e:
+        logger.warning(f"[PI-Install] Error updating BPJS GL accounts: {str(e)}")
+        return False
