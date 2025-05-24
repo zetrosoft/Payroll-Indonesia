@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
 # For license information, please see license.txt
-# Last modified: 2025-05-08 09:58:46 by dannyaudian
+# Last modified: 2025-05-24 03:49:48 by dannyaudian
 
 import frappe
 from frappe.utils import getdate, flt
@@ -10,10 +10,6 @@ from frappe.utils import getdate, flt
 from payroll_indonesia.payroll_indonesia.utils import (
     get_default_config,
     debug_log,
-    create_account,
-    find_parent_account,
-    create_parent_liability_account,
-    create_parent_expense_account,
 )
 
 __all__ = [
@@ -27,6 +23,7 @@ __all__ = [
     "create_bpjs_supplier",
     "setup_salary_components",
     "display_installation_summary",
+    "create_account",
 ]
 
 
@@ -332,30 +329,72 @@ def check_system_readiness():
         debug_log("No company found. Some setup steps may fail.", "System Readiness Check")
         frappe.log_error("No company found", "System Readiness Check")
         debug_log("No company found", "System Readiness Check", trace=True)
-    else:
-        # Check if each company has an abbreviation
-        for company in company_records:
-            abbr = frappe.get_cached_value("Company", company.name, "abbr")
-            if not abbr:
-                debug_log(
-                    f"Company {company.name} has no abbreviation set", "System Readiness Check"
-                )
-                frappe.log_error(
-                    f"Company {company.name} has no abbreviation", "System Readiness Check"
-                )
-                debug_log(
-                    f"Company {company.name} has no abbreviation",
-                    "System Readiness Check",
-                    trace=True,
-                )
 
     # Return True so installation can continue with warnings
     return True
 
 
+def create_account(company, account_name, account_type, parent, is_group=0):
+    """
+    Create an account or return existing account
+
+    Args:
+        company (str): Company name
+        account_name (str): Account name
+        account_type (str): Account type
+        parent (str): Parent account name
+        is_group (int, optional): Whether account is a group. Defaults to 0.
+
+    Returns:
+        str: Full account name if successful, None otherwise
+    """
+    try:
+        # Determine root_type based on account_type
+        if "Expense" in account_type:
+            root_type = "Expense"
+        else:
+            root_type = "Liability"
+            
+        # Format account name consistently as "Account Name - Company"
+        full_account_name = f"{account_name} - {company}"
+        
+        # Check if account already exists
+        if frappe.db.exists("Account", {"name": full_account_name}):
+            debug_log(f"Account {full_account_name} already exists", "Account Creation")
+            return full_account_name
+            
+        # Create new account
+        account = frappe.new_doc("Account")
+        account.account_name = account_name
+        account.company = company
+        account.parent_account = parent
+        account.account_type = account_type
+        account.root_type = root_type
+        account.is_group = is_group
+        account.flags.ignore_permissions = True
+        account.flags.ignore_mandatory = True
+        account.insert(ignore_permissions=True)
+        
+        debug_log(f"Created account {full_account_name}", "Account Creation")
+        return full_account_name
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error creating account {account_name} for {company}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Account Creation Error",
+        )
+        debug_log(
+            f"Error creating account {account_name} for {company}: {str(e)}",
+            "Account Creation Error",
+            trace=True,
+        )
+        return None
+
+
 def setup_accounts(config):
     """
-    Create required Accounts for Indonesian payroll management using utility functions
+    Create required Accounts for Indonesian payroll management using centralized root account
 
     Args:
         config (dict): Configuration data from defaults.json
@@ -363,7 +402,6 @@ def setup_accounts(config):
     Returns:
         bool: True if successful, False otherwise
     """
-
     if not config:
         debug_log("No configuration data available for creating accounts", "Account Setup")
         return False
@@ -373,14 +411,11 @@ def setup_accounts(config):
         debug_log("No GL accounts configuration found in defaults.json", "Account Setup")
         return False
 
-    # Build account list from config sections
-    account_sections = ["expense_accounts", "payable_accounts"]
-    accounts = []
-
-    # Add accounts from each section
-    for section in account_sections:
-        for _, account_info in gl_accounts.get(section, {}).items():
-            accounts.append(account_info)
+    # Get root account configuration
+    root_account_config = gl_accounts.get("root_account")
+    if not root_account_config:
+        debug_log("No root account configuration found in defaults.json", "Account Setup")
+        return False
 
     # Get all companies
     company_records = frappe.get_all("Company", pluck="name")
@@ -390,76 +425,72 @@ def setup_accounts(config):
 
     # Track overall success
     overall_success = True
+    
+    # Account sections to process
+    account_sections = [
+        "expense_accounts",
+        "payable_accounts",
+        "bpjs_expense_accounts",
+        "bpjs_payable_accounts"
+    ]
 
     # Process each company
     for company in company_records:
         try:
-            # Get company abbreviation
-            company_abbr = frappe.db.get_value("Company", company, "abbr")
-            if not company_abbr:
-                debug_log(f"Company {company} has no abbreviation, skipping", "Account Setup")
-                overall_success = False
-                continue
-
             debug_log(f"Creating accounts for company: {company}", "Account Setup")
-
-            # Create parent accounts first - utilize utility functions
-            parent_liability = create_parent_liability_account(company)
-            parent_expense = create_parent_expense_account(company)
-
-            if not parent_liability or not parent_expense:
-                debug_log(f"Failed to create parent accounts for {company}", "Account Setup")
+            
+            # Create root account first
+            root_account_name = create_account(
+                company=company,
+                account_name=root_account_config["account_name"],
+                account_type=root_account_config["account_type"],
+                parent="Application of Funds (Assets)",  # Default parent for root account
+                is_group=root_account_config.get("is_group", 1)
+            )
+            
+            if not root_account_name:
+                debug_log(f"Failed to create root account for {company}", "Account Setup")
                 overall_success = False
                 continue
-
-            # Create individual accounts
+                
+            debug_log(f"Created root account: {root_account_name}", "Account Setup")
+                
+            # Create child accounts under the root account
             created_accounts = []
             failed_accounts = []
 
-            # Create each account
-            for account in accounts:
-                try:
-                    # Find parent account using utility function
-                    parent_name = account["parent_account"]
-                    parent_account = find_parent_account(
-                        company, parent_name, company_abbr, account["account_type"]
-                    )
-
-                    if not parent_account:
-                        failed_accounts.append(account["account_name"])
-                        debug_log(
-                            f"Could not find parent account {parent_name} for {company}",
-                            "Account Setup",
+            # Process each account section
+            for section in account_sections:
+                for _, account_info in gl_accounts.get(section, {}).items():
+                    try:
+                        # Create account using the root account as parent
+                        full_account_name = create_account(
+                            company=company,
+                            account_name=account_info["account_name"],
+                            account_type=account_info["account_type"],
+                            parent=root_account_name,
+                            is_group=account_info.get("is_group", 0)
                         )
-                        continue
-
-                    # Create account using standardized utility function
-                    full_account_name = create_account(
-                        company=company,
-                        account_name=account["account_name"],
-                        account_type=account["account_type"],
-                        parent=parent_account,
-                    )
-
-                    if full_account_name:
-                        created_accounts.append(account["account_name"])
-                        debug_log(f"Created account: {full_account_name}", "Account Creation")
-                    else:
-                        failed_accounts.append(account["account_name"])
-
-                except Exception as e:
-                    frappe.log_error(
-                        f"Error creating account {account['account_name']} for {company}: {str(e)}\n\n"
-                        f"Traceback: {frappe.get_traceback()}",
-                        "Account Creation Error",
-                    )
-                    debug_log(
-                        f"Error creating account {account['account_name']} for {company}: {str(e)}",
-                        "Account Creation Error",
-                        trace=True,
-                    )
-                    failed_accounts.append(account["account_name"])
-                    overall_success = False
+                        
+                        if full_account_name:
+                            created_accounts.append(account_info["account_name"])
+                            debug_log(f"Created account: {full_account_name}", "Account Creation")
+                        else:
+                            failed_accounts.append(account_info["account_name"])
+                            
+                    except Exception as e:
+                        frappe.log_error(
+                            f"Error creating account {account_info['account_name']} for {company}: {str(e)}\n\n"
+                            f"Traceback: {frappe.get_traceback()}",
+                            "Account Creation Error",
+                        )
+                        debug_log(
+                            f"Error creating account {account_info['account_name']} for {company}: {str(e)}",
+                            "Account Creation Error",
+                            trace=True,
+                        )
+                        failed_accounts.append(account_info["account_name"])
+                        overall_success = False
 
             # Log summary
             if created_accounts:
