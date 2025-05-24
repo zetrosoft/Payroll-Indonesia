@@ -470,6 +470,7 @@ def get_cached_tax_settings(key):
     cache_key = f"tax_settings:{key}"
     return get_cached_value(cache_key)
 
+
 @frappe.whitelist()
 def clear_salary_slip_caches() -> Dict[str, Any]:
     """
@@ -509,19 +510,19 @@ def clear_salary_slip_caches() -> Dict[str, Any]:
 
         # Clear Frappe document cache for Salary Slip
         frappe.clear_document_cache("Salary Slip")
-        
+
         # Clear general cache for good measure
         # This is optional and may not be needed in all cases
         # frappe.clear_cache()
-        
+
         # Log completion
         frappe.logger().info(f"Cleared {cleared_count} cached items from salary slip caches")
 
         return {
-            "status": "success", 
-            "cleared_count": cleared_count, 
+            "status": "success",
+            "cleared_count": cleared_count,
             "prefixes": prefixes_to_clear,
-            "doctype_cache_cleared": "Salary Slip"
+            "doctype_cache_cleared": "Salary Slip",
         }
 
     except Exception as e:
