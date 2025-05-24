@@ -151,11 +151,11 @@ fixtures = [
 scheduler_events = {
     "daily": [
         "payroll_indonesia.utilities.cache_utils.clear_all_caches",
-        "payroll_indonesia.override.salary_slip.clear_salary_slip_caches",
+        "payroll_indonesia.utilities.cache_utils.clear_salary_slip_caches",
     ],
     "cron": {
         "0 */4 * * *": ["payroll_indonesia.utilities.cache_utils.clear_all_caches"],
-        "30 1 * * *": ["payroll_indonesia.override.salary_slip.clear_salary_slip_caches"],
+        "30 1 * * *": ["payroll_indonesia.utilities.cache_utils.clear_salary_slip_caches"],
     },
     "monthly": ["payroll_indonesia.payroll_indonesia.tax.monthly_tasks.update_tax_summaries"],
     "yearly": ["payroll_indonesia.payroll_indonesia.tax.yearly_tasks.prepare_tax_report"],
