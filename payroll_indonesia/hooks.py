@@ -20,7 +20,6 @@ after_install = "payroll_indonesia.install.after_install"
 # before_migrate = "payroll_indonesia.install.create_required_doctypes"
 after_migrate = [
     "payroll_indonesia.install.after_migrate",
-    "payroll_indonesia.payroll_indonesia.setup.setup_module.after_sync",
 ]
 
 # JS files for doctypes
