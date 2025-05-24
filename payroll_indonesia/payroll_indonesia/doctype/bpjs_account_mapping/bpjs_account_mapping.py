@@ -113,9 +113,8 @@ def get_mapping_for_company(company=None):
 @frappe.whitelist()
 def create_default_mapping(company):
     """
-    Create a default BPJS Account Mapping based on BPJS Settings
-    with enhanced error handling and fallbacks
-
+    Create a default BPJS Account Mapping using map_gl_account from config
+    
     Args:
         company (str): Company name
 
@@ -136,7 +135,7 @@ def create_default_mapping(company):
             )
             return existing_mapping
 
-        # Create parent accounts first for liabilities and expenses with enhanced error handling
+        # Create parent accounts first for liabilities and expenses
         debug_log(f"Creating liability parent account for company {company}", "BPJS Mapping")
         liability_parent = create_parent_liability_account(company)
         if not liability_parent:
@@ -150,18 +149,6 @@ def create_default_mapping(company):
             error_msg = f"Failed to create BPJS Expenses parent account for company {company}"
             debug_log(error_msg, "BPJS Mapping Error", trace=True)
             frappe.throw(_(error_msg))
-
-        # Check BPJS Settings and create if not exists
-        bpjs_settings = None
-        if not frappe.db.exists("BPJS Settings", None):
-            debug_log("BPJS Settings not found, creating default settings", "BPJS Mapping")
-            bpjs_settings = create_bpjs_settings()
-            if not bpjs_settings:
-                error_msg = "Failed to create default BPJS Settings"
-                debug_log(error_msg, "BPJS Mapping Error", trace=True)
-                frappe.throw(_(error_msg))
-        else:
-            bpjs_settings = frappe.get_cached_doc("BPJS Settings")
 
         # Create new mapping with ignore_validate flag
         debug_log(f"Creating new BPJS Account Mapping for company {company}", "BPJS Mapping")
@@ -187,36 +174,26 @@ def create_default_mapping(company):
             "jkm_employer_debit_account": ("bpjs_jkm_employer_expense", "bpjs_expense_accounts")
         }
             
-        for mapping_field, (account_key, category) in account_mapping_fields.items():
-            # Map the account using the GL mapper function
+        # Map each account using the GL mapper function
+        for field_name, (account_key, category) in account_mapping_fields.items():
             account = map_gl_account(company, account_key, category)
             if account and frappe.db.exists("Account", account):
-                mapping.set(mapping_field, account)
+                mapping.set(field_name, account)
                 debug_log(
-                    f"Set {mapping_field} to {account} using map_gl_account", "BPJS Mapping"
+                    f"Set {field_name} to {account} using map_gl_account",
+                    "BPJS Mapping"
                 )
-            elif hasattr(bpjs_settings, mapping_field.replace("_credit_account", "_account").replace("_debit_account", "_account")):
-                # Fallback to BPJS Settings if available
-                settings_field = mapping_field.replace("_credit_account", "_account").replace("_debit_account", "_account")
-                account = bpjs_settings.get(settings_field)
-                if account and frappe.db.exists("Account", account):
-                    mapping.set(mapping_field, account)
-                    debug_log(
-                        f"Set {mapping_field} to {account} from BPJS Settings", "BPJS Mapping"
-                    )
-                else:
-                    debug_log(
-                        f"No valid account found for {mapping_field}", "BPJS Mapping"
-                    )
             else:
                 debug_log(
-                    f"No valid account mapping found for {mapping_field}", "BPJS Mapping"
+                    f"Failed to map account for {field_name} using key {account_key} in category {category}",
+                    "BPJS Mapping Warning"
                 )
 
         # Insert mapping without strict validation
         try:
             debug_log(
-                f"Attempting to insert BPJS Account Mapping document for {company}", "BPJS Mapping"
+                f"Attempting to insert BPJS Account Mapping document for {company}",
+                "BPJS Mapping"
             )
             mapping.insert(ignore_permissions=True, ignore_mandatory=True)
         except Exception as e:
@@ -224,24 +201,30 @@ def create_default_mapping(company):
             error_msg = f"Failed to insert BPJS Account Mapping for {company}: {str(e)}"
             debug_log(error_msg, "BPJS Mapping Error", trace=True)
             frappe.log_error(
-                f"{error_msg}\n\nTraceback: {frappe.get_traceback()}", "BPJS Mapping Creation Error"
+                f"{error_msg}\n\nTraceback: {frappe.get_traceback()}",
+                "BPJS Mapping Creation Error"
             )
             frappe.throw(_(error_msg))
 
-        # Create missing expense accounts with fallback handling
+        # Try to fill in any missing accounts
         try:
-            debug_log(
-                f"Setting up expense accounts for BPJS Account Mapping for {company}",
-                "BPJS Mapping",
-            )
-            setup_expense_accounts(mapping, expense_parent)
+            # Create any missing expense accounts if needed
+            missing_fields = []
+            for field_name, (account_key, category) in account_mapping_fields.items():
+                if not mapping.get(field_name):
+                    missing_fields.append(field_name)
+                    
+            if missing_fields:
+                debug_log(
+                    f"Missing accounts for fields: {', '.join(missing_fields)}. Setting up expense accounts.",
+                    "BPJS Mapping"
+                )
+                setup_expense_accounts(mapping, expense_parent)
         except Exception as e:
             debug_log(
-                f"Error in setup_expense_accounts: {str(e)}", "BPJS Mapping Error", trace=True
-            )
-            frappe.log_error(
-                f"Error setting up expense accounts for {company}: {str(e)}\n\nTraceback: {frappe.get_traceback()}",
+                f"Error in setup_expense_accounts: {str(e)}",
                 "BPJS Mapping Error",
+                trace=True
             )
             # Don't throw here, try to save what we have
 
@@ -255,7 +238,7 @@ def create_default_mapping(company):
 
             debug_log(
                 f"Successfully created BPJS Account Mapping for {company}: {mapping.name}",
-                "BPJS Mapping",
+                "BPJS Mapping"
             )
             return mapping.name
         except Exception as e:
@@ -263,7 +246,8 @@ def create_default_mapping(company):
             error_msg = f"Failed to save BPJS Account Mapping for {company}: {str(e)}"
             debug_log(error_msg, "BPJS Mapping Error", trace=True)
             frappe.log_error(
-                f"{error_msg}\n\nTraceback: {frappe.get_traceback()}", "BPJS Mapping Creation Error"
+                f"{error_msg}\n\nTraceback: {frappe.get_traceback()}",
+                "BPJS Mapping Creation Error"
             )
             frappe.throw(_(error_msg))
 
@@ -275,7 +259,9 @@ def create_default_mapping(company):
             "BPJS Mapping Error",
         )
         debug_log(
-            f"Critical error in create_default_mapping: {str(e)}", "BPJS Mapping Error", trace=True
+            f"Critical error in create_default_mapping: {str(e)}",
+            "BPJS Mapping Error",
+            trace=True
         )
         # Re-raise with a clear message
         frappe.throw(
@@ -380,21 +366,21 @@ def setup_expense_accounts(mapping_doc, expense_parent):
         
         # Define account field mappings with their corresponding GL account keys
         expense_account_fields = {
-            "kesehatan_employer_debit_account": "bpjs_kesehatan_employer_expense",
-            "jht_employer_debit_account": "bpjs_jht_employer_expense",
-            "jp_employer_debit_account": "bpjs_jp_employer_expense",
-            "jkk_employer_debit_account": "bpjs_jkk_employer_expense",
-            "jkm_employer_debit_account": "bpjs_jkm_employer_expense",
+            "kesehatan_employer_debit_account": ("bpjs_kesehatan_employer_expense", "bpjs_expense_accounts"),
+            "jht_employer_debit_account": ("bpjs_jht_employer_expense", "bpjs_expense_accounts"),
+            "jp_employer_debit_account": ("bpjs_jp_employer_expense", "bpjs_expense_accounts"),
+            "jkk_employer_debit_account": ("bpjs_jkk_employer_expense", "bpjs_expense_accounts"),
+            "jkm_employer_debit_account": ("bpjs_jkm_employer_expense", "bpjs_expense_accounts"),
         }
 
-        for field, account_key in expense_account_fields.items():
+        for field, (account_key, category) in expense_account_fields.items():
             # Skip if already filled
             if mapping_doc.get(field):
                 continue
                 
             # Try to map the account using map_gl_account
             try:
-                account = map_gl_account(company, account_key, "bpjs_expense_accounts")
+                account = map_gl_account(company, account_key, category)
                 if account and frappe.db.exists("Account", account):
                     mapping_doc.set(field, account)
                     debug_log(f"Mapped expense account for {field} to {account}", "BPJS Account Setup")
