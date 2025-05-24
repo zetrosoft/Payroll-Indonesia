@@ -337,6 +337,49 @@ def check_system_readiness():
     # Return True so installation can continue with warnings
     return True
 
+def setup_all_accounts():
+    """
+    Helper function to setup accounts for all companies
+    Called from migration hooks - doesn't require parameters
+    
+    Returns:
+        dict: Setup results
+    """
+    from payroll_indonesia.payroll_indonesia.utils import get_default_config, debug_log
+    
+    try:
+        debug_log("Starting account setup from migration hook", "Migration")
+        
+        # Get configuration
+        config = get_default_config()
+        
+        # Run the main setup function
+        results = setup_accounts(config)
+        
+        # Log results
+        debug_log(
+            f"Account setup completed with: {len(results['created'])} created, "
+            f"{len(results['skipped'])} skipped, {len(results['errors'])} errors", 
+            "Migration"
+        )
+        
+        return results
+    except Exception as e:
+        debug_log(f"Error in setup_all_accounts: {str(e)}", "Migration Error", trace=True)
+        frappe.log_error(
+            f"Error in setup_all_accounts: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Migration Error"
+        )
+        
+        # Return minimal result to avoid breaking the migration
+        return {
+            "success": False,
+            "created": [],
+            "skipped": [],
+            "errors": [str(e)]
+        }
+
 def setup_company_accounts(doc, method=None):
     """
     Set up required accounts when a new company is created
@@ -380,7 +423,7 @@ def setup_company_accounts(doc, method=None):
             "Company Setup Error"
         )
 
-def setup_accounts(config, specific_company=None):
+def setup_accounts(config=None, specific_company=None):
     """
     Set up GL accounts required for Indonesian payroll from configuration
     
@@ -388,12 +431,17 @@ def setup_accounts(config, specific_company=None):
     
     Args:
         config: Configuration dictionary with account settings
+               If None, will be fetched using get_default_config()
         specific_company: Specific company to set up accounts for (optional)
         
     Returns:
         dict: Setup results
     """
-    from payroll_indonesia.payroll_indonesia.utils import debug_log, create_account
+    from payroll_indonesia.payroll_indonesia.utils import debug_log, create_account, get_default_config
+    
+    # Get config if not provided
+    if config is None:
+        config = get_default_config()
     
     debug_log("Starting account setup from fixtures/setup.py", "Account Setup")
     
