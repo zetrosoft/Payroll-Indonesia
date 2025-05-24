@@ -6,9 +6,10 @@
 import frappe
 import json
 import os
+from pathlib import Path
 from frappe import _
 from frappe.utils import flt, cint, getdate, now_datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 
 # Import constants
 from payroll_indonesia.constants import (
@@ -57,8 +58,35 @@ __all__ = [
 
 # Settings cache
 settings_cache = {}
+config_cache = {}
 cache_expiry = {}
 CACHE_EXPIRY_SECONDS = 3600  # 1 hour
+
+
+def debug_log(message: str, context: str = "GL Setup", max_length: int = 500, trace: bool = False):
+    """
+    Debug logging helper with consistent format for tracing and contextual information
+
+    Args:
+        message: Message to log
+        context: Context identifier for the log
+        max_length: Maximum message length to avoid memory issues
+        trace: Whether to include traceback
+    """
+    timestamp = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
+    logger = frappe.logger("payroll_indonesia")
+
+    # Always truncate for safety
+    message = str(message)[:max_length]
+    
+    # Format with context
+    log_message = f"[{timestamp}] [{context}] {message}"
+    
+    # Log at appropriate level
+    logger.info(log_message)
+    
+    if trace:
+        logger.info(f"[{timestamp}] [{context}] [TRACE] {frappe.get_traceback()[:max_length]}")
 
 
 def get_settings():
@@ -89,53 +117,79 @@ def get_settings():
         return frappe.get_doc({"doctype": "Payroll Indonesia Settings"})
 
 
-def get_default_config(section=None) -> dict:
+def get_default_config(section: Optional[str] = None) -> Dict[str, Any]:
     """
-    Returns configuration values for payroll Indonesia from settings.
+    Returns configuration values from defaults.json with caching.
+    
+    This function is the single source of truth for default configurations
+    across the entire Payroll Indonesia module.
 
     Args:
-        section (str, optional): Specific configuration section to return.
-                               If None, returns the entire config.
+        section: Specific configuration section to return.
+                If None, returns the entire config.
 
     Returns:
         dict: Configuration settings or specific section
     """
-    # Get settings document
+    # Check if config is in cache
+    cache_key = f"default_config:{section or 'all'}"
+    if cache_key in config_cache:
+        # Check if cache is still valid
+        if cache_expiry.get(cache_key, 0) > frappe.utils.now_datetime().timestamp():
+            return config_cache[cache_key]
+    
+    # Get defaults from JSON file first
+    defaults_from_file = _load_defaults_json()
+    
+    # Get settings document for overrides
     settings = get_settings()
-
-    # Build config dictionary from settings
+    
+    # Build config dictionary from both sources with settings taking precedence
     config = {
         "bpjs_kesehatan": {
-            "employee_contribution": settings.kesehatan_employee_percent,
-            "employer_contribution": settings.kesehatan_employer_percent,
+            "employee_contribution": getattr(settings, "kesehatan_employee_percent", 
+                                           defaults_from_file.get("kesehatan_employee_percent", 1.0)),
+            "employer_contribution": getattr(settings, "kesehatan_employer_percent", 
+                                           defaults_from_file.get("kesehatan_employer_percent", 4.0)),
+            "max_salary": getattr(settings, "kesehatan_max_salary", 
+                                defaults_from_file.get("kesehatan_max_salary", 12000000.0)),
         },
         "bpjs_ketenagakerjaan": {
             "jht": {
-                "employee_contribution": getattr(settings, "jht_employee_percent", 2.0),
-                "employer_contribution": getattr(settings, "jht_employer_percent", 3.7),
+                "employee_contribution": getattr(settings, "jht_employee_percent", 
+                                               defaults_from_file.get("jht_employee_percent", 2.0)),
+                "employer_contribution": getattr(settings, "jht_employer_percent", 
+                                               defaults_from_file.get("jht_employer_percent", 3.7)),
             },
             "jkk": {
-                "employer_contribution": getattr(settings, "jkk_employer_percent", 0.24),
+                "employer_contribution": getattr(settings, "jkk_percent", 
+                                               defaults_from_file.get("jkk_percent", 0.24)),
             },
             "jkm": {
-                "employer_contribution": getattr(settings, "jkm_employer_percent", 0.3),
+                "employer_contribution": getattr(settings, "jkm_percent", 
+                                               defaults_from_file.get("jkm_percent", 0.3)),
             },
             "jp": {
-                "employee_contribution": getattr(settings, "jp_employee_percent", 1.0),
-                "employer_contribution": getattr(settings, "jp_employer_percent", 2.0),
+                "employee_contribution": getattr(settings, "jp_employee_percent", 
+                                               defaults_from_file.get("jp_employee_percent", 1.0)),
+                "employer_contribution": getattr(settings, "jp_employer_percent", 
+                                               defaults_from_file.get("jp_employer_percent", 2.0)),
+                "max_salary": getattr(settings, "jp_max_salary", 
+                                    defaults_from_file.get("jp_max_salary", 9077600.0)),
             },
         },
-        "ptkp_values": settings.get_ptkp_values_dict(),
-        "ptkp_to_ter_mapping": settings.get_ptkp_ter_mapping_dict(),
-        "tax_brackets": settings.get_tax_brackets_list(),
-        "tipe_karyawan": settings.get_tipe_karyawan_list(),
-        "gl_accounts": {
-            # You would need to expand this based on what's available in your settings
-            "bpjs_expense_accounts": {}
-        },
+        "ptkp_values": settings.get_ptkp_values_dict() if hasattr(settings, "get_ptkp_values_dict") 
+                       else defaults_from_file.get("ptkp", {}),
+        "ptkp_to_ter_mapping": settings.get_ptkp_ter_mapping_dict() if hasattr(settings, "get_ptkp_ter_mapping_dict") 
+                              else defaults_from_file.get("ptkp_to_ter_mapping", {}),
+        "tax_brackets": settings.get_tax_brackets_list() if hasattr(settings, "get_tax_brackets_list") 
+                       else defaults_from_file.get("tax_brackets", []),
+        "tipe_karyawan": settings.get_tipe_karyawan_list() if hasattr(settings, "get_tipe_karyawan_list") 
+                        else defaults_from_file.get("tipe_karyawan", []),
+        "gl_accounts": defaults_from_file.get("gl_accounts", {})
     }
 
-    # Add any default account settings that might not be in the document
+    # Add account settings with fallbacks
     config["bpjs_payable_parent_account"] = getattr(
         settings, "bpjs_payable_parent_account", "Current Liabilities"
     )
@@ -143,6 +197,11 @@ def get_default_config(section=None) -> dict:
         settings, "bpjs_expense_parent_account", "Expenses"
     )
 
+    # Cache the result
+    config_cache[cache_key] = config if section is None else config.get(section, {})
+    cache_expiry[cache_key] = frappe.utils.now_datetime().timestamp() + CACHE_EXPIRY_SECONDS
+
+    # Return full config or just the requested section
     if section:
         return config.get(section, {})
 
@@ -195,6 +254,26 @@ def create_default_settings():
     frappe.db.commit()
     return settings
 
+def _load_defaults_json() -> Dict[str, Any]:
+    """
+    Load defaults from the config/defaults.json file
+    
+    Returns:
+        dict: Default configuration values
+    """
+    try:
+        app_path = frappe.get_app_path("payroll_indonesia")
+        defaults_file = Path(app_path) / "config" / "defaults.json"
+
+        if defaults_file.exists():
+            with open(defaults_file, "r") as f:
+                return json.load(f)
+        else:
+            debug_log(f"defaults.json not found at {defaults_file}", "Configuration")
+            return {}
+    except Exception as e:
+        debug_log(f"Error loading defaults.json: {str(e)}", "Configuration", trace=True)
+        return {}
 
 # Internal helper function for settings retrieval
 def _get_payroll_settings(
@@ -248,35 +327,6 @@ def _get_payroll_settings(
     frappe.cache().set_value(cache_key, defaults, expires_in_sec=CACHE_SHORT)
 
     return defaults
-
-
-# Logging functions
-def debug_log(message, title=None, max_length=500, trace=False):
-    """
-    Debug logging helper with consistent format
-
-    Args:
-        message (str): Message to log
-        title (str, optional): Optional title/context for the log
-        max_length (int, optional): Maximum message length (default: 500)
-        trace (bool, optional): Whether to include traceback (default: False)
-    """
-    timestamp = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
-
-    if os.environ.get("DEBUG_BPJS") or trace:
-        # Truncate if message is too long to avoid memory issues
-        message = str(message)[:max_length]
-
-        if title:
-            log_message = f"[{timestamp}] [{title}] {message}"
-        else:
-            log_message = f"[{timestamp}] {message}"
-
-        frappe.logger().debug(f"[BPJS DEBUG] {log_message}")
-
-        if trace:
-            frappe.logger().debug(f"[BPJS DEBUG] [TRACE] {frappe.get_traceback()[:max_length]}")
-
 
 # BPJS Settings and Calculation Functions
 @memoize_with_ttl(ttl=CACHE_MEDIUM)
@@ -1463,10 +1513,17 @@ def find_parent_account(
 
 
 def create_account(
-    company: str, account_name: str, account_type: str, parent: str, root_type: Optional[str] = None
+    company: str, 
+    account_name: str, 
+    account_type: str, 
+    parent: str, 
+    root_type: Optional[str] = None, 
+    is_group: int = 0
 ) -> Optional[str]:
     """
-    Create GL Account if not exists with standardized naming
+    Create GL Account if not exists with standardized naming and enhanced validation
+    
+    This is the single source of truth for account creation in Payroll Indonesia
 
     Args:
         company: Company name
@@ -1474,22 +1531,31 @@ def create_account(
         account_type: Account type (Payable, Expense, etc.)
         parent: Parent account name
         root_type: Root type (Asset, Liability, etc.). If None, determined from account_type.
+        is_group: Whether the account is a group account (1) or not (0)
 
     Returns:
         str: Full account name if created or already exists, None otherwise
     """
+    debug_log(
+        f"Starting account creation: {account_name} in {company} (Type: {account_type})", 
+        "Account Creation"
+    )
+    
     try:
         # Normalize invalid account_type
         if account_type == "Expense":
             account_type = "Expense Account"
 
         # Validate inputs
-        if not company or not account_name or not account_type or not parent:
-            frappe.throw(_("Missing required parameters for account creation"))
+        if not company or not account_name or not parent:
+            debug_log("Missing required parameters for account creation", "Account Error")
+            return None
 
+        # Get company abbreviation
         abbr = frappe.get_cached_value("Company", company, "abbr")
         if not abbr:
-            frappe.throw(_("Company {0} does not have an abbreviation").format(company))
+            debug_log(f"Company {company} does not have an abbreviation", "Account Error")
+            return None
 
         # Ensure account name doesn't already include the company abbreviation
         pure_account_name = account_name.replace(f" - {abbr}", "")
@@ -1506,57 +1572,71 @@ def create_account(
                 ["account_type", "parent_account", "company", "is_group"],
                 as_dict=1,
             )
+            
+            # For group accounts, account_type might be None
+            expected_type = None if is_group else account_type
+            actual_type = account_doc.account_type
 
+            # Log differences but don't change existing accounts
             if (
-                account_doc.account_type != account_type
-                or account_doc.parent_account != parent
-                or account_doc.company != company
+                (expected_type and actual_type != expected_type) or
+                account_doc.parent_account != parent or
+                account_doc.company != company or
+                cint(account_doc.is_group) != cint(is_group)
             ):
                 debug_log(
-                    f"Account {full_account_name} exists but has different properties. "
-                    f"Expected: type={account_type}, parent={parent}, company={company}. "
-                    f"Found: type={account_doc.account_type}, parent={account_doc.parent_account}, "
-                    f"company={account_doc.company}",
+                    f"Account {full_account_name} exists but has different properties.\n"
+                    f"Expected: type={expected_type or 'None'}, parent={parent}, is_group={is_group}.\n"
+                    f"Found: type={actual_type or 'None'}, parent={account_doc.parent_account}, "
+                    f"is_group={account_doc.is_group}",
                     "Account Warning",
                 )
-                # We don't change existing account properties, just return the name
 
             return full_account_name
 
         # Verify parent account exists
         if not frappe.db.exists("Account", parent):
-            frappe.throw(_("Parent account {0} does not exist").format(parent))
+            debug_log(f"Parent account {parent} does not exist", "Account Error")
+            return None
 
         # Determine root_type based on account_type if not provided
         if not root_type:
-            root_type = "Liability"  # Default
             if account_type in ["Direct Expense", "Indirect Expense", "Expense Account", "Expense"]:
                 root_type = "Expense"
+            elif account_type in ["Payable", "Tax", "Receivable"]:
+                root_type = "Liability"
             elif account_type == "Asset":
                 root_type = "Asset"
             elif account_type in ["Direct Income", "Indirect Income", "Income Account"]:
                 root_type = "Income"
+            else:
+                root_type = "Liability"  # Default
 
-        # Create new account with explicit permissions
+        # Create account fields
+        account_fields = {
+            "doctype": "Account",
+            "account_name": pure_account_name,
+            "company": company,
+            "parent_account": parent,
+            "is_group": cint(is_group),
+            "root_type": root_type,
+            "account_currency": frappe.get_cached_value("Company", company, "default_currency"),
+        }
+        
+        # Only add account_type for non-group accounts
+        if not is_group and account_type:
+            account_fields["account_type"] = account_type
+
         debug_log(
-            f"Creating account: {full_account_name} (Type: {account_type}, Parent: {parent})",
+            f"Creating account: {full_account_name}\n"
+            f"Fields: {json.dumps(account_fields, indent=2)}",
             "Account Creation",
         )
 
-        doc = frappe.get_doc(
-            {
-                "doctype": "Account",
-                "account_name": pure_account_name,
-                "company": company,
-                "parent_account": parent,
-                "account_type": account_type,
-                "account_currency": frappe.get_cached_value("Company", company, "default_currency"),
-                "is_group": 0,
-                "root_type": root_type,
-            }
-        )
+        # Create the account document
+        doc = frappe.get_doc(account_fields)
 
-        # Bypass permissions and mandatory checks during setup
+        # Bypass permissions and mandatory checks
         doc.flags.ignore_permissions = True
         doc.flags.ignore_mandatory = True
         doc.insert(ignore_permissions=True)
@@ -1569,18 +1649,17 @@ def create_account(
             debug_log(f"Successfully created account: {full_account_name}", "Account Creation")
             return full_account_name
         else:
-            frappe.throw(
-                _("Failed to create account {0} despite no errors").format(full_account_name)
+            debug_log(
+                f"Failed to create account {full_account_name} despite no errors",
+                "Account Error"
             )
+            return None
 
     except Exception as e:
-        frappe.log_error(
-            f"Error creating account {account_name} for {company}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Account Creation Error",
-        )
         debug_log(
-            f"Error creating account {account_name}: {str(e)}", "Account Creation Error", trace=True
+            f"Error creating account {account_name} for {company}: {str(e)}", 
+            "Account Error", 
+            trace=True
         )
         return None
 
