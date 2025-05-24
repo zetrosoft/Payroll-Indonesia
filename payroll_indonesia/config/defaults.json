@@ -211,34 +211,40 @@
         "hari_kerja_default": 22
     },
     "gl_accounts": {
+        "root_account": {
+            "account_name": "Payroll Accounts",
+            "account_type": "Group",
+            "root_type": "Liability",
+            "is_group": 1
+        },
         "expense_accounts": {
             "beban_gaji_pokok": {
                 "account_name": "Beban Gaji Pokok",
-                "parent_account": "Direct Expenses",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Direct Expense",
                 "root_type": "Expense"
             },
             "beban_tunjangan_makan": {
                 "account_name": "Beban Tunjangan Makan",
-                "parent_account": "Direct Expenses",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Direct Expense",
                 "root_type": "Expense"
             },
             "beban_tunjangan_transport": {
                 "account_name": "Beban Tunjangan Transport",
-                "parent_account": "Direct Expenses",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Direct Expense",
                 "root_type": "Expense"
             },
             "beban_insentif": {
                 "account_name": "Beban Insentif",
-                "parent_account": "Direct Expenses",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Direct Expense",
                 "root_type": "Expense"
             },
             "beban_bonus": {
                 "account_name": "Beban Bonus",
-                "parent_account": "Direct Expenses",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Direct Expense",
                 "root_type": "Expense"
             }
@@ -246,31 +252,31 @@
         "bpjs_expense_accounts": {
             "bpjs_jht_employer_expense": {
                 "account_name": "BPJS JHT Employer Expense",
-                "parent_account": "BPJS Expenses",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Direct Expense",
                 "root_type": "Expense"
             },
             "bpjs_jp_employer_expense": {
                 "account_name": "BPJS JP Employer Expense",
-                "parent_account": "BPJS Expenses",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Direct Expense",
                 "root_type": "Expense"
             },
             "bpjs_jkk_employer_expense": {
                 "account_name": "BPJS JKK Employer Expense",
-                "parent_account": "BPJS Expenses",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Direct Expense",
                 "root_type": "Expense"
             },
             "bpjs_jkm_employer_expense": {
                 "account_name": "BPJS JKM Employer Expense",
-                "parent_account": "BPJS Expenses",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Direct Expense",
                 "root_type": "Expense"
             },
             "bpjs_kesehatan_employer_expense": {
                 "account_name": "BPJS Kesehatan Employer Expense",
-                "parent_account": "BPJS Expenses",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Direct Expense",
                 "root_type": "Expense"
             }
@@ -278,7 +284,7 @@
         "payable_accounts": {
             "hutang_pph21": {
                 "account_name": "Hutang PPh 21",
-                "parent_account": "Duties and Taxes",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Tax",
                 "root_type": "Liability"
             }
@@ -286,49 +292,33 @@
         "bpjs_payable_accounts": {
             "bpjs_jht_payable": {
                 "account_name": "BPJS JHT Payable",
-                "parent_account": "BPJS Payable",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Payable",
                 "root_type": "Liability"
             },
             "bpjs_jp_payable": {
                 "account_name": "BPJS JP Payable",
-                "parent_account": "BPJS Payable",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Payable",
                 "root_type": "Liability"
             },
             "bpjs_kesehatan_payable": {
                 "account_name": "BPJS Kesehatan Payable",
-                "parent_account": "BPJS Payable",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Payable",
                 "root_type": "Liability"
             },
             "bpjs_jkk_payable": {
                 "account_name": "BPJS JKK Payable",
-                "parent_account": "BPJS Payable",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Payable",
                 "root_type": "Liability"
             },
             "bpjs_jkm_payable": {
                 "account_name": "BPJS JKM Payable",
-                "parent_account": "BPJS Payable",
+                "parent_account": "Payroll Accounts",
                 "account_type": "Payable",
                 "root_type": "Liability"
-            }
-        },
-        "parent_accounts": {
-            "bpjs_payable": {
-                "account_name": "BPJS Payable",
-                "parent_account": "Duties and Taxes", 
-                "account_type": "Payable",
-                "root_type": "Liability",
-                "is_group": 1
-            },
-            "bpjs_expenses": {
-                "account_name": "BPJS Expenses",
-                "parent_account": "Direct Expenses",
-                "account_type": "Direct Expense",
-                "root_type": "Expense",
-                "is_group": 1
             }
         },
         "bpjs_account_mapping": {
@@ -345,18 +335,6 @@
             "jkk_employer_credit_account": "BPJS JKK Payable",
             "jkm_employer_debit_account": "BPJS JKM Employer Expense",
             "jkm_employer_credit_account": "BPJS JKM Payable"
-        },
-        "parent_account_candidates": {
-            "liability": [
-                "Duties and Taxes",
-                "Accounts Payable",
-                "Current Liabilities"
-            ],
-            "expense": [
-                "Direct Expenses",
-                "Indirect Expenses",
-                "Expenses"
-            ]
         }
     },
     "bpjs_settings": {
