@@ -3,12 +3,11 @@
 # For license information, please see license.txt
 # Last updated: 2025-05-23 04:01:12 by dannyaudian
 
-import json
 import frappe
 from frappe import _
-from frappe.utils import now, getdate, add_days, get_datetime_str, cint
+from frappe.utils import now, getdate, add_days, cint
 from frappe.utils.background_jobs import get_jobs, get_job_status, enqueue
-from typing import Dict, List, Any, Optional, Union, Callable, Tuple
+from typing import Dict, List, Any, Optional, Callable
 
 
 # ======== Logging Utilities ========
@@ -615,11 +614,11 @@ def bulk_refresh_tax_summaries_by_department(
 
 # ======== Cleanup Functions ========
 
-
-def cleanup_old_batch_jobs(days: int = 7) -> Dict[str, Any]:
+def cleanup_old_batch_jobs_extended(days: int = 7) -> Dict[str, Any]:
     """
     Clean up old completed batch jobs from the database
     This should be called from a scheduler event
+    This is an extended version that also logs the cleanup event.
 
     Args:
         days: Number of days to keep (delete older than this)

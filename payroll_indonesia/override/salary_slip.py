@@ -8,7 +8,7 @@ import logging
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, add_to_date, date_diff, now_datetime, cint
+from frappe.utils import flt, getdate, add_to_date, date_diff
 from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip
 
 # Import BPJS calculation module
@@ -1437,12 +1437,8 @@ def _process_tax_summary_batch(slips: List[str]) -> Dict[str, Any]:
                 continue
 
             # Process tax summary update
-            tax_summary_name = frappe.db.get_value(
-                "Employee Tax Summary",
-                {"employee": slip.employee, "year": getdate(slip.end_date).year},
-            )
-
-            # Create or update tax summary
+            # No need to get the tax summary name since we're not using it
+            # Just create or update tax summary directly
             from payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary import (
                 create_from_salary_slip,
             )

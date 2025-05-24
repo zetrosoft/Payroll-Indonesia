@@ -3,7 +3,7 @@
 # For license information, please see license.txt
 # Created: 2025-05-23 04:28:09 by dannyaudian
 
-from typing import Any, Dict, Optional, Union, List
+from typing import Any, Dict, Optional, Union
 import logging
 
 import frappe

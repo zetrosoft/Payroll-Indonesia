@@ -7,15 +7,13 @@ from __future__ import unicode_literals
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, getdate, cint, now_datetime, get_datetime_str, add_to_date
+from frappe.utils import flt, getdate, cint
 from frappe.utils.background_jobs import is_job_queued
 
 # Import centralized validator functions
 from payroll_indonesia.utilities.salary_slip_validator import (
     get_salary_slip_with_validation,
     debug_log,
-    validate_tax_related_fields,
-    validate_for_tax_summary,
     check_salary_slip_cancellation,
 )
 
@@ -968,8 +966,8 @@ def get_tax_summary_stats(employee=None, year=None):
         if not year:
             years = frappe.db.sql(
                 """
-                SELECT DISTINCT year 
-                FROM `tabEmployee Tax Summary` 
+                SELECT DISTINCT year
+                FROM `tabEmployee Tax Summary`
                 ORDER BY year DESC
             """,
                 as_dict=True,
