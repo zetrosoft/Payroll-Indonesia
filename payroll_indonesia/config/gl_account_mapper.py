@@ -1,38 +1,18 @@
+# -*- coding: utf-8 -*-
+# Copyright (c) 2025, PT. Innovasi Terbaik Bangsa and contributors
+# For license information, please see license.txt
+# Last modified: 2025-05-24 05:39:28 by dannyaudian
+
 import frappe
 import logging
-import json
-import os
+from frappe import _
+from typing import Dict, Any, Optional
 
+# Import utility function for config
+from payroll_indonesia.payroll_indonesia.utils import get_default_config
+
+# Setup logger
 logger = logging.getLogger(__name__)
-
-def get_config():
-    """
-    Load the defaults.json configuration file
-    
-    Returns:
-        dict: Configuration data or None if file not found
-    """
-    try:
-        # Cari defaults.json di dua path seperti saat ini
-        config_path = frappe.get_app_path(
-            "payroll_indonesia", "payroll_indonesia", "config", "defaults.json"
-        )
-
-        if not os.path.exists(config_path):
-            config_path = frappe.get_app_path("payroll_indonesia", "config", "defaults.json")
-
-            if not os.path.exists(config_path):
-                logger.warning("defaults.json not found in expected locations")
-                return None
-
-        # Load and return config
-        with open(config_path, "r") as f:
-            config = json.loads(f.read())
-            return config
-
-    except Exception as e:
-        logger.exception(f"Error loading defaults.json: {str(e)}")
-        return None
 
 def map_gl_account(company: str, base_account_key: str, category: str) -> str:
     """
@@ -41,56 +21,56 @@ def map_gl_account(company: str, base_account_key: str, category: str) -> str:
     Args:
         company (str): The company name for which to create the account mapping
         base_account_key (str): The key of the base account in defaults.json
-        category (str): The category of the account ('expense_accounts', 'bpjs_expense_accounts', 
-                        'payable_accounts', 'bpjs_payable_accounts', or 'bpjs_account_mapping')
+        category (str): The category of the account (e.g., 'expense_accounts', 'payable_accounts')
     
     Returns:
         str: The mapped account name with company suffix
     """
-    # Load configuration from defaults.json
-    config = get_config()
-    
-    if not config:
-        logger.error("Could not load defaults.json configuration")
-        return f"Unknown Account - {company}"
-    
-    # Special handling for bpjs_account_mapping which is a flat mapping
-    if category == 'bpjs_account_mapping':
-        # Check if bpjs_account_mapping exists in gl_accounts
-        bpjs_mapping = config.get("gl_accounts", {}).get("bpjs_account_mapping", {})
+    try:
+        # Load configuration using centralized get_default_config helper
+        config = get_default_config()
         
-        if not bpjs_mapping:
-            logger.warning("bpjs_account_mapping not found in gl_accounts configuration")
-            return f"Unknown Account - {company}"
+        if not config:
+            logger.warning("Could not load defaults.json configuration")
+            # Return fallback format using base_account_key as name
+            return f"{base_account_key} - {company}"
         
-        # Check if the specific key exists in the mapping
-        if base_account_key not in bpjs_mapping:
-            logger.warning(f"Account key '{base_account_key}' not found in 'bpjs_account_mapping'")
-            return f"Unknown Account - {company}"
+        # Check if gl_accounts exists in config
+        gl_accounts = config.get("gl_accounts", {})
+        if not gl_accounts:
+            logger.warning("No gl_accounts found in configuration")
+            return f"{base_account_key} - {company}"
         
-        # Get the account name directly from the mapping
-        account_name = bpjs_mapping.get(base_account_key)
+        # Check if category exists in gl_accounts
+        if category not in gl_accounts:
+            logger.warning(f"Category '{category}' not found in gl_accounts configuration")
+            return f"{base_account_key} - {company}"
         
-        # Return the account name with company suffix
+        # Get the category accounts
+        category_accounts = gl_accounts[category]
+        
+        # Check if base_account_key exists in the category
+        if base_account_key not in category_accounts:
+            logger.warning(f"Account key '{base_account_key}' not found in '{category}' category")
+            return f"{base_account_key} - {company}"
+        
+        # Get the account name from the config
+        account_info = category_accounts[base_account_key]
+        
+        # Check if account_name exists in the account info
+        if not isinstance(account_info, dict) or "account_name" not in account_info:
+            logger.warning(f"Invalid account info or missing account_name for {base_account_key}")
+            return f"{base_account_key} - {company}"
+            
+        account_name = account_info["account_name"]
+        
+        # Return the formatted account name with company
         return f"{account_name} - {company}"
-    
-    # Regular category handling (unchanged)
-    if category not in config.get("gl_accounts", {}):
-        logger.warning(f"Category '{category}' not found in gl_accounts configuration")
-        return f"Unknown Account - {company}"
-    
-    # Get the account name from the specified category and base_account_key
-    category_accounts = config["gl_accounts"].get(category, {})
-    
-    if base_account_key not in category_accounts:
-        logger.warning(f"Account key '{base_account_key}' not found in '{category}' category")
-        return f"Unknown Account - {company}"
-    
-    # Get the base account name
-    base_account = category_accounts[base_account_key].get("account_name", "Unknown Account")
-    
-    # Return the account name with company suffix
-    return f"{base_account} - {company}"
+        
+    except Exception as e:
+        logger.exception(f"Error mapping GL account for {base_account_key} in {category}: {str(e)}")
+        # Return fallback format using base_account_key as name
+        return f"{base_account_key} - {company}"
 
 def get_gl_account_for_salary_component(company: str, salary_component: str) -> str:
     """
@@ -129,7 +109,7 @@ def get_gl_account_for_salary_component(company: str, salary_component: str) -> 
     # Check if the salary component exists in the mapping
     if salary_component not in component_mapping:
         logger.warning(f"No GL account mapping found for salary component '{salary_component}'")
-        return f"Unknown Account - {company}"
+        return f"{salary_component} Account - {company}"
     
     # Get the account key and category
     account_key, category = component_mapping[salary_component]
