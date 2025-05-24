@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """setup_module.py – consolidated post‑migration setup
-This file merges the previous *setup_module_part1.py* (BPJS helpers)
-and *setup_module_part2.py* (PPh 21 / TER helpers) into a single, clearer
-module < 500 LOC. It is hooked via **after_migrate** in hooks.py.
+This file contains utilities for PPh 21 / TER setup.
+It is hooked via **after_migrate** in hooks.py.
 """
 
 from __future__ import unicode_literals
@@ -16,126 +15,24 @@ from frappe.utils import flt
 from payroll_indonesia.payroll_indonesia.utils import (
     get_default_config,
     debug_log,
-    create_parent_liability_account,
-    create_parent_expense_account,
-    create_account,
 )
 
 # ---------------------------------------------------------------------------
-# BPJS helpers (ex‑Part 1)
-# ---------------------------------------------------------------------------
-
-
-def create_bpjs_accounts() -> bool:
-    """Ensure default BPJS liability / expense accounts exist for all companies.
-
-    Returns:
-        bool: True if accounts already existed or were created successfully.
-    """
-    created_any = False
-    companies = frappe.get_all("Company", pluck="name")
-
-    for company in companies:
-        try:
-            # Create parent liability account for BPJS Payable accounts
-            liability_parent = create_parent_liability_account(company)
-            if not liability_parent:
-                debug_log(
-                    f"Failed to create BPJS parent liability account for {company}",
-                    "BPJS Setup Error",
-                )
-                continue
-
-            # Create parent expense account for BPJS Expense accounts
-            expense_parent = create_parent_expense_account(company)
-            if not expense_parent:
-                debug_log(
-                    f"Failed to create BPJS parent expense account for {company}",
-                    "BPJS Setup Error",
-                )
-                continue
-
-            # Example: Create BPJS Payable Accounts using centralized utility
-            if not frappe.db.exists(
-                "Account", {"account_name": "BPJS Kesehatan Payable", "company": company}
-            ):
-                payable_account = create_account(
-                    company=company,
-                    account_name="BPJS Kesehatan Payable",
-                    account_type="Payable",
-                    parent=liability_parent,
-                    root_type="Liability",
-                )
-                if payable_account:
-                    debug_log(f"Created BPJS Kesehatan Payable account for {company}", "BPJS Setup")
-                    created_any = True
-
-            # Create BPJS Expense account
-            if not frappe.db.exists(
-                "Account", {"account_name": "BPJS Kesehatan Expense", "company": company}
-            ):
-                expense_account = create_account(
-                    company=company,
-                    account_name="BPJS Kesehatan Expense",
-                    account_type="Expense",
-                    parent=expense_parent,
-                    root_type="Expense",
-                )
-                if expense_account:
-                    debug_log(f"Created BPJS Kesehatan Expense account for {company}", "BPJS Setup")
-                    created_any = True
-
-            # Similar pattern for other BPJS accounts
-            # BPJS Ketenagakerjaan accounts can be added here following the same pattern
-
-        except Exception as e:
-            debug_log(
-                f"Error creating BPJS accounts for {company}: {str(e)}",
-                "BPJS Setup Error",
-                trace=True,
-            )
-            frappe.log_error(
-                f"Error creating BPJS accounts for {company}: {str(e)}", "BPJS Setup Error"
-            )
-
-    return True if companies and created_any else False
-
-
-def schedule_mapping_retry() -> None:
-    """Queue background job to retry BPJS account mapping."""
-    frappe.enqueue(
-        "payroll_indonesia.payroll_indonesia.utils.retry_bpjs_mapping",  # Updated path
-        queue="long",
-        now=False,
-        companies=frappe.get_all("Company", pluck="name"),
-    )
-
-
-# ---------------------------------------------------------------------------
-# PPh 21 / TER setup helpers (ex‑Part 2)
+# PPh 21 / TER setup helpers
 # ---------------------------------------------------------------------------
 
 
 def after_sync():
-    """Public hook called after app sync/migrate."""
-    _run_bpjs_setup()
-    _run_pph21_setup()
+    """Public hook called after app sync/migrate. Currently a placeholder."""
+    debug_log("after_sync called (placeholder)", "Setup")
+    # Placeholder for future implementation if needed
+    pass
 
 
 def after_install():
     """Hook called after app installation."""
     debug_log("Running after_install setup for Payroll Indonesia", "Setup")
-    after_sync()
-
-
-def _run_bpjs_setup() -> None:
-    debug_log("Starting BPJS post‑migration setup", "BPJS Setup")
-    if create_bpjs_accounts():
-        debug_log("BPJS setup completed successfully", "BPJS Setup")
-        # Schedule retry for any companies that might need account mapping
-        schedule_mapping_retry()
-    else:
-        debug_log("BPJS setup completed with warnings", "BPJS Setup")
+    _run_pph21_setup()
 
 
 def _run_pph21_setup() -> None:
