@@ -9,7 +9,7 @@ from frappe.utils import flt, now, get_datetime
 import logging
 import hashlib
 from payroll_indonesia.config.gl_account_mapper import map_gl_account
-from payroll_indonesia.payroll_indonesia.utils import get_default_config
+from payroll_indonesia.payroll_indonesia.utils import get_default_config, debug_log
 from payroll_indonesia.fixtures.setup import setup_accounts
 
 # Global logger setup
@@ -27,45 +27,52 @@ def before_install():
 
 
 def after_install():
-    """Run after app installation"""
-    try:
-        # Load configuration
-        config = get_default_config()
-        if not config:
-            frappe.logger().warning("Failed to load configuration defaults.json. GL accounts setup skipped.")
-            logger.warning("Config is empty or could not be loaded. GL accounts setup skipped.")
-        else:
-            # Check if GL accounts configuration exists
-            if not config.get("gl_accounts"):
-                frappe.logger().warning("Configuration does not contain gl_accounts section. GL accounts setup skipped.")
-                logger.warning("Configuration does not contain gl_accounts section. GL accounts setup skipped.")
-            else:
-                # Setup GL accounts using setup_accounts from fixtures
-                frappe.logger().info("Starting GL accounts setup from defaults.json")
-                logger.info("Starting GL accounts setup from defaults.json")
-                
-                # Call setup_accounts with the loaded config
-                result = setup_accounts(config)
-                
-                # Log the result
-                if result:
-                    frappe.logger().info("GL accounts setup completed successfully")
-                    logger.info("GL accounts setup completed successfully")
-                else:
-                    frappe.logger().warning("GL accounts setup completed with warnings or errors")
-                    logger.warning("GL accounts setup completed with warnings or errors")
-    except Exception as e:
-        # Log any exception that occurs during account setup
-        frappe.logger().error(f"Error during GL accounts setup: {str(e)}\n{frappe.get_traceback()}")
-        logger.exception(f"Error during GL accounts setup: {str(e)}")
+    """
+    Run after app installation to set up accounts from defaults.json
     
-    # Continue with other installation steps
+    This function:
+    1. Loads configuration using get_default_config()
+    2. Calls setup_accounts() with the configuration
+    3. Logs the success/failure of the setup process
+    """
     try:
+        # Load configuration from defaults.json
+        debug_log("Loading configuration from defaults.json", "GL Account Setup")
+        config = get_default_config()
+        
+        if not config:
+            frappe.logger().error("Failed to load configuration from defaults.json")
+            debug_log("Failed to load configuration from defaults.json", "GL Account Setup Error")
+            return
+        
+        # Check if GL accounts configuration exists
+        if not config.get("gl_accounts"):
+            frappe.logger().warning("Configuration does not contain gl_accounts section")
+            debug_log("Configuration missing gl_accounts section", "GL Account Setup Warning")
+            return
+        
+        # Set up accounts using the loaded configuration
+        frappe.logger().info("Starting GL accounts setup from defaults.json")
+        debug_log("Starting GL accounts setup using setup_accounts()", "GL Account Setup")
+        
+        # Call setup_accounts with the loaded config
+        result = setup_accounts(config)
+        
+        # Log the result
+        if result:
+            frappe.logger().info("GL accounts setup completed successfully")
+            debug_log("GL accounts setup completed successfully", "GL Account Setup")
+        else:
+            frappe.logger().warning("GL accounts setup completed with warnings or errors")
+            debug_log("GL accounts setup completed with warnings or errors", "GL Account Setup Warning")
+        
+        # Continue with other installation steps
         setup_payroll_components()
         migrate_from_json_to_doctype()
+        
     except Exception as e:
-        frappe.logger().error(f"Error during other installation steps: {str(e)}\n{frappe.get_traceback()}")
-        logger.exception(f"Error during other installation steps: {str(e)}")
+        frappe.logger().error(f"Error during GL accounts setup: {str(e)}\n{frappe.get_traceback()}")
+        debug_log(f"Error during GL accounts setup: {str(e)}", "GL Account Setup Error", trace=True)
 
 
 def after_update():
