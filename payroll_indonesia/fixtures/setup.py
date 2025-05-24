@@ -10,7 +10,14 @@ from frappe.utils import getdate, flt
 from payroll_indonesia.payroll_indonesia.utils import (
     get_default_config,
     debug_log,
+    create_account,
+    find_parent_account,
+    create_parent_liability_account,
+    create_parent_expense_account,
 )
+
+# Import GL account mapper
+from payroll_indonesia.config.gl_account_mapper import map_gl_account
 
 __all__ = [
     "before_install",
@@ -23,7 +30,6 @@ __all__ = [
     "create_bpjs_supplier",
     "setup_salary_components",
     "display_installation_summary",
-    "create_account",
 ]
 
 
@@ -334,180 +340,6 @@ def check_system_readiness():
     return True
 
 
-def create_account(company, account_name, account_type, parent, root_type=None, is_group=0):
-    """
-    Create an account or return existing account
-
-    Args:
-        company (str): Company name
-        account_name (str): Account name
-        account_type (str): Account type
-        parent (str): Parent account name
-        root_type (str, optional): Root type for the account. If None, determined from account_type.
-        is_group (int, optional): Whether account is a group. Defaults to 0.
-
-    Returns:
-        str: Full account name if successful, None otherwise
-    """
-    try:
-        # Determine root_type based on account_type if not provided
-        if root_type is None:
-            if account_type in ["Expense", "Cost of Goods Sold", "Depreciation", "Expenses Included In Valuation"]:
-                root_type = "Expense"
-            elif account_type in ["Income", "Income Account", "Sales"]:
-                root_type = "Income"
-            elif account_type in ["Bank", "Cash", "Stock", "Stock Received But Not Billed", "Stock Adjustment"]:
-                root_type = "Asset"
-            elif account_type in ["Current Liability", "Payable", "Tax", "Chargeable", "Capital Work in Progress"]:
-                root_type = "Liability"
-            elif account_type == "Equity":
-                root_type = "Equity"
-            else:
-                # Default to Liability for unknown types
-                root_type = "Liability"
-                debug_log(f"Unknown account_type: {account_type}, defaulting to Liability root_type", "Account Creation")
-            
-        # Format account name consistently as "Account Name - Company"
-        full_account_name = f"{account_name} - {company}"
-        
-        # Check if account already exists
-        if frappe.db.exists("Account", {"name": full_account_name}):
-            debug_log(f"Account {full_account_name} already exists", "Account Creation")
-            return full_account_name
-            
-        # Create new account
-        account = frappe.new_doc("Account")
-        account.account_name = account_name
-        account.company = company
-        account.parent_account = parent
-        account.account_type = account_type
-        account.root_type = root_type
-        account.is_group = is_group
-        account.flags.ignore_permissions = True
-        account.flags.ignore_mandatory = True
-        
-        # Additional logging for troubleshooting
-        debug_log(
-            f"Creating account: name={account_name}, company={company}, "
-            f"parent={parent}, type={account_type}, root_type={root_type}, is_group={is_group}",
-            "Account Creation Details"
-        )
-        
-        account.insert(ignore_permissions=True)
-        
-        debug_log(f"Successfully created account {full_account_name}", "Account Creation")
-        return full_account_name
-        
-    except Exception as e:
-        frappe.log_error(
-            f"Error creating account {account_name} for {company}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Account Creation Error",
-        )
-        debug_log(
-            f"Error creating account {account_name} for {company}: {str(e)}",
-            "Account Creation Error",
-            trace=True,
-        )
-        return None
-
-
-def map_gl_account(company, gl_config, category, root_account):
-    """
-    Map GL accounts from config to company accounts
-
-    Args:
-        company (str): Company name
-        gl_config (dict): GL account configuration
-        category (str): Category of accounts (e.g., expense_accounts)
-        root_account (str): Root account name for the company
-
-    Returns:
-        dict: Dictionary of created accounts with success/failure status
-    """
-    try:
-        results = {
-            "created": [],
-            "failed": [],
-            "total": 0
-        }
-        
-        # Get accounts from the specified category
-        accounts_config = gl_config.get(category, {})
-        if not accounts_config:
-            debug_log(f"No {category} configuration found", "Account Mapping")
-            return results
-            
-        # Process each account in the category
-        for key, account_info in accounts_config.items():
-            try:
-                results["total"] += 1
-                
-                # Extract account properties
-                account_name = account_info.get("account_name")
-                account_type = account_info.get("account_type")
-                is_group = account_info.get("is_group", 0)
-                
-                if not account_name or not account_type:
-                    debug_log(f"Missing account_name or account_type for {key}", "Account Mapping Error")
-                    results["failed"].append({
-                        "key": key, 
-                        "reason": "Missing account_name or account_type"
-                    })
-                    continue
-                
-                # Create the account
-                full_account_name = create_account(
-                    company=company,
-                    account_name=account_name,
-                    account_type=account_type,
-                    parent=root_account,
-                    is_group=is_group
-                )
-                
-                if full_account_name:
-                    results["created"].append({
-                        "key": key,
-                        "name": full_account_name,
-                        "account_type": account_type
-                    })
-                else:
-                    results["failed"].append({
-                        "key": key,
-                        "reason": "Account creation failed"
-                    })
-                    
-            except Exception as e:
-                debug_log(
-                    f"Error mapping account {key}: {str(e)}",
-                    "Account Mapping Error",
-                    trace=True
-                )
-                results["failed"].append({
-                    "key": key,
-                    "reason": str(e)
-                })
-                
-        return results
-        
-    except Exception as e:
-        frappe.log_error(
-            f"Error in map_gl_account for {category} in {company}: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Account Mapping Error"
-        )
-        debug_log(
-            f"Error in map_gl_account for {category} in {company}: {str(e)}",
-            "Account Mapping Error",
-            trace=True
-        )
-        return {
-            "created": [],
-            "failed": [],
-            "total": 0
-        }
-
-
 def setup_accounts(config):
     """
     Create required Accounts for Indonesian payroll management using centralized root account
@@ -589,22 +421,29 @@ def setup_accounts(config):
             # Typically, this should be a balance sheet or P&L account depending on the root_type
             if root_type == "Asset":
                 parent_account = "Application of Funds (Assets)"
-            elif root_type == "Liability":
-                parent_account = "Source of Funds (Liabilities)"
-            elif root_type == "Equity":
+            elif root_type in ["Liability", "Equity"]:
                 parent_account = "Source of Funds (Liabilities)"
             elif root_type in ["Income", "Expense"]:
                 parent_account = f"{root_type} - {company}"
             else:
                 parent_account = "Application of Funds (Assets)"
+            
+            # Get company abbreviation
+            abbr = frappe.get_cached_value("Company", company, "abbr")
+            if not abbr:
+                debug_log(f"Company {company} does not have an abbreviation", "Account Setup Error")
+                statistics["companies_with_errors"] += 1
+                overall_success = False
+                company_success = False
+                continue
                 
-            # Create root account first
+            # Create root account first using utility function
             root_account_name = create_account(
                 company=company,
                 account_name=root_name,
                 account_type=root_type,
-                parent=parent_account,  
-                is_group=root_is_group
+                parent=parent_account,
+                root_type=root_type
             )
             
             if not root_account_name:
@@ -627,34 +466,50 @@ def setup_accounts(config):
                         
                     company_stats["categories_processed"] += 1
                     
-                    # Map accounts in this section
-                    results = map_gl_account(company, gl_accounts, section, root_account_name)
+                    # Process accounts in this section using mapper function
+                    accounts_config = gl_accounts.get(section, {})
+                    for key, account_info in accounts_config.items():
+                        try:
+                            # Extract account properties
+                            account_name = account_info.get("account_name")
+                            account_type = account_info.get("account_type")
+                            
+                            if not account_name or not account_type:
+                                debug_log(f"Missing account_name or account_type for {key}", "Account Setup Error")
+                                company_stats["accounts_failed"] += 1
+                                continue
+                            
+                            # Create account using utility function
+                            full_account_name = create_account(
+                                company=company,
+                                account_name=account_name,
+                                account_type=account_type,
+                                parent=root_account_name,
+                                root_type=None  # Will be determined based on account_type
+                            )
+                            
+                            if full_account_name:
+                                company_stats["accounts_created"] += 1
+                                debug_log(f"Created account: {full_account_name}", "Account Setup")
+                            else:
+                                company_stats["accounts_failed"] += 1
+                                company_success = False
+                                debug_log(f"Failed to create account for {key}", "Account Setup Error")
+                                
+                        except Exception as account_error:
+                            company_stats["accounts_failed"] += 1
+                            company_success = False
+                            debug_log(
+                                f"Error creating account for {key}: {str(account_error)}",
+                                "Account Setup Error",
+                                trace=True
+                            )
                     
-                    # Update statistics
-                    created_count = len(results["created"])
-                    failed_count = len(results["failed"])
-                    
-                    company_stats["accounts_created"] += created_count
-                    company_stats["accounts_failed"] += failed_count
-                    
-                    # Log section results
                     debug_log(
-                        f"Created {created_count} accounts in '{section}' for {company}, failed: {failed_count}",
+                        f"Processed {section} for {company}: created {company_stats['accounts_created']} accounts",
                         "Account Setup"
                     )
-                    
-                    # Log specific failures if any
-                    if results["failed"]:
-                        failure_details = ", ".join([f"{item['key']}: {item['reason']}" for item in results["failed"]])
-                        debug_log(
-                            f"Failed accounts in '{section}' for {company}: {failure_details}",
-                            "Account Setup Error"
-                        )
-                    
-                    # Update overall success flag if any failures
-                    if failed_count > 0:
-                        company_success = False
-                
+                        
                 except Exception as e:
                     company_success = False
                     debug_log(
