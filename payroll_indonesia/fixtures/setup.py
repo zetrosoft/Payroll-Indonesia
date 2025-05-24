@@ -337,8 +337,50 @@ def check_system_readiness():
     # Return True so installation can continue with warnings
     return True
 
+def setup_company_accounts(doc, method=None):
+    """
+    Set up required accounts when a new company is created
+    
+    Args:
+        doc: Company document
+        method: Hook method (unused)
+    """
+    from payroll_indonesia.payroll_indonesia.utils import debug_log, get_default_config
+    
+    try:
+        debug_log(f"Setting up accounts for new company: {doc.name}", "Company Setup")
+        
+        # Get config
+        config = get_default_config()
+        
+        # Set up accounts for this company
+        results = setup_accounts(config, specific_company=doc.name)
+        
+        if results.get("errors"):
+            debug_log(
+                f"Errors during account setup for company {doc.name}: {', '.join(results['errors'])}",
+                "Company Setup Error"
+            )
+        else:
+            debug_log(
+                f"Successfully set up accounts for company {doc.name}",
+                "Company Setup"
+            )
+            
+        return results
+    except Exception as e:
+        debug_log(
+            f"Error setting up accounts for company {doc.name}: {str(e)}",
+            "Company Setup Error",
+            trace=True
+        )
+        frappe.log_error(
+            f"Error setting up accounts for company {doc.name}: {str(e)}\n\n"
+            f"Traceback: {frappe.get_traceback()}",
+            "Company Setup Error"
+        )
 
-def setup_accounts(config):
+def setup_accounts(config, specific_company=None):
     """
     Set up GL accounts required for Indonesian payroll from configuration
     
@@ -346,6 +388,7 @@ def setup_accounts(config):
     
     Args:
         config: Configuration dictionary with account settings
+        specific_company: Specific company to set up accounts for (optional)
         
     Returns:
         dict: Setup results
@@ -361,14 +404,26 @@ def setup_accounts(config):
         "errors": []
     }
     
-    # Get all active companies
-    companies = frappe.get_all("Company", fields=["name", "abbr"])
+    # Get companies to process
+    if specific_company:
+        # Get specific company
+        companies = frappe.get_all(
+            "Company", 
+            filters={"name": specific_company},
+            fields=["name", "abbr"]
+        )
+        debug_log(f"Setting up accounts for specific company: {specific_company}", "Account Setup")
+    else:
+        # Get all active companies
+        companies = frappe.get_all("Company", fields=["name", "abbr"])
+        debug_log(f"Setting up accounts for all companies: {len(companies)} found", "Account Setup")
+    
     if not companies:
         debug_log("No companies found for account setup", "Account Setup")
         results["success"] = False
         results["errors"].append("No companies found")
         return results
-        
+    
     # Setup accounts for each company
     for company in companies:
         try:
@@ -404,7 +459,6 @@ def setup_accounts(config):
             
     debug_log(f"Account setup completed with: {len(results['created'])} created, {len(results['skipped'])} skipped, {len(results['errors'])} errors", "Account Setup")
     return results
-
 
 def _create_bpjs_liability_parent(company):
     """Create or get BPJS liability parent account"""
