@@ -384,12 +384,21 @@ def find_parent_account(
                 "Account Lookup"
             )
         else:
-            debug_log(
-                f"Could not find any parent account for {account_type} (root_type: {root_type}) in company {company}",
-                "Account Lookup Error"
-            )
-            # Don't cache negative results
-            return None
+            # Ultimate fallback: Use company's default root accounts
+            parent_account = _find_company_root_account(company, root_type)
+            
+            if parent_account:
+                debug_log(
+                    f"Using company root account for {account_type}: {parent_account}",
+                    "Account Lookup"
+                )
+            else:
+                debug_log(
+                    f"Could not find any parent account for {account_type} (root_type: {root_type}) in company {company}",
+                    "Account Lookup Error"
+                )
+                # Don't cache negative results
+                return None
     
     # Cache the successful result
     parent_account_cache[cache_key] = parent_account
@@ -397,6 +406,47 @@ def find_parent_account(
     
     return parent_account
 
+def _find_company_root_account(company: str, root_type: str) -> Optional[str]:
+    """
+    Find root account for the company based on root type.
+    This is the ultimate fallback when no other parent account can be found.
+    
+    Args:
+        company: Company name
+        root_type: Root type of account
+        
+    Returns:
+        str: Account name if found, None otherwise
+    """
+    # Standard root accounts in ERPNext
+    root_accounts = {
+        "Asset": "Application of Funds (Assets)",
+        "Liability": "Source of Funds (Liabilities)",
+        "Expense": "Expenses", 
+        "Income": "Income",
+        "Equity": "Equity"
+    }
+    
+    # Get company abbr
+    abbr = frappe.get_cached_value("Company", company, "abbr")
+    if not abbr:
+        return None
+    
+    # Try to find the root account
+    root_account = root_accounts.get(root_type)
+    if not root_account:
+        return None
+        
+    # Check with company suffix
+    full_name = f"{root_account} - {abbr}"
+    if frappe.db.exists("Account", full_name):
+        return full_name
+        
+    # Try without company suffix as last resort
+    if frappe.db.exists("Account", root_account):
+        return root_account
+        
+    return None
 
 def _get_root_type_from_account_type(account_type: str) -> str:
     """
