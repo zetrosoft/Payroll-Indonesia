@@ -107,7 +107,7 @@ def on_submit_salary_slip(doc: SalarySlipDoc, method: Optional[str] = None) -> N
         # Only process tax summary updates for salary slips with PPh 21 component
         if has_pph21_component(doc):
             get_logger().info(f"Salary slip {doc.name} has PPh 21 component, updating tax summary")
-            
+
             # Enqueue tax summary creation/update job
             frappe.enqueue(
                 method="payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
@@ -116,25 +116,27 @@ def on_submit_salary_slip(doc: SalarySlipDoc, method: Optional[str] = None) -> N
                 salary_slip=doc.name,
                 is_async=True,
                 job_name=f"tax_summary_update_{doc.name}",
-                now=False  # Run in background
+                now=False,  # Run in background
             )
-            
+
             # Add note about queued job if payroll_note field exists
             if hasattr(doc, "payroll_note"):
                 note = f"Tax summary update queued in background job: tax_summary_update_{doc.name}"
                 current_note = getattr(doc, "payroll_note", "")
-                
+
                 if current_note:
                     new_note = f"{current_note}\n{note}"
                 else:
                     new_note = note
-                    
+
                 try:
                     doc.db_set("payroll_note", new_note, update_modified=False)
                 except Exception as e:
                     get_logger().warning(f"Could not update payroll note: {e}")
         else:
-            get_logger().info(f"Salary slip {doc.name} doesn't have PPh 21 component, skipping tax summary update")
+            get_logger().info(
+                f"Salary slip {doc.name} doesn't have PPh 21 component, skipping tax summary update"
+            )
 
     except Exception as e:
         # Handle ValidationError separately
@@ -158,10 +160,10 @@ def on_cancel_salary_slip(doc: SalarySlipDoc, method: Optional[str] = None) -> N
     """
     try:
         # Check if the salary slip has or had a PPh 21 component
-        # For cancellation, we check using a more thorough approach since the 
+        # For cancellation, we check using a more thorough approach since the
         # component might have been present in the original submission
         has_tax_component = has_pph21_component(doc)
-        
+
         # Also check if a tax summary exists for this employee and period
         # since we might need to update it even if the PPh 21 component is no longer visible
         tax_summary_exists = False
@@ -169,28 +171,29 @@ def on_cancel_salary_slip(doc: SalarySlipDoc, method: Optional[str] = None) -> N
             year = getdate(doc.end_date).year if hasattr(doc, "end_date") and doc.end_date else None
             if year and hasattr(doc, "employee") and doc.employee:
                 tax_summary_exists = frappe.db.exists(
-                    "Employee Tax Summary",
-                    {"employee": doc.employee, "year": year}
+                    "Employee Tax Summary", {"employee": doc.employee, "year": year}
                 )
         except Exception as e:
             get_logger().warning(f"Error checking for existing tax summary: {e}")
-        
+
         # Only process if the slip has PPh 21 component or a tax summary exists
         if has_tax_component or tax_summary_exists:
             get_logger().info(
-                f"Processing tax summary reversion for {doc.name}. " 
+                f"Processing tax summary reversion for {doc.name}. "
                 f"Has PPh21: {has_tax_component}, Tax summary exists: {tax_summary_exists}"
             )
-            
+
             # Determine tax year
             year = None
             if hasattr(doc, "end_date") and doc.end_date:
                 year = getdate(doc.end_date).year
-            
+
             if not year:
-                get_logger().warning(f"Could not determine year for tax summary reversion: {doc.name}")
+                get_logger().warning(
+                    f"Could not determine year for tax summary reversion: {doc.name}"
+                )
                 return
-                
+
             # Enqueue tax summary reversion job
             frappe.enqueue(
                 method="payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
@@ -200,19 +203,21 @@ def on_cancel_salary_slip(doc: SalarySlipDoc, method: Optional[str] = None) -> N
                 year=year,
                 is_async=True,
                 job_name=f"tax_summary_revert_{doc.name}",
-                now=False  # Run in background
+                now=False,  # Run in background
             )
-            
+
             # Add note about queued job if payroll_note field exists
             if hasattr(doc, "payroll_note"):
-                note = f"Tax summary reversion queued in background job: tax_summary_revert_{doc.name}"
+                note = (
+                    f"Tax summary reversion queued in background job: tax_summary_revert_{doc.name}"
+                )
                 current_note = getattr(doc, "payroll_note", "")
-                
+
                 if current_note:
                     new_note = f"{current_note}\n{note}"
                 else:
                     new_note = note
-                    
+
                 try:
                     doc.db_set("payroll_note", new_note, update_modified=False)
                 except Exception as e:

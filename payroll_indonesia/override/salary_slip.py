@@ -450,7 +450,7 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             # Don't update tax summary for unsubmitted salary slips
             if self.docstatus != 1:
                 return
-                
+
             # Use background job to update tax summary for better performance
             # This prevents the salary slip submission from being blocked by tax summary updates
             frappe.enqueue(
@@ -460,21 +460,23 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 salary_slip=self.name,
                 is_async=True,
                 job_name=f"tax_summary_update_{self.name}",
-                now=False  # Run in background
+                now=False,  # Run in background
             )
-            
+
             # Add note that tax summary update was queued
             self.add_payroll_note(
                 f"Tax summary update queued in background job: tax_summary_update_{self.name}"
             )
-            
+
         except Exception as e:
             # Non-critical error - log and continue
             # We don't want to block salary slip submission if tax summary fails
             get_logger().warning(f"Error queueing tax summary update for {self.name}: {e}")
             frappe.msgprint(
-                _("Warning: Could not queue tax summary update. You may need to update it manually."),
-                indicator="orange"
+                _(
+                    "Warning: Could not queue tax summary update. You may need to update it manually."
+                ),
+                indicator="orange",
             )
 
     def on_cancel(self) -> None:
@@ -509,14 +511,14 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
             # Don't process for slips that were not submitted
             if self.docstatus != 2:  # 2 = Cancelled
                 return
-                
+
             # Use a background job to update tax summary
             year = getdate(self.end_date).year if hasattr(self, "end_date") else None
-            
+
             if not year:
                 self.add_payroll_note("Could not determine year for tax summary reversion")
                 return
-                
+
             frappe.enqueue(
                 method="payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
                 queue="long",
@@ -525,21 +527,23 @@ class IndonesiaPayrollSalarySlip(SalarySlip):
                 year=year,
                 is_async=True,
                 job_name=f"tax_summary_revert_{self.name}",
-                now=False  # Run in background
+                now=False,  # Run in background
             )
-            
+
             # Add note that tax summary reversion was queued
             self.add_payroll_note(
                 f"Tax summary reversion queued in background job: tax_summary_revert_{self.name}"
             )
-            
+
         except Exception as e:
             # Non-critical error - log and continue
             # We don't want to block salary slip cancellation if tax summary fails
             get_logger().warning(f"Error queueing tax summary reversion for {self.name}: {e}")
             frappe.msgprint(
-                _("Warning: Could not queue tax summary reversion. You may need to update it manually."),
-                indicator="orange"
+                _(
+                    "Warning: Could not queue tax summary reversion. You may need to update it manually."
+                ),
+                indicator="orange",
             )
 
 
@@ -1033,7 +1037,7 @@ def _enhance_on_submit(doc: Any, *args, **kwargs) -> None:
 
         # Verify BPJS components are correct before final submission
         verify_bpjs_components(doc)
-        
+
         # Update tax summary in background job
         _enqueue_tax_summary_update(doc)
 
@@ -1079,7 +1083,7 @@ def _enqueue_tax_summary_update(doc: Any) -> None:
     """
     Enqueue a background job to update the tax summary.
     Separate function for reusability.
-    
+
     Args:
         doc: Salary Slip document
     """
@@ -1087,7 +1091,7 @@ def _enqueue_tax_summary_update(doc: Any) -> None:
         # Don't update for unsubmitted documents
         if not hasattr(doc, "docstatus") or doc.docstatus != 1:
             return
-            
+
         # Queue background job
         frappe.enqueue(
             method="payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.create_from_salary_slip",
@@ -1096,13 +1100,15 @@ def _enqueue_tax_summary_update(doc: Any) -> None:
             salary_slip=doc.name,
             is_async=True,
             job_name=f"tax_summary_update_{doc.name}",
-            now=False
+            now=False,
         )
-        
+
         # Add note about job
         if hasattr(doc, "add_payroll_note"):
-            doc.add_payroll_note(f"Tax summary update queued in background job: tax_summary_update_{doc.name}")
-        
+            doc.add_payroll_note(
+                f"Tax summary update queued in background job: tax_summary_update_{doc.name}"
+            )
+
     except Exception as e:
         get_logger().warning(f"Error queueing tax summary update for {doc.name}: {e}")
         frappe.msgprint(_("Warning: Could not queue tax summary update."), indicator="orange")
@@ -1112,7 +1118,7 @@ def _enqueue_tax_summary_revert(doc: Any) -> None:
     """
     Enqueue a background job to revert the tax summary.
     Separate function for reusability.
-    
+
     Args:
         doc: Salary Slip document
     """
@@ -1120,16 +1126,16 @@ def _enqueue_tax_summary_revert(doc: Any) -> None:
         # Don't revert for non-cancelled documents
         if not hasattr(doc, "docstatus") or doc.docstatus != 2:
             return
-            
+
         # Determine tax year
         year = None
         if hasattr(doc, "end_date") and doc.end_date:
             year = getdate(doc.end_date).year
-        
+
         if not year:
             get_logger().warning(f"Could not determine year for tax summary reversion: {doc.name}")
             return
-            
+
         # Queue background job
         frappe.enqueue(
             method="payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary.update_on_salary_slip_cancel",
@@ -1139,19 +1145,22 @@ def _enqueue_tax_summary_revert(doc: Any) -> None:
             year=year,
             is_async=True,
             job_name=f"tax_summary_revert_{doc.name}",
-            now=False
+            now=False,
         )
-        
+
         # Add note about job
         if hasattr(doc, "add_payroll_note"):
-            doc.add_payroll_note(f"Tax summary reversion queued in background job: tax_summary_revert_{doc.name}")
-        
+            doc.add_payroll_note(
+                f"Tax summary reversion queued in background job: tax_summary_revert_{doc.name}"
+            )
+
     except Exception as e:
         get_logger().warning(f"Error queueing tax summary reversion for {doc.name}: {e}")
         frappe.msgprint(_("Warning: Could not queue tax summary reversion."), indicator="orange")
 
 
 # Cache management functions
+@frappe.whitelist()
 def clear_salary_slip_caches() -> Dict[str, Any]:
     """
     Clear salary slip related caches to prevent memory bloat.
@@ -1333,14 +1342,16 @@ def setup_fiscal_year_if_missing(date_str: Optional[str] = None) -> Dict[str, An
 
 # Utility functions for bulk tax summary operations
 @frappe.whitelist()
-def refresh_multiple_tax_summaries(salary_slips: Union[List[str], str], is_async: bool = True) -> Dict[str, Any]:
+def refresh_multiple_tax_summaries(
+    salary_slips: Union[List[str], str], is_async: bool = True
+) -> Dict[str, Any]:
     """
     Refresh tax summaries for multiple salary slips.
-    
+
     Args:
         salary_slips: List of salary slip names or JSON string with list
         is_async: Whether to process in background jobs (recommended for performance)
-        
+
     Returns:
         Dict[str, Any]: Status and details of the operation
     """
@@ -1348,28 +1359,29 @@ def refresh_multiple_tax_summaries(salary_slips: Union[List[str], str], is_async
         # Handle JSON string input
         if isinstance(salary_slips, str):
             import json
+
             try:
                 salary_slips = json.loads(salary_slips)
             except ValueError:
                 # If it's not valid JSON, treat it as a single slip
                 salary_slips = [salary_slips]
-                
+
         if not salary_slips:
             return {"status": "error", "message": "No salary slips provided"}
-            
+
         # Validate list type
         if not isinstance(salary_slips, list):
             return {"status": "error", "message": "Invalid salary slip data provided"}
-            
+
         # Log the operation
         get_logger().info(f"Starting refresh of tax summaries for {len(salary_slips)} salary slips")
-        
+
         if is_async:
             # Use background processing for better performance
             batch_size = 20  # Process in batches of 20 for better performance
             for i in range(0, len(salary_slips), batch_size):
-                batch = salary_slips[i:i+batch_size]
-                
+                batch = salary_slips[i : i + batch_size]
+
                 # Queue a job for each batch
                 frappe.enqueue(
                     method="_process_tax_summary_batch",
@@ -1377,15 +1389,15 @@ def refresh_multiple_tax_summaries(salary_slips: Union[List[str], str], is_async
                     timeout=1800,  # 30 minutes timeout for large batches
                     slips=batch,
                     job_name=f"tax_summary_batch_{i}_{i+len(batch)}",
-                    now=False
+                    now=False,
                 )
-                
+
             return {
                 "status": "queued",
                 "message": f"Queued {len(salary_slips)} salary slips for tax summary refresh",
                 "total_slips": len(salary_slips),
                 "batch_size": batch_size,
-                "batches": (len(salary_slips) + batch_size - 1) // batch_size
+                "batches": (len(salary_slips) + batch_size - 1) // batch_size,
             }
         else:
             # Process synchronously (not recommended for many slips)
@@ -1393,9 +1405,9 @@ def refresh_multiple_tax_summaries(salary_slips: Union[List[str], str], is_async
             return {
                 "status": "completed",
                 "message": f"Processed {len(salary_slips)} salary slips",
-                "results": results
+                "results": results,
             }
-            
+
     except Exception as e:
         get_logger().exception(f"Error refreshing multiple tax summaries: {e}")
         return {"status": "error", "message": str(e)}
@@ -1404,56 +1416,48 @@ def refresh_multiple_tax_summaries(salary_slips: Union[List[str], str], is_async
 def _process_tax_summary_batch(slips: List[str]) -> Dict[str, Any]:
     """
     Process a batch of salary slips to refresh tax summaries.
-    
+
     Args:
         slips: List of salary slip document names
-        
+
     Returns:
         Dict[str, Any]: Results of processing
     """
-    results = {
-        "processed": 0,
-        "success": 0,
-        "failed": 0,
-        "errors": []
-    }
-    
+    results = {"processed": 0, "success": 0, "failed": 0, "errors": []}
+
     for slip_name in slips:
         try:
             # Get the salary slip
             slip = frappe.get_doc("Salary Slip", slip_name)
-            
+
             # Only process submitted slips
             if slip.docstatus != 1:
-                results["errors"].append({
-                    "slip": slip_name,
-                    "error": "Slip is not submitted"
-                })
+                results["errors"].append({"slip": slip_name, "error": "Slip is not submitted"})
                 results["failed"] += 1
                 continue
-                
+
             # Process tax summary update
             tax_summary_name = frappe.db.get_value(
                 "Employee Tax Summary",
-                {"employee": slip.employee, "year": getdate(slip.end_date).year}
+                {"employee": slip.employee, "year": getdate(slip.end_date).year},
             )
-            
+
             # Create or update tax summary
-            from payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary import create_from_salary_slip
+            from payroll_indonesia.payroll_indonesia.doctype.employee_tax_summary.employee_tax_summary import (
+                create_from_salary_slip,
+            )
+
             create_from_salary_slip(slip_name)
-            
+
             results["success"] += 1
-            
+
         except Exception as e:
-            results["errors"].append({
-                "slip": slip_name,
-                "error": str(e)
-            })
+            results["errors"].append({"slip": slip_name, "error": str(e)})
             results["failed"] += 1
-            
+
         finally:
             results["processed"] += 1
-            
+
     return results
 
 

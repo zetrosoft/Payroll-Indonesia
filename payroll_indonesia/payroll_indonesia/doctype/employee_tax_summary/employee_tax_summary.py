@@ -16,7 +16,7 @@ from payroll_indonesia.utilities.salary_slip_validator import (
     debug_log,
     validate_tax_related_fields,
     validate_for_tax_summary,
-    check_salary_slip_cancellation
+    check_salary_slip_cancellation,
 )
 
 
@@ -257,10 +257,10 @@ class EmployeeTaxSummary(Document):
     def _extract_tax_data_from_slip(self, salary_slip):
         """
         Extract tax-related data from salary slip
-        
+
         Args:
             salary_slip: The salary slip document
-            
+
         Returns:
             dict: Dictionary with tax data extracted from salary slip
         """
@@ -303,7 +303,7 @@ class EmployeeTaxSummary(Document):
                 ter_rate = flt(salary_slip.ter_rate)
             if hasattr(salary_slip, "ter_category"):
                 ter_category = salary_slip.ter_category
-                
+
         # Get additional tax calculation fields
         if hasattr(salary_slip, "biaya_jabatan"):
             biaya_jabatan = flt(salary_slip.biaya_jabatan)
@@ -326,13 +326,13 @@ class EmployeeTaxSummary(Document):
             "biaya_jabatan": biaya_jabatan,
             "netto": netto,
             "annual_taxable_income": annual_taxable_income,
-            "monthly_gross_for_ter": monthly_gross_for_ter
+            "monthly_gross_for_ter": monthly_gross_for_ter,
         }
 
     def _update_existing_month(self, month_index, salary_slip_name, tax_data):
         """
         Update an existing monthly detail record
-        
+
         Args:
             month_index: Index of the month in monthly_details
             salary_slip_name: Name of the salary slip document
@@ -340,17 +340,17 @@ class EmployeeTaxSummary(Document):
         """
         # Store salary slip reference
         self.monthly_details[month_index].salary_slip = salary_slip_name
-        
+
         # Update basic fields
         self.monthly_details[month_index].gross_pay = tax_data["gross_pay"]
         self.monthly_details[month_index].bpjs_deductions = tax_data["bpjs_deductions"]
         self.monthly_details[month_index].other_deductions = tax_data["other_deductions"]
         self.monthly_details[month_index].tax_amount = tax_data["pph21_amount"]
-        
+
         # Update TER information
         self.monthly_details[month_index].is_using_ter = tax_data["is_using_ter"]
         self.monthly_details[month_index].ter_rate = tax_data["ter_rate"]
-        
+
         # Update additional calculation fields if they exist
         for field in ["ter_category", "biaya_jabatan", "netto", "annual_taxable_income"]:
             if hasattr(self.monthly_details[month_index], field) and field in tax_data:
@@ -359,7 +359,7 @@ class EmployeeTaxSummary(Document):
     def _add_new_month(self, month, salary_slip_name, tax_data):
         """
         Add a new monthly detail record
-        
+
         Args:
             month: Month number (1-12)
             salary_slip_name: Name of the salary slip document
@@ -376,12 +376,12 @@ class EmployeeTaxSummary(Document):
             "is_using_ter": tax_data["is_using_ter"],
             "ter_rate": tax_data["ter_rate"],
         }
-        
+
         # Add additional calculation fields if available
         for field in ["ter_category", "biaya_jabatan", "netto", "annual_taxable_income"]:
             if field in tax_data:
                 monthly_data[field] = tax_data[field]
-                
+
         # Append to monthly details
         self.append("monthly_details", monthly_data)
 
@@ -401,11 +401,11 @@ class EmployeeTaxSummary(Document):
     def reset_monthly_data(self, month, salary_slip=None):
         """
         Reset monthly data for a specific month and salary slip
-        
+
         Args:
             month: Month number (1-12) to reset
             salary_slip: Optional salary slip name to match
-            
+
         Returns:
             bool: True if data was reset, False otherwise
         """
@@ -414,7 +414,7 @@ class EmployeeTaxSummary(Document):
             if getattr(d, "month") == month:
                 if salary_slip and getattr(d, "salary_slip") != salary_slip:
                     continue
-                    
+
                 # Reset values for this month
                 d.gross_pay = 0
                 d.bpjs_deductions = 0
@@ -423,15 +423,15 @@ class EmployeeTaxSummary(Document):
                 d.salary_slip = None
                 d.is_using_ter = 0
                 d.ter_rate = 0
-                
+
                 # Reset additional fields if they exist
                 for field in ["ter_category", "biaya_jabatan", "netto", "annual_taxable_income"]:
                     if hasattr(d, field):
                         setattr(d, field, "" if field == "ter_category" else 0)
-                
+
                 changed = True
                 break
-                
+
         return changed
 
     def get_ytd_data_until_month(self, month):
@@ -449,13 +449,7 @@ class EmployeeTaxSummary(Document):
                 - net: Total net pay (if available)
                 - monthly_amounts: List of monthly amounts
         """
-        result = {
-            "gross": 0, 
-            "bpjs": 0, 
-            "pph21": 0, 
-            "net": 0,
-            "monthly_amounts": []
-        }
+        result = {"gross": 0, "bpjs": 0, "pph21": 0, "net": 0, "monthly_amounts": []}
 
         try:
             # Validate month parameter
@@ -470,18 +464,20 @@ class EmployeeTaxSummary(Document):
                     result["gross"] += flt(monthly.gross_pay)
                     result["bpjs"] += flt(monthly.bpjs_deductions)
                     result["pph21"] += flt(monthly.tax_amount)
-                    
+
                     # Get net amount if available
                     if hasattr(monthly, "netto"):
                         result["net"] += flt(monthly.netto)
-                        
+
                     # Add to monthly amounts list
-                    result["monthly_amounts"].append({
-                        "month": monthly.month,
-                        "gross": flt(monthly.gross_pay),
-                        "tax": flt(monthly.tax_amount),
-                        "bpjs": flt(monthly.bpjs_deductions)
-                    })
+                    result["monthly_amounts"].append(
+                        {
+                            "month": monthly.month,
+                            "gross": flt(monthly.gross_pay),
+                            "tax": flt(monthly.tax_amount),
+                            "bpjs": flt(monthly.bpjs_deductions),
+                        }
+                    )
 
             return result
 
@@ -491,60 +487,64 @@ class EmployeeTaxSummary(Document):
                 "YTD Data Retrieval Error",
             )
             # Instead of throwing, return empty result on error
-            return {
-                "gross": 0, 
-                "bpjs": 0, 
-                "pph21": 0, 
-                "net": 0,
-                "monthly_amounts": []
-            }
+            return {"gross": 0, "bpjs": 0, "pph21": 0, "net": 0, "monthly_amounts": []}
 
     def delete_tax_summary(self):
         """
         Delete this tax summary and all related monthly details.
-        
-        This method provides a clean way to remove all tax summary data for a 
+
+        This method provides a clean way to remove all tax summary data for a
         specific employee and year when needed (e.g., in case of major data corruption).
-        
+
         Note: This is a destructive operation and should be used with caution.
         """
         try:
             # Log the deletion for audit purposes
             debug_log(
-                f"Starting deletion of Employee Tax Summary {self.name} for employee {self.employee}, year {self.year}", 
-                level="warning"
+                f"Starting deletion of Employee Tax Summary {self.name} for employee {self.employee}, year {self.year}",
+                level="warning",
             )
-            
+
             # First, handle monthly details
             monthly_details_deleted = 0
-            
+
             # Delete monthly details one by one
             for row in self.monthly_details:
                 if row.name:
-                    frappe.delete_doc("Employee Monthly Tax Detail", row.name, force=True, 
-                                      ignore_permissions=True, ignore_on_trash=True)
+                    frappe.delete_doc(
+                        "Employee Monthly Tax Detail",
+                        row.name,
+                        force=True,
+                        ignore_permissions=True,
+                        ignore_on_trash=True,
+                    )
                     monthly_details_deleted += 1
-            
+
             # Then delete the tax summary itself
-            frappe.delete_doc("Employee Tax Summary", self.name, force=True, 
-                              ignore_permissions=True, ignore_on_trash=True)
-            
+            frappe.delete_doc(
+                "Employee Tax Summary",
+                self.name,
+                force=True,
+                ignore_permissions=True,
+                ignore_on_trash=True,
+            )
+
             # Log successful deletion
             debug_log(
-                f"Successfully deleted Employee Tax Summary {self.name} with {monthly_details_deleted} monthly records", 
-                level="warning"
+                f"Successfully deleted Employee Tax Summary {self.name} with {monthly_details_deleted} monthly records",
+                level="warning",
             )
-            
+
             return {
                 "status": "success",
                 "message": f"Successfully deleted tax summary with {monthly_details_deleted} monthly records",
-                "monthly_details_deleted": monthly_details_deleted
+                "monthly_details_deleted": monthly_details_deleted,
             }
 
         except Exception as e:
             frappe.log_error(
                 f"Error deleting tax summary {self.name}: {str(e)}\n{frappe.get_traceback()}",
-                "Tax Summary Deletion Error"
+                "Tax Summary Deletion Error",
             )
             frappe.throw(_("Error deleting tax summary: {0}").format(str(e)))
 
@@ -588,11 +588,11 @@ def create_from_salary_slip(salary_slip, method=None):
     """
     Create or update Employee Tax Summary from a Salary Slip
     Called asynchronously from the Salary Slip's on_submit method
-    
+
     Args:
         salary_slip: The name of the salary slip document
         method: Optional callback method name (not used, kept for compatibility)
-        
+
     Returns:
         str: Name of the created/updated Employee Tax Summary or None on error
     """
@@ -609,12 +609,16 @@ def create_from_salary_slip(salary_slip, method=None):
         slip = get_salary_slip_with_validation(salary_slip)
         if not slip:
             # Validator already logged the specific error
-            debug_log(f"Validation failed for salary slip {salary_slip}, aborting tax summary creation")
+            debug_log(
+                f"Validation failed for salary slip {salary_slip}, aborting tax summary creation"
+            )
             return None
 
         # Additional validation for submitted status
         if slip.docstatus != 1:
-            debug_log(f"Salary slip {salary_slip} is not submitted (docstatus={slip.docstatus}), aborting tax summary creation")
+            debug_log(
+                f"Salary slip {salary_slip} is not submitted (docstatus={slip.docstatus}), aborting tax summary creation"
+            )
             return None
 
         employee = slip.employee
@@ -650,11 +654,11 @@ def create_from_salary_slip(salary_slip, method=None):
 def _get_or_create_tax_summary(employee, year):
     """
     Get existing tax summary or create a new one
-    
+
     Args:
         employee: Employee code
         year: Tax year
-        
+
     Returns:
         Document: Employee Tax Summary document or None on error
     """
@@ -672,7 +676,7 @@ def _get_or_create_tax_summary(employee, year):
             tax_summary = _create_new_tax_summary(employee, year)
 
         return tax_summary
-        
+
     except Exception as e:
         debug_log(f"Error getting or creating tax summary for {employee}, {year}: {str(e)}")
         frappe.log_error(
@@ -686,11 +690,11 @@ def _get_or_create_tax_summary(employee, year):
 def _create_new_tax_summary(employee, year):
     """
     Create a new Employee Tax Summary document
-    
+
     Args:
         employee: Employee code
         year: Tax year
-        
+
     Returns:
         Document: Newly created Employee Tax Summary
     """
@@ -703,7 +707,7 @@ def _create_new_tax_summary(employee, year):
     emp_doc = frappe.get_doc("Employee", employee)
     if emp_doc:
         tax_summary.employee_name = emp_doc.employee_name
-        
+
         # Copy fields if they exist in the employee document
         for field in ["department", "designation", "npwp", "ptkp_status", "ktp"]:
             if hasattr(emp_doc, field):
@@ -716,13 +720,13 @@ def _create_new_tax_summary(employee, year):
         tax_summary.append(
             "monthly_details",
             {
-                "month": i, 
-                "gross_pay": 0, 
-                "bpjs_deductions": 0, 
+                "month": i,
+                "gross_pay": 0,
+                "bpjs_deductions": 0,
                 "tax_amount": 0,
                 "is_using_ter": 0,
                 "ter_rate": 0,
-                "salary_slip": None  # Explicitly initialize salary_slip reference
+                "salary_slip": None,  # Explicitly initialize salary_slip reference
             },
         )
 
@@ -745,11 +749,11 @@ def update_on_salary_slip_cancel(salary_slip, year):
     """
     Update Employee Tax Summary when a Salary Slip is cancelled
     Called asynchronously from the Salary Slip's on_cancel method
-    
+
     Args:
         salary_slip: The name of the salary slip document
         year: The tax year to update
-        
+
     Returns:
         bool: True if updated successfully, False otherwise
     """
@@ -827,12 +831,12 @@ def update_on_salary_slip_cancel(salary_slip, year):
 def refresh_tax_summary(employee, year=None, force=False):
     """
     Refresh the tax summary for an employee by recalculating from all salary slips
-    
+
     Args:
         employee: Employee code
         year: Optional tax year (defaults to current year)
         force: Whether to force recreation of the tax summary
-        
+
     Returns:
         dict: Status and details of the operation
     """
@@ -840,13 +844,13 @@ def refresh_tax_summary(employee, year=None, force=False):
         # Set default year if not provided
         if not year:
             year = getdate().year
-            
+
         # Convert year to integer
         try:
             year = int(year)
         except (ValueError, TypeError):
             return {"status": "error", "message": f"Invalid year value: {year}"}
-            
+
         # Get all submitted salary slips for this employee and year
         salary_slips = frappe.get_all(
             "Salary Slip",
@@ -854,22 +858,22 @@ def refresh_tax_summary(employee, year=None, force=False):
                 "employee": employee,
                 "docstatus": 1,
                 "start_date": [">=", f"{year}-01-01"],
-                "end_date": ["<=", f"{year}-12-31"]
+                "end_date": ["<=", f"{year}-12-31"],
             },
-            fields=["name", "start_date", "end_date"]
+            fields=["name", "start_date", "end_date"],
         )
-        
+
         if not salary_slips:
             return {
-                "status": "error", 
-                "message": f"No submitted salary slips found for {employee} in {year}"
+                "status": "error",
+                "message": f"No submitted salary slips found for {employee} in {year}",
             }
-            
+
         # Check if tax summary exists
         tax_summary_name = frappe.db.get_value(
             "Employee Tax Summary", {"employee": employee, "year": year}
         )
-        
+
         # If force is true and tax summary exists, delete it
         if force and tax_summary_name:
             try:
@@ -878,8 +882,11 @@ def refresh_tax_summary(employee, year=None, force=False):
                 tax_summary.delete_tax_summary()
                 tax_summary_name = None
             except Exception as e:
-                return {"status": "error", "message": f"Error deleting existing tax summary: {str(e)}"}
-                
+                return {
+                    "status": "error",
+                    "message": f"Error deleting existing tax summary: {str(e)}",
+                }
+
         # Create new tax summary if it doesn't exist
         if not tax_summary_name:
             tax_summary = _create_new_tax_summary(employee, year)
@@ -891,12 +898,12 @@ def refresh_tax_summary(employee, year=None, force=False):
             tax_summary = frappe.get_doc("Employee Tax Summary", tax_summary_name)
             for month in range(1, 13):
                 tax_summary.reset_monthly_data(month)
-                
+
             # Save the reset document
             tax_summary.flags.ignore_validate_update_after_submit = True
             tax_summary.flags.ignore_permissions = True
             tax_summary.save()
-        
+
         # Process each salary slip - using our centralized validation
         processed = 0
         for slip in salary_slips:
@@ -906,20 +913,20 @@ def refresh_tax_summary(employee, year=None, force=False):
                 result = create_from_salary_slip(slip.name, "reprocess")
                 if result:
                     processed += 1
-                
+
         return {
             "status": "success",
             "message": f"Refreshed tax summary with {processed} of {len(salary_slips)} salary slips",
             "tax_summary": tax_summary_name,
             "processed": processed,
-            "total_slips": len(salary_slips)
+            "total_slips": len(salary_slips),
         }
-        
+
     except Exception as e:
         frappe.log_error(
             f"Error refreshing tax summary for {employee}, {year}: {str(e)}\n\n"
             f"Traceback: {frappe.get_traceback()}",
-            "Tax Summary Refresh Error"
+            "Tax Summary Refresh Error",
         )
         return {"status": "error", "message": str(e)}
 
@@ -928,11 +935,11 @@ def refresh_tax_summary(employee, year=None, force=False):
 def get_tax_summary_stats(employee=None, year=None):
     """
     Get statistics about tax summaries
-    
+
     Args:
         employee: Optional employee to filter by
         year: Optional year to filter by
-        
+
     Returns:
         dict: Statistics about tax summaries
     """
@@ -945,52 +952,47 @@ def get_tax_summary_stats(employee=None, year=None):
                 filters["year"] = int(year)
             except (ValueError, TypeError):
                 return {"status": "error", "message": f"Invalid year value: {year}"}
-                
+
         # Get count of tax summaries
         total_summaries = frappe.db.count("Employee Tax Summary", filters)
-        
+
         # Get total tax paid
         total_tax = 0
         if total_summaries > 0:
-            summaries = frappe.get_all(
-                "Employee Tax Summary", 
-                filters=filters, 
-                fields=["ytd_tax"]
-            )
+            summaries = frappe.get_all("Employee Tax Summary", filters=filters, fields=["ytd_tax"])
             for summary in summaries:
                 total_tax += flt(summary.ytd_tax)
-                
+
         # Get stats by year if no specific year was requested
         year_stats = []
         if not year:
-            years = frappe.db.sql("""
+            years = frappe.db.sql(
+                """
                 SELECT DISTINCT year 
                 FROM `tabEmployee Tax Summary` 
                 ORDER BY year DESC
-            """, as_dict=True)
-            
+            """,
+                as_dict=True,
+            )
+
             for yr in years:
                 yr_filters = dict(filters)
                 yr_filters["year"] = yr.year
                 year_count = frappe.db.count("Employee Tax Summary", yr_filters)
-                
-                year_stats.append({
-                    "year": yr.year,
-                    "count": year_count
-                })
-        
+
+                year_stats.append({"year": yr.year, "count": year_count})
+
         return {
             "status": "success",
             "total_summaries": total_summaries,
             "total_tax": total_tax,
-            "years": year_stats
+            "years": year_stats,
         }
-        
+
     except Exception as e:
         frappe.log_error(
-            f"Error getting tax summary stats: {str(e)}\n\n"
-            f"Traceback: {frappe.get_traceback()}",
-            "Tax Summary Stats Error"
+            f"Error getting tax summary stats: {str(e)}\n\n" f"Traceback: {frappe.get_traceback()}",
+            "Tax Summary Stats Error",
         )
         return {"status": "error", "message": str(e)}
 
