@@ -12,8 +12,6 @@ from payroll_indonesia.payroll_indonesia.utils import (
     debug_log,
     create_account,
     find_parent_account,
-    create_parent_liability_account,
-    create_parent_expense_account,
 )
 
 # Import GL account mapper
@@ -342,8 +340,8 @@ def check_system_readiness():
 
 def setup_accounts(config):
     """
-    Create required Accounts for Indonesian payroll management using centralized root account
-
+    Create required Accounts for Indonesian payroll management using find_parent_account utility
+    
     Args:
         config (dict): Configuration data from defaults.json
 
@@ -359,19 +357,6 @@ def setup_accounts(config):
     if not gl_accounts:
         debug_log("No GL accounts configuration found in defaults.json", "Account Setup Error")
         return False
-
-    # Get root account configuration
-    root_account_config = gl_accounts.get("root_account")
-    if not root_account_config:
-        debug_log("No root account configuration found in defaults.json", "Account Setup Error")
-        return False
-
-    # Validate required root account fields
-    required_fields = ["account_name", "account_type"]
-    for field in required_fields:
-        if field not in root_account_config:
-            debug_log(f"Missing required field '{field}' in root_account config", "Account Setup Error")
-            return False
 
     # Get all companies
     company_records = frappe.get_all("Company", pluck="name")
@@ -396,8 +381,8 @@ def setup_accounts(config):
         "companies_with_errors": 0,
         "total_accounts_created": 0,
         "total_accounts_failed": 0,
-        "root_accounts_created": 0,
-        "root_accounts_failed": 0
+        "parent_accounts_created": 0,
+        "parent_accounts_failed": 0
     }
 
     # Process each company
@@ -412,50 +397,6 @@ def setup_accounts(config):
         try:
             debug_log(f"Creating accounts for company: {company}", "Account Setup")
             
-            # Root account properties
-            root_name = root_account_config["account_name"]
-            root_type = root_account_config["account_type"]
-            root_is_group = root_account_config.get("is_group", 1)
-            
-            # Determine parent account for root
-            # Typically, this should be a balance sheet or P&L account depending on the root_type
-            if root_type == "Asset":
-                parent_account = "Application of Funds (Assets)"
-            elif root_type in ["Liability", "Equity"]:
-                parent_account = "Source of Funds (Liabilities)"
-            elif root_type in ["Income", "Expense"]:
-                parent_account = f"{root_type} - {company}"
-            else:
-                parent_account = "Application of Funds (Assets)"
-            
-            # Get company abbreviation
-            abbr = frappe.get_cached_value("Company", company, "abbr")
-            if not abbr:
-                debug_log(f"Company {company} does not have an abbreviation", "Account Setup Error")
-                statistics["companies_with_errors"] += 1
-                overall_success = False
-                company_success = False
-                continue
-                
-            # Create root account first using utility function
-            root_account_name = create_account(
-                company=company,
-                account_name=root_name,
-                account_type=root_type,
-                parent=parent_account,
-                root_type=root_type
-            )
-            
-            if not root_account_name:
-                debug_log(f"Failed to create root account '{root_name}' for {company}", "Account Setup Error")
-                statistics["root_accounts_failed"] += 1
-                overall_success = False
-                company_success = False
-                continue
-                
-            statistics["root_accounts_created"] += 1
-            debug_log(f"Created root account: {root_account_name}", "Account Setup")
-                
             # Process each account section
             for section in account_sections:
                 try:
@@ -466,16 +407,46 @@ def setup_accounts(config):
                         
                     company_stats["categories_processed"] += 1
                     
-                    # Process accounts in this section using mapper function
+                    # Determine account type and root type based on section
+                    if section == "expense_accounts" or section == "bpjs_expense_accounts":
+                        account_type = "Expense Account"
+                        root_type = "Expense"
+                    elif section == "payable_accounts" or section == "bpjs_payable_accounts":
+                        account_type = "Payable"
+                        root_type = "Liability"
+                    else:
+                        account_type = "Expense Account"  # Default
+                        root_type = "Expense"  # Default
+                    
+                    # Find appropriate parent account using find_parent_account
+                    parent_account = find_parent_account(company, account_type, root_type)
+                    
+                    if not parent_account:
+                        debug_log(
+                            f"Could not find suitable parent account for {account_type} (root_type: {root_type}) in company {company}",
+                            "Account Setup Error"
+                        )
+                        company_success = False
+                        company_stats["accounts_failed"] += len(gl_accounts.get(section, {}))
+                        statistics["parent_accounts_failed"] += 1
+                        continue
+                    
+                    debug_log(
+                        f"Found parent account {parent_account} for {account_type} in company {company}",
+                        "Account Setup"
+                    )
+                    statistics["parent_accounts_created"] += 1
+                    
+                    # Process accounts in this section
                     accounts_config = gl_accounts.get(section, {})
                     for key, account_info in accounts_config.items():
                         try:
                             # Extract account properties
                             account_name = account_info.get("account_name")
-                            account_type = account_info.get("account_type")
+                            item_account_type = account_info.get("account_type", account_type)
                             
-                            if not account_name or not account_type:
-                                debug_log(f"Missing account_name or account_type for {key}", "Account Setup Error")
+                            if not account_name:
+                                debug_log(f"Missing account_name for {key}", "Account Setup Error")
                                 company_stats["accounts_failed"] += 1
                                 continue
                             
@@ -483,9 +454,9 @@ def setup_accounts(config):
                             full_account_name = create_account(
                                 company=company,
                                 account_name=account_name,
-                                account_type=account_type,
-                                parent=root_account_name,
-                                root_type=None  # Will be determined based on account_type
+                                account_type=item_account_type,
+                                parent=parent_account,
+                                root_type=root_type
                             )
                             
                             if full_account_name:
@@ -555,12 +526,14 @@ def setup_accounts(config):
         f"Account setup complete: processed {statistics['companies_processed']} companies, "
         f"{statistics['companies_with_errors']} had errors. "
         f"Created {statistics['total_accounts_created']} accounts, "
-        f"failed to create {statistics['total_accounts_failed']} accounts.",
+        f"failed to create {statistics['total_accounts_failed']} accounts. "
+        f"Parent accounts: {statistics['parent_accounts_created']} found, "
+        f"{statistics['parent_accounts_failed']} not found.",
         "Account Setup Final Summary"
     )
 
-    # If any root account creation failed, consider the whole process failed
-    if statistics["root_accounts_failed"] > 0:
+    # If any parent account lookup failed, consider the whole process failed
+    if statistics["parent_accounts_failed"] > 0:
         overall_success = False
 
     return overall_success
