@@ -9,8 +9,10 @@ from frappe.utils import flt, now, get_datetime
 import logging
 import hashlib
 from payroll_indonesia.config.gl_account_mapper import map_gl_account
+from payroll_indonesia.payroll_indonesia.utils import get_default_config
+from payroll_indonesia.fixtures.setup import setup_accounts
 
-# 1️⃣ Global logger setup
+# Global logger setup
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter('[PI-Install] %(asctime)s - %(levelname)s - %(message)s')
@@ -26,8 +28,44 @@ def before_install():
 
 def after_install():
     """Run after app installation"""
-    setup_payroll_components()
-    migrate_from_json_to_doctype()
+    try:
+        # Load configuration
+        config = get_default_config()
+        if not config:
+            frappe.logger().warning("Failed to load configuration defaults.json. GL accounts setup skipped.")
+            logger.warning("Config is empty or could not be loaded. GL accounts setup skipped.")
+        else:
+            # Check if GL accounts configuration exists
+            if not config.get("gl_accounts"):
+                frappe.logger().warning("Configuration does not contain gl_accounts section. GL accounts setup skipped.")
+                logger.warning("Configuration does not contain gl_accounts section. GL accounts setup skipped.")
+            else:
+                # Setup GL accounts using setup_accounts from fixtures
+                frappe.logger().info("Starting GL accounts setup from defaults.json")
+                logger.info("Starting GL accounts setup from defaults.json")
+                
+                # Call setup_accounts with the loaded config
+                result = setup_accounts(config)
+                
+                # Log the result
+                if result:
+                    frappe.logger().info("GL accounts setup completed successfully")
+                    logger.info("GL accounts setup completed successfully")
+                else:
+                    frappe.logger().warning("GL accounts setup completed with warnings or errors")
+                    logger.warning("GL accounts setup completed with warnings or errors")
+    except Exception as e:
+        # Log any exception that occurs during account setup
+        frappe.logger().error(f"Error during GL accounts setup: {str(e)}\n{frappe.get_traceback()}")
+        logger.exception(f"Error during GL accounts setup: {str(e)}")
+    
+    # Continue with other installation steps
+    try:
+        setup_payroll_components()
+        migrate_from_json_to_doctype()
+    except Exception as e:
+        frappe.logger().error(f"Error during other installation steps: {str(e)}\n{frappe.get_traceback()}")
+        logger.exception(f"Error during other installation steps: {str(e)}")
 
 
 def after_update():
@@ -117,7 +155,6 @@ def migrate_from_json_to_doctype():
         bool: True if migration was successful, False otherwise
     """
     try:
-        # 2️⃣ migrate_from_json_to_doctype()
         # Validasi eksistensi DocType 'Payroll Indonesia Settings'
         if not frappe.db.exists("DocType", "Payroll Indonesia Settings"):
             logger.warning("[PI-Install] Payroll Indonesia Settings DocType not found, skipping migration")
@@ -204,44 +241,6 @@ def migrate_from_json_to_doctype():
         return False
 
 
-def get_default_config():
-    """
-    Load the defaults.json configuration file
-
-    Returns:
-        dict: Configuration data or None if file not found
-    """
-    try:
-        # 3️⃣ get_default_config()
-        # Cari defaults.json di dua path seperti saat ini
-        config_path = frappe.get_app_path(
-            "payroll_indonesia", "payroll_indonesia", "config", "defaults.json"
-        )
-
-        if not os.path.exists(config_path):
-            config_path = frappe.get_app_path("payroll_indonesia", "config", "defaults.json")
-
-            if not os.path.exists(config_path):
-                logger.warning("[PI-Install] defaults.json not found in expected locations")
-                return None
-
-        # Jika ditemukan, log path absolut
-        logger.info(f"[PI-Install] defaults.json found at: {os.path.abspath(config_path)}")
-
-        # Load and return config
-        with open(config_path, "r") as f:
-            config_content = f.read()
-            # Setelah json.load, log hash SHA1 dari file
-            sha1_hash = hashlib.sha1(config_content.encode('utf-8')).hexdigest()
-            logger.info(f"[PI-Install] SHA1 hash of defaults.json: {sha1_hash}")
-            config = json.loads(config_content)
-            return config
-
-    except Exception as e:
-        logger.exception(f"[PI-Install] Error loading defaults.json: {str(e)}")
-        return None
-
-
 def update_settings_from_config(settings, config):
     """
     Update settings document with values from config
@@ -251,7 +250,6 @@ def update_settings_from_config(settings, config):
         config: Configuration data from defaults.json
     """
     try:
-        # 4️⃣ update_settings_from_config()
         # App info
         app_info = config.get("app_info", {})
         settings.app_version = app_info.get("version", "1.0.0")
@@ -369,7 +367,6 @@ def migrate_ter_rates(ter_rates):
         bool: True if migration was successful, False otherwise
     """
     try:
-        # 5️⃣ migrate_ter_rates()
         # Validasi eksistensi DocType dan tabel database
         if not frappe.db.exists("DocType", "PPh 21 TER Table"):
             logger.warning("[PI-Install] PPh 21 TER Table DocType not found, skipping TER rates migration")
@@ -465,7 +462,6 @@ def sync_to_bpjs_settings(pi_settings):
         pi_settings: Payroll Indonesia Settings document
     """
     try:
-        # 6️⃣ sync_to_bpjs_settings()
         if frappe.db.exists("DocType", "BPJS Settings") and frappe.db.exists(
             "BPJS Settings", "BPJS Settings"
         ):
