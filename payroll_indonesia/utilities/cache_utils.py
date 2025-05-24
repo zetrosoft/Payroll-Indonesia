@@ -8,7 +8,7 @@ from frappe.utils import now_datetime, add_to_date
 import hashlib
 import json
 import functools
-from typing import Any, Optional
+from typing import Any, Optional, Dict, List, Union
 
 
 # Main cache implementation as a class
@@ -469,3 +469,62 @@ def get_cached_tax_settings(key):
     """Legacy function for backwards compatibility"""
     cache_key = f"tax_settings:{key}"
     return get_cached_value(cache_key)
+
+@frappe.whitelist()
+def clear_salary_slip_caches() -> Dict[str, Any]:
+    """
+    Clear salary slip related caches to prevent memory bloat.
+
+    This function is designed to be called by the scheduler (daily or cron) only.
+    It does NOT schedule itself to avoid race conditions.
+
+    If you need to call this function manually, use:
+        frappe.enqueue(method="payroll_indonesia.utilities.cache_utils.clear_salary_slip_caches",
+                      queue='long', job_name='clear_payroll_caches')
+
+    Returns:
+        Dict[str, Any]: Status and details about cleared caches
+    """
+    try:
+        # Define prefixes that are related to salary slip functions
+        prefixes_to_clear = [
+            "employee_doc:",
+            "fiscal_year:",
+            "salary_slip:",
+            "ytd_tax:",
+            "ter_category:",
+            "ter_rate:",
+        ]
+
+        # Log the start of cache clearing operation
+        frappe.logger().info(
+            f"Starting cache clearing operation for prefixes: {', '.join(prefixes_to_clear)}"
+        )
+
+        # Clear internal caches stored in CacheManager
+        cleared_count = 0
+        for prefix in prefixes_to_clear:
+            count = clear_cache(prefix)
+            cleared_count += count or 0
+
+        # Clear Frappe document cache for Salary Slip
+        frappe.clear_document_cache("Salary Slip")
+        
+        # Clear general cache for good measure
+        # This is optional and may not be needed in all cases
+        # frappe.clear_cache()
+        
+        # Log completion
+        frappe.logger().info(f"Cleared {cleared_count} cached items from salary slip caches")
+
+        return {
+            "status": "success", 
+            "cleared_count": cleared_count, 
+            "prefixes": prefixes_to_clear,
+            "doctype_cache_cleared": "Salary Slip"
+        }
+
+    except Exception as e:
+        # Non-critical error - log and continue
+        frappe.logger().exception(f"Error clearing salary slip caches: {e}")
+        return {"status": "error", "message": str(e)}
