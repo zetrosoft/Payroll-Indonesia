@@ -22,7 +22,7 @@ Payroll module for Indonesian companies, integrated with ERPNext's Human Resourc
 ### From GitHub
 ```bash
 # In your bench directory
-bench get-app https://github.com/dannyaudian/payroll_indonesia
+bench get-app https://github.com/zetrosoft/payroll_indonesia
 bench --site yoursite.local install-app payroll_indonesia
 bench migrate
 ```
